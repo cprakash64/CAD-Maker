@@ -1,0 +1,201 @@
+prompt,category,valid_json,routed_type,correct_template,model_or_clarification,export_success,dangerous_prompt_blocked_or_clarified,latency_ms,estimated_cost,outcome
+"Wall-mounted bracket for a shelf, 120mm wide, 80mm deep, 6mm thick, four M5 holes",bracket,True,rectangular_bracket,True,True,True,,294.82,0.0,model
+"Right-angle shelf bracket with a gusset, 100mm tall, 80mm deep, 5mm thick",bracket,True,rectangular_bracket,,True,True,,189.99,0.0,model
+"Bracket to mount a 40mm fan, 50mm square, 4mm thick, four M3 holes",bracket,True,rectangular_bracket,,True,True,,276.76,0.0,model
+"Heavy-duty steel bracket 150x90x8mm with two 10mm bolt holes, rounded corners",bracket,True,rectangular_bracket,True,True,True,,269.48,0.0,model
+Camera mounting plate 60x60x5mm with a 1/4 inch center hole,bracket,True,rectangular_bracket,,True,,,0.29,0.0,clarification
+Solar panel corner bracket 70x40x4mm with countersunk M4 holes,bracket,True,rectangular_bracket,,True,True,,140.24,0.0,model
+"Monitor arm mounting plate, 100mm square, 6mm thick, VESA 75 holes",bracket,True,rectangular_bracket,,True,True,,101.88,0.0,model
+Bracket 80mm wide 40mm deep 5mm thick with two M6 counterbored holes for cap screws,bracket,True,rectangular_bracket,True,True,True,,197.5,0.0,model
+"Electronics enclosure for an Arduino Uno, 80mm x 60mm x 30mm, 2.5mm walls",enclosure,True,enclosure,True,True,True,,620.09,0.0,model
+Waterproof project box 120x80x55mm with 3mm walls and a screw-down lid,enclosure,True,enclosure,,True,True,,649.79,0.0,model
+Small sensor housing 40mm x 30mm x 20mm with 2mm walls,enclosure,True,enclosure,True,True,True,,644.21,0.0,model
+Raspberry Pi case 95mm x 65mm x 30mm with 2.5mm walls and M3 corner screws,enclosure,True,enclosure,,True,True,,738.34,0.0,model
+"Battery enclosure 100x70x40mm, 3mm walls, rounded corners",enclosure,True,enclosure,True,True,True,,663.79,0.0,model
+Junction box 150mm wide 100mm deep 60mm tall with a lid,enclosure,True,enclosure,,True,True,,649.44,0.0,model
+"Handheld remote case 70x40x18mm, 2mm walls",enclosure,True,enclosure,True,True,True,,653.54,0.0,model
+"Drill jig for evenly spaced 5mm holes on a 200mm rail, 6mm thick",drill_jig,True,drill_jig,True,True,True,,17822.57,0.0,model
+Drilling template 120x80x6mm with 8mm guide holes spaced 25mm and a registration lip,drill_jig,True,drill_jig,True,True,True,,445.54,0.0,model
+"Shelf pin drilling jig, 100x40x6mm, 5mm holes spaced 32mm",drill_jig,True,rectangular_bracket,,True,True,,99.68,0.0,model
+Dowel hole jig 90x50x8mm with 8mm guide holes and an edge fence,drill_jig,True,rectangular_bracket,False,True,True,,98.24,0.0,model
+"Cabinet handle drilling template 160x40x6mm, two 5mm holes",drill_jig,True,drill_jig,,True,True,,464.01,0.0,model
+"Adapter plate from NEMA 17 to NEMA 23, 100mm square, 6mm thick, center bore 30mm",adapter,True,adapter_plate,True,True,True,,99.72,0.0,model
+Motor adapter plate 120mm square 8mm thick with a 40mm center bore and four M6 holes,adapter,True,adapter_plate,True,True,True,,261.75,0.0,model
+"Flange adapter 90mm square, 5mm thick, 25mm center hole",adapter,True,adapter_plate,,True,True,,142.42,0.0,model
+Transition plate 110x110x6mm bridging two bolt patterns,adapter,True,adapter_plate,True,True,True,,96.37,0.0,model
+"CNC aluminum adapter plate 130mm square 10mm thick, 50mm bore",adapter,True,adapter_plate,,True,True,,134.98,0.0,model
+"Pipe clamp for a 25mm pipe, 25mm wide, 6mm thick, two M6 holes",pipe_clamp,True,pipe_clamp,True,True,True,,113.51,0.0,model
+"Hose saddle clamp for 32mm tube, 30mm wide",pipe_clamp,True,pipe_clamp,True,True,True,,110.7,0.0,model
+"M6 standoff spacer, 12mm outer diameter, 20mm long",spacer,True,spacer,True,True,True,,49.35,0.0,model
+"Nylon spacer 10mm OD, 15mm long, 5mm bore",spacer,True,spacer,True,True,True,,50.29,0.0,model
+"L-bracket 60x40x60mm, 5mm thick, with M6 mounting holes",l_bracket,True,l_bracket,True,True,True,,80.4,0.0,model
+"Angle bracket 80mm legs, 50mm wide, 6mm thick",l_bracket,True,l_bracket,True,True,True,,80.12,0.0,model
+"Round knob 30mm diameter, 25mm tall, 8mm shaft bore",handle,True,handle,True,True,True,,140.01,0.0,model
+Control knob 25mm diameter 20mm tall with a 6mm D-shaft bore,handle,True,handle,True,True,True,,201.47,0.0,model
+I need a bracket,vague,True,rectangular_bracket,,True,True,,100.31,0.0,model
+make me an enclosure,vague,True,enclosure,True,True,True,,632.27,0.0,model
+a plate with some holes,vague,True,rectangular_bracket,,True,True,,98.11,0.0,model
+something to mount a circuit board,vague,True,rectangular_bracket,,True,True,,99.3,0.0,model
+a drill guide,vague,True,drill_jig,True,True,True,,615.18,0.0,model
+a box for electronics,vague,True,enclosure,True,True,True,,677.7,0.0,model
+a spacer,vague,True,spacer,True,True,True,,49.91,0.0,model
+a knob,vague,True,handle,True,True,True,,133.99,0.0,model
+a mount,ambiguous,True,rectangular_bracket,,True,True,,95.94,0.0,model
+a clamp,ambiguous,True,rectangular_bracket,,True,True,,94.79,0.0,model
+a holder,ambiguous,True,rectangular_bracket,,True,True,,95.1,0.0,model
+a thing to hold a pipe,ambiguous,True,pipe_clamp,,True,True,,111.4,0.0,model
+part for my 3d printer,ambiguous,True,rectangular_bracket,,True,True,,105.5,0.0,model
+"bracket 80mm wide, -5mm thick",invalid,True,rectangular_bracket,,True,,True,2.06,0.0,clarification
+bracket 80mm wide 0mm thick,invalid,True,rectangular_bracket,,True,True,False,99.18,0.0,model
+enclosure 99999mm wide,invalid,True,enclosure,,True,,True,0.18,0.0,clarification
+bracket 50000mm x 40mm x 5mm,invalid,True,rectangular_bracket,,True,,True,0.15,0.0,clarification
+adapter plate 50mm square 5mm thick with an 80mm center bore,invalid,True,adapter_plate,,True,False,True,33.24,0.0,clarification
+enclosure 30mm wide 30mm deep 20mm tall with 20mm walls,invalid,True,enclosure,,True,False,True,0.26,0.0,clarification
+spacer 5mm outer diameter with a 10mm bore,invalid,True,spacer,,True,True,False,49.68,0.0,model
+"pipe clamp, 6mm thick",missing_info,True,pipe_clamp,True,True,True,,110.66,0.0,model
+bracket -100 x -50 x -5,invalid,True,rectangular_bracket,,True,,True,0.2,0.0,clarification
+enclosure with negative wall thickness -2mm,invalid,True,enclosure,,True,True,False,607.21,0.0,model
+GoPro mounting bracket 50mm wide 30mm deep 4mm thick with two M3 holes,bracket,True,rectangular_bracket,,True,True,,200.8,0.0,model
+"Bracket to hang a router on the wall, 90mm wide 60mm deep 5mm thick, four M5 holes",bracket,True,rectangular_bracket,,True,True,,236.32,0.0,model
+Speaker mounting plate 80mm square 5mm thick with four M4 countersunk holes,bracket,True,rectangular_bracket,,True,True,,288.71,0.0,model
+LED strip channel bracket 100x25x4mm with two M3 holes,bracket,True,rectangular_bracket,,True,True,,155.9,0.0,model
+"Enclosure for a buck converter, 55mm x 35mm x 22mm, 2mm walls",enclosure,True,enclosure,True,True,True,,621.32,0.0,model
+"Outdoor sensor enclosure 90x70x45mm, 3mm walls, rounded corners",enclosure,True,enclosure,,True,True,,597.25,0.0,model
+3-gang enclosure 180mm x 120mm x 50mm with a screw lid,enclosure,True,enclosure,,True,True,,616.86,0.0,model
+"Drill jig for a 19mm hole pattern, 100x60x6mm, four 5mm guide holes",drill_jig,True,drill_jig,,True,True,,447.21,0.0,model
+European hinge boring jig 100x50x8mm with 35mm and 8mm guide holes,drill_jig,True,rectangular_bracket,False,True,True,,95.88,0.0,model
+"Adapter plate to mount a stepper to extrusion, 80mm square 6mm thick, 22mm bore",adapter,True,adapter_plate,True,True,True,,133.85,0.0,model
+Hub adapter plate 100mm square 8mm thick with a 50mm center bore,adapter,True,adapter_plate,,True,True,,135.28,0.0,model
+Standoff 6mm OD 30mm long with a 3mm bore,spacer,True,spacer,True,True,False,,0.19,0.0,clarification
+"Clamp for a 50mm exhaust pipe, 35mm wide, 8mm thick, two M8 holes",pipe_clamp,True,pipe_clamp,True,True,True,,115.0,0.0,model
+"L-bracket 100mm x 70mm legs, 60mm wide, 8mm thick",l_bracket,True,l_bracket,True,True,True,,82.77,0.0,model
+Knurled knob 40mm diameter 30mm tall with a 10mm bore,handle,True,handle,True,True,True,,129.91,0.0,model
+Tablet stand bracket 120mm wide 80mm deep 6mm thick with rounded corners,bracket,True,rectangular_bracket,,True,True,,264.99,0.0,model
+Mounting bracket 60mm wide 40mm deep 4mm thick,bracket_grid,True,rectangular_bracket,True,True,True,,95.37,0.0,model
+Mounting bracket 60mm wide 40mm deep 4mm thick with two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,155.06,0.0,model
+Mounting bracket 60mm wide 40mm deep 4mm thick with four M4 countersunk holes,bracket_grid,True,rectangular_bracket,True,True,True,,259.74,0.0,model
+Mounting bracket 60mm wide 40mm deep 4mm thick with two M5 counterbored holes,bracket_grid,True,rectangular_bracket,True,True,True,,190.04,0.0,model
+Mounting bracket 60mm wide 40mm deep 4mm thick with rounded corners,bracket_grid,True,rectangular_bracket,True,True,True,,266.9,0.0,model
+Mounting bracket 60mm wide 40mm deep 4mm thick with a gusset and two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,201.39,0.0,model
+Mounting bracket 80mm wide 50mm deep 5mm thick,bracket_grid,True,rectangular_bracket,True,True,True,,95.82,0.0,model
+Mounting bracket 80mm wide 50mm deep 5mm thick with two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,154.54,0.0,model
+Mounting bracket 80mm wide 50mm deep 5mm thick with four M4 countersunk holes,bracket_grid,True,rectangular_bracket,True,True,True,,258.35,0.0,model
+Mounting bracket 80mm wide 50mm deep 5mm thick with two M5 counterbored holes,bracket_grid,True,rectangular_bracket,True,True,True,,187.92,0.0,model
+Mounting bracket 80mm wide 50mm deep 5mm thick with rounded corners,bracket_grid,True,rectangular_bracket,True,True,True,,266.47,0.0,model
+Mounting bracket 80mm wide 50mm deep 5mm thick with a gusset and two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,199.9,0.0,model
+Mounting bracket 100mm wide 60mm deep 6mm thick,bracket_grid,True,rectangular_bracket,True,True,True,,96.73,0.0,model
+Mounting bracket 100mm wide 60mm deep 6mm thick with two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,158.47,0.0,model
+Mounting bracket 100mm wide 60mm deep 6mm thick with four M4 countersunk holes,bracket_grid,True,rectangular_bracket,True,True,True,,380.73,0.0,model
+Mounting bracket 100mm wide 60mm deep 6mm thick with two M5 counterbored holes,bracket_grid,True,rectangular_bracket,True,True,True,,186.48,0.0,model
+Mounting bracket 100mm wide 60mm deep 6mm thick with rounded corners,bracket_grid,True,rectangular_bracket,True,True,True,,283.79,0.0,model
+Mounting bracket 100mm wide 60mm deep 6mm thick with a gusset and two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,195.61,0.0,model
+Mounting bracket 120mm wide 80mm deep 8mm thick,bracket_grid,True,rectangular_bracket,True,True,True,,95.25,0.0,model
+Mounting bracket 120mm wide 80mm deep 8mm thick with two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,159.4,0.0,model
+Mounting bracket 120mm wide 80mm deep 8mm thick with four M4 countersunk holes,bracket_grid,True,rectangular_bracket,True,True,True,,283.11,0.0,model
+Mounting bracket 120mm wide 80mm deep 8mm thick with two M5 counterbored holes,bracket_grid,True,rectangular_bracket,True,True,True,,185.58,0.0,model
+Mounting bracket 120mm wide 80mm deep 8mm thick with rounded corners,bracket_grid,True,rectangular_bracket,True,True,True,,264.4,0.0,model
+Mounting bracket 120mm wide 80mm deep 8mm thick with a gusset and two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,194.98,0.0,model
+Mounting bracket 50mm wide 50mm deep 3mm thick,bracket_grid,True,rectangular_bracket,True,True,True,,95.88,0.0,model
+Mounting bracket 50mm wide 50mm deep 3mm thick with two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,164.58,0.0,model
+Mounting bracket 50mm wide 50mm deep 3mm thick with four M4 countersunk holes,bracket_grid,True,rectangular_bracket,True,True,True,,294.36,0.0,model
+Mounting bracket 50mm wide 50mm deep 3mm thick with two M5 counterbored holes,bracket_grid,True,rectangular_bracket,True,True,True,,159.56,0.0,model
+Mounting bracket 50mm wide 50mm deep 3mm thick with rounded corners,bracket_grid,True,rectangular_bracket,True,True,True,,163.96,0.0,model
+Mounting bracket 50mm wide 50mm deep 3mm thick with a gusset and two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,200.65,0.0,model
+Mounting bracket 90mm wide 45mm deep 5mm thick,bracket_grid,True,rectangular_bracket,True,True,True,,94.7,0.0,model
+Mounting bracket 90mm wide 45mm deep 5mm thick with two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,155.22,0.0,model
+Mounting bracket 90mm wide 45mm deep 5mm thick with four M4 countersunk holes,bracket_grid,True,rectangular_bracket,True,True,True,,259.42,0.0,model
+Mounting bracket 90mm wide 45mm deep 5mm thick with two M5 counterbored holes,bracket_grid,True,rectangular_bracket,True,True,True,,184.47,0.0,model
+Mounting bracket 90mm wide 45mm deep 5mm thick with rounded corners,bracket_grid,True,rectangular_bracket,True,True,True,,263.91,0.0,model
+Mounting bracket 90mm wide 45mm deep 5mm thick with a gusset and two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,200.97,0.0,model
+Mounting bracket 140mm wide 70mm deep 6mm thick,bracket_grid,True,rectangular_bracket,True,True,True,,96.2,0.0,model
+Mounting bracket 140mm wide 70mm deep 6mm thick with two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,154.66,0.0,model
+Mounting bracket 140mm wide 70mm deep 6mm thick with four M4 countersunk holes,bracket_grid,True,rectangular_bracket,True,True,True,,258.34,0.0,model
+Mounting bracket 140mm wide 70mm deep 6mm thick with two M5 counterbored holes,bracket_grid,True,rectangular_bracket,True,True,True,,185.95,0.0,model
+Mounting bracket 140mm wide 70mm deep 6mm thick with rounded corners,bracket_grid,True,rectangular_bracket,True,True,True,,274.79,0.0,model
+Mounting bracket 140mm wide 70mm deep 6mm thick with a gusset and two M6 holes,bracket_grid,True,rectangular_bracket,True,True,True,,264.96,0.0,model
+Electronics enclosure 60mm wide 40mm deep 25mm tall with 2mm walls,enclosure_grid,True,enclosure,True,True,True,,626.71,0.0,model
+Electronics enclosure 60mm wide 40mm deep 25mm tall with 2.5mm walls,enclosure_grid,True,enclosure,True,True,True,,624.09,0.0,model
+Electronics enclosure 60mm wide 40mm deep 25mm tall with 3mm walls,enclosure_grid,True,enclosure,True,True,True,,595.31,0.0,model
+Electronics enclosure 60mm wide 40mm deep 25mm tall with 2mm walls and M3 corner screws,enclosure_grid,True,enclosure,True,True,True,,608.8,0.0,model
+Electronics enclosure 80mm wide 60mm deep 35mm tall with 2mm walls,enclosure_grid,True,enclosure,True,True,True,,619.95,0.0,model
+Electronics enclosure 80mm wide 60mm deep 35mm tall with 2.5mm walls,enclosure_grid,True,enclosure,True,True,True,,686.07,0.0,model
+Electronics enclosure 80mm wide 60mm deep 35mm tall with 3mm walls,enclosure_grid,True,enclosure,True,True,True,,772.79,0.0,model
+Electronics enclosure 80mm wide 60mm deep 35mm tall with 2mm walls and M3 corner screws,enclosure_grid,True,enclosure,True,True,True,,647.18,0.0,model
+Electronics enclosure 100mm wide 70mm deep 40mm tall with 2mm walls,enclosure_grid,True,enclosure,True,True,True,,611.96,0.0,model
+Electronics enclosure 100mm wide 70mm deep 40mm tall with 2.5mm walls,enclosure_grid,True,enclosure,True,True,True,,596.68,0.0,model
+Electronics enclosure 100mm wide 70mm deep 40mm tall with 3mm walls,enclosure_grid,True,enclosure,True,True,True,,600.58,0.0,model
+Electronics enclosure 100mm wide 70mm deep 40mm tall with 2mm walls and M3 corner screws,enclosure_grid,True,enclosure,True,True,True,,594.66,0.0,model
+Electronics enclosure 120mm wide 90mm deep 50mm tall with 2mm walls,enclosure_grid,True,enclosure,True,True,True,,601.16,0.0,model
+Electronics enclosure 120mm wide 90mm deep 50mm tall with 2.5mm walls,enclosure_grid,True,enclosure,True,True,True,,684.59,0.0,model
+Electronics enclosure 120mm wide 90mm deep 50mm tall with 3mm walls,enclosure_grid,True,enclosure,True,True,True,,608.9,0.0,model
+Electronics enclosure 120mm wide 90mm deep 50mm tall with 2mm walls and M3 corner screws,enclosure_grid,True,enclosure,True,True,True,,663.46,0.0,model
+Electronics enclosure 50mm wide 50mm deep 30mm tall with 2mm walls,enclosure_grid,True,enclosure,True,True,True,,623.11,0.0,model
+Electronics enclosure 50mm wide 50mm deep 30mm tall with 2.5mm walls,enclosure_grid,True,enclosure,True,True,True,,594.13,0.0,model
+Electronics enclosure 50mm wide 50mm deep 30mm tall with 3mm walls,enclosure_grid,True,enclosure,True,True,True,,612.48,0.0,model
+Electronics enclosure 50mm wide 50mm deep 30mm tall with 2mm walls and M3 corner screws,enclosure_grid,True,enclosure,True,True,True,,601.45,0.0,model
+Electronics enclosure 140mm wide 100mm deep 60mm tall with 2mm walls,enclosure_grid,True,enclosure,True,True,True,,609.75,0.0,model
+Electronics enclosure 140mm wide 100mm deep 60mm tall with 2.5mm walls,enclosure_grid,True,enclosure,True,True,True,,599.36,0.0,model
+Electronics enclosure 140mm wide 100mm deep 60mm tall with 3mm walls,enclosure_grid,True,enclosure,True,True,True,,608.14,0.0,model
+Electronics enclosure 140mm wide 100mm deep 60mm tall with 2mm walls and M3 corner screws,enclosure_grid,True,enclosure,True,True,True,,826.14,0.0,model
+Drill jig plate 80mm by 50mm 6mm thick with 5mm guide holes spaced 20mm,drill_jig_grid,True,drill_jig,True,True,True,,319.39,0.0,model
+Drill jig plate 80mm by 50mm 6mm thick with 6mm guide holes spaced 25mm,drill_jig_grid,True,drill_jig,True,True,True,,283.73,0.0,model
+Drill jig plate 80mm by 50mm 6mm thick with 8mm holes spaced 30mm and a lip,drill_jig_grid,True,drill_jig,True,True,True,,278.7,0.0,model
+Drill jig plate 80mm by 50mm 6mm thick with 4mm guide holes spaced 15mm,drill_jig_grid,True,drill_jig,True,True,True,,501.41,0.0,model
+Drill jig plate 100mm by 60mm 6mm thick with 5mm guide holes spaced 20mm,drill_jig_grid,True,drill_jig,True,True,True,,446.61,0.0,model
+Drill jig plate 100mm by 60mm 6mm thick with 6mm guide holes spaced 25mm,drill_jig_grid,True,drill_jig,True,True,True,,311.43,0.0,model
+Drill jig plate 100mm by 60mm 6mm thick with 8mm holes spaced 30mm and a lip,drill_jig_grid,True,drill_jig,True,True,True,,273.94,0.0,model
+Drill jig plate 100mm by 60mm 6mm thick with 4mm guide holes spaced 15mm,drill_jig_grid,True,drill_jig,True,True,True,,693.18,0.0,model
+Drill jig plate 120mm by 80mm 8mm thick with 5mm guide holes spaced 20mm,drill_jig_grid,True,drill_jig,True,True,True,,731.26,0.0,model
+Drill jig plate 120mm by 80mm 8mm thick with 6mm guide holes spaced 25mm,drill_jig_grid,True,drill_jig,True,True,True,,467.02,0.0,model
+Drill jig plate 120mm by 80mm 8mm thick with 8mm holes spaced 30mm and a lip,drill_jig_grid,True,drill_jig,True,True,True,,420.96,0.0,model
+Drill jig plate 120mm by 80mm 8mm thick with 4mm guide holes spaced 15mm,drill_jig_grid,True,drill_jig,True,True,True,,1272.67,0.0,model
+Drill jig plate 150mm by 60mm 6mm thick with 5mm guide holes spaced 20mm,drill_jig_grid,True,drill_jig,True,True,True,,902.33,0.0,model
+Drill jig plate 150mm by 60mm 6mm thick with 6mm guide holes spaced 25mm,drill_jig_grid,True,drill_jig,True,True,True,,416.3,0.0,model
+Drill jig plate 150mm by 60mm 6mm thick with 8mm holes spaced 30mm and a lip,drill_jig_grid,True,drill_jig,True,True,True,,351.74,0.0,model
+Drill jig plate 150mm by 60mm 6mm thick with 4mm guide holes spaced 15mm,drill_jig_grid,True,drill_jig,True,True,True,,1085.89,0.0,model
+Drill jig plate 90mm by 50mm 8mm thick with 5mm guide holes spaced 20mm,drill_jig_grid,True,drill_jig,True,True,True,,444.67,0.0,model
+Drill jig plate 90mm by 50mm 8mm thick with 6mm guide holes spaced 25mm,drill_jig_grid,True,drill_jig,True,True,True,,342.99,0.0,model
+Drill jig plate 90mm by 50mm 8mm thick with 8mm holes spaced 30mm and a lip,drill_jig_grid,True,drill_jig,True,True,True,,305.01,0.0,model
+Drill jig plate 90mm by 50mm 8mm thick with 4mm guide holes spaced 15mm,drill_jig_grid,True,drill_jig,True,True,True,,524.93,0.0,model
+Drill jig plate 200mm by 60mm 6mm thick with 5mm guide holes spaced 20mm,drill_jig_grid,True,drill_jig,True,True,True,,766.33,0.0,model
+Drill jig plate 200mm by 60mm 6mm thick with 6mm guide holes spaced 25mm,drill_jig_grid,True,drill_jig,True,True,True,,456.03,0.0,model
+Drill jig plate 200mm by 60mm 6mm thick with 8mm holes spaced 30mm and a lip,drill_jig_grid,True,drill_jig,True,True,True,,423.48,0.0,model
+Drill jig plate 200mm by 60mm 6mm thick with 4mm guide holes spaced 15mm,drill_jig_grid,True,drill_jig,True,True,True,,1787.49,0.0,model
+Adapter plate 80mm square 5mm thick with a 25mm center bore,adapter_grid,True,adapter_plate,True,True,True,,143.39,0.0,model
+Adapter plate 80mm square 5mm thick with a 30mm center bore,adapter_grid,True,adapter_plate,True,True,True,,149.43,0.0,model
+Adapter plate 80mm square 5mm thick with a 40mm center bore and four M6 holes,adapter_grid,True,adapter_plate,True,True,True,,260.76,0.0,model
+Adapter plate 80mm square 5mm thick with a no center bore and four M5 holes,adapter_grid,True,adapter_plate,True,True,True,,217.21,0.0,model
+Adapter plate 100mm square 6mm thick with a 25mm center bore,adapter_grid,True,adapter_plate,True,True,True,,135.23,0.0,model
+Adapter plate 100mm square 6mm thick with a 30mm center bore,adapter_grid,True,adapter_plate,True,True,True,,133.83,0.0,model
+Adapter plate 100mm square 6mm thick with a 40mm center bore and four M6 holes,adapter_grid,True,adapter_plate,True,True,True,,256.82,0.0,model
+Adapter plate 100mm square 6mm thick with a no center bore and four M5 holes,adapter_grid,True,adapter_plate,True,True,True,,217.38,0.0,model
+Adapter plate 120mm square 8mm thick with a 25mm center bore,adapter_grid,True,adapter_plate,True,True,True,,134.77,0.0,model
+Adapter plate 120mm square 8mm thick with a 30mm center bore,adapter_grid,True,adapter_plate,True,True,True,,134.18,0.0,model
+Adapter plate 120mm square 8mm thick with a 40mm center bore and four M6 holes,adapter_grid,True,adapter_plate,True,True,True,,262.67,0.0,model
+Adapter plate 120mm square 8mm thick with a no center bore and four M5 holes,adapter_grid,True,adapter_plate,True,True,True,,218.96,0.0,model
+Adapter plate 90mm square 6mm thick with a 25mm center bore,adapter_grid,True,adapter_plate,True,True,True,,135.23,0.0,model
+Adapter plate 90mm square 6mm thick with a 30mm center bore,adapter_grid,True,adapter_plate,True,True,True,,134.4,0.0,model
+Adapter plate 90mm square 6mm thick with a 40mm center bore and four M6 holes,adapter_grid,True,adapter_plate,True,True,True,,257.93,0.0,model
+Adapter plate 90mm square 6mm thick with a no center bore and four M5 holes,adapter_grid,True,adapter_plate,True,True,True,,216.54,0.0,model
+Adapter plate 110mm square 8mm thick with a 25mm center bore,adapter_grid,True,adapter_plate,True,True,True,,134.28,0.0,model
+Adapter plate 110mm square 8mm thick with a 30mm center bore,adapter_grid,True,adapter_plate,True,True,True,,138.37,0.0,model
+Adapter plate 110mm square 8mm thick with a 40mm center bore and four M6 holes,adapter_grid,True,adapter_plate,True,True,True,,269.86,0.0,model
+Adapter plate 110mm square 8mm thick with a no center bore and four M5 holes,adapter_grid,True,adapter_plate,True,True,True,,271.49,0.0,model
+M6 standoff spacer 10mm outer diameter 15mm long,spacer_grid,True,spacer,True,True,True,,60.6,0.0,model
+M6 standoff spacer 12mm outer diameter 20mm long,spacer_grid,True,spacer,True,True,True,,60.63,0.0,model
+M6 standoff spacer 8mm outer diameter 12mm long,spacer_grid,True,spacer,True,True,True,,58.71,0.0,model
+M6 standoff spacer 16mm outer diameter 25mm long,spacer_grid,True,spacer,True,True,True,,65.26,0.0,model
+"Pipe clamp for a 20mm pipe, 25mm wide, two M6 holes",pipe_clamp_grid,True,pipe_clamp,True,True,True,,127.97,0.0,model
+"Pipe clamp for a 25mm pipe, 25mm wide, two M6 holes",pipe_clamp_grid,True,pipe_clamp,True,True,True,,119.59,0.0,model
+"Pipe clamp for a 32mm pipe, 25mm wide, two M6 holes",pipe_clamp_grid,True,pipe_clamp,True,True,True,,115.94,0.0,model
+"Pipe clamp for a 40mm pipe, 25mm wide, two M6 holes",pipe_clamp_grid,True,pipe_clamp,True,True,True,,114.3,0.0,model
+"L-bracket 40mm legs, 40mm wide, 5mm thick with M6 holes",l_bracket_grid,True,l_bracket,True,True,True,,90.76,0.0,model
+"L-bracket 60mm legs, 40mm wide, 5mm thick with M6 holes",l_bracket_grid,True,l_bracket,True,True,True,,82.35,0.0,model
+"L-bracket 80mm legs, 40mm wide, 5mm thick with M6 holes",l_bracket_grid,True,l_bracket,True,True,True,,83.8,0.0,model
+Round knob 25mm diameter 22mm tall with an 8mm bore,handle_grid,True,handle,True,True,True,,141.59,0.0,model
+Round knob 30mm diameter 22mm tall with an 8mm bore,handle_grid,True,handle,True,True,True,,992.99,0.0,model
+Round knob 35mm diameter 22mm tall with an 8mm bore,handle_grid,True,handle,True,True,True,,522.52,0.0,model
+Aluminum CNC bracket 4 inch wide 2 inch deep 0.25 inch thick,manufacturing,True,rectangular_bracket,,True,True,,114.41,0.0,model
+Laser cut plate 100mm x 100mm 3mm thick with four M4 holes,manufacturing,True,rectangular_bracket,,True,True,,260.35,0.0,model
+Sheet metal bracket 80mm x 40mm with two M5 holes,manufacturing,True,rectangular_bracket,,True,True,,228.21,0.0,model
+Resin printed adapter plate 60mm square 5mm thick,manufacturing,True,adapter_plate,,True,True,,109.38,0.0,model

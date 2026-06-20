@@ -1,0 +1,1439 @@
+{
+  "description": "SourceCAD eval dataset (>=200 creation prompts).",
+  "creation": [
+    {
+      "prompt": "Wall-mounted bracket for a shelf, 120mm wide, 80mm deep, 6mm thick, four M5 holes",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Right-angle shelf bracket with a gusset, 100mm tall, 80mm deep, 5mm thick",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Bracket to mount a 40mm fan, 50mm square, 4mm thick, four M3 holes",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Heavy-duty steel bracket 150x90x8mm with two 10mm bolt holes, rounded corners",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Camera mounting plate 60x60x5mm with a 1/4 inch center hole",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Solar panel corner bracket 70x40x4mm with countersunk M4 holes",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Monitor arm mounting plate, 100mm square, 6mm thick, VESA 75 holes",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Bracket 80mm wide 40mm deep 5mm thick with two M6 counterbored holes for cap screws",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Electronics enclosure for an Arduino Uno, 80mm x 60mm x 30mm, 2.5mm walls",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Waterproof project box 120x80x55mm with 3mm walls and a screw-down lid",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Small sensor housing 40mm x 30mm x 20mm with 2mm walls",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Raspberry Pi case 95mm x 65mm x 30mm with 2.5mm walls and M3 corner screws",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Battery enclosure 100x70x40mm, 3mm walls, rounded corners",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Junction box 150mm wide 100mm deep 60mm tall with a lid",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Handheld remote case 70x40x18mm, 2mm walls",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Drill jig for evenly spaced 5mm holes on a 200mm rail, 6mm thick",
+      "category": "drill_jig",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drilling template 120x80x6mm with 8mm guide holes spaced 25mm and a registration lip",
+      "category": "drill_jig",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Shelf pin drilling jig, 100x40x6mm, 5mm holes spaced 32mm",
+      "category": "drill_jig",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Dowel hole jig 90x50x8mm with 8mm guide holes and an edge fence",
+      "category": "drill_jig",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Cabinet handle drilling template 160x40x6mm, two 5mm holes",
+      "category": "drill_jig",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Adapter plate from NEMA 17 to NEMA 23, 100mm square, 6mm thick, center bore 30mm",
+      "category": "adapter",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Motor adapter plate 120mm square 8mm thick with a 40mm center bore and four M6 holes",
+      "category": "adapter",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Flange adapter 90mm square, 5mm thick, 25mm center hole",
+      "category": "adapter",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Transition plate 110x110x6mm bridging two bolt patterns",
+      "category": "adapter",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "CNC aluminum adapter plate 130mm square 10mm thick, 50mm bore",
+      "category": "adapter",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Pipe clamp for a 25mm pipe, 25mm wide, 6mm thick, two M6 holes",
+      "category": "pipe_clamp",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "pipe_clamp"
+    },
+    {
+      "prompt": "Hose saddle clamp for 32mm tube, 30mm wide",
+      "category": "pipe_clamp",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "pipe_clamp"
+    },
+    {
+      "prompt": "M6 standoff spacer, 12mm outer diameter, 20mm long",
+      "category": "spacer",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "spacer"
+    },
+    {
+      "prompt": "Nylon spacer 10mm OD, 15mm long, 5mm bore",
+      "category": "spacer",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "spacer"
+    },
+    {
+      "prompt": "L-bracket 60x40x60mm, 5mm thick, with M6 mounting holes",
+      "category": "l_bracket",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "l_bracket"
+    },
+    {
+      "prompt": "Angle bracket 80mm legs, 50mm wide, 6mm thick",
+      "category": "l_bracket",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "l_bracket"
+    },
+    {
+      "prompt": "Round knob 30mm diameter, 25mm tall, 8mm shaft bore",
+      "category": "handle",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "handle"
+    },
+    {
+      "prompt": "Control knob 25mm diameter 20mm tall with a 6mm D-shaft bore",
+      "category": "handle",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "handle"
+    },
+    {
+      "prompt": "I need a bracket",
+      "category": "vague",
+      "expect": "either",
+      "dangerous": false
+    },
+    {
+      "prompt": "make me an enclosure",
+      "category": "vague",
+      "expect": "either",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "a plate with some holes",
+      "category": "vague",
+      "expect": "either",
+      "dangerous": false
+    },
+    {
+      "prompt": "something to mount a circuit board",
+      "category": "vague",
+      "expect": "either",
+      "dangerous": false
+    },
+    {
+      "prompt": "a drill guide",
+      "category": "vague",
+      "expect": "either",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "a box for electronics",
+      "category": "vague",
+      "expect": "either",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "a spacer",
+      "category": "vague",
+      "expect": "either",
+      "dangerous": false,
+      "expect_type": "spacer"
+    },
+    {
+      "prompt": "a knob",
+      "category": "vague",
+      "expect": "either",
+      "dangerous": false,
+      "expect_type": "handle"
+    },
+    {
+      "prompt": "a mount",
+      "category": "ambiguous",
+      "expect": "either",
+      "dangerous": false
+    },
+    {
+      "prompt": "a clamp",
+      "category": "ambiguous",
+      "expect": "either",
+      "dangerous": false
+    },
+    {
+      "prompt": "a holder",
+      "category": "ambiguous",
+      "expect": "either",
+      "dangerous": false
+    },
+    {
+      "prompt": "a thing to hold a pipe",
+      "category": "ambiguous",
+      "expect": "either",
+      "dangerous": false
+    },
+    {
+      "prompt": "part for my 3d printer",
+      "category": "ambiguous",
+      "expect": "either",
+      "dangerous": false
+    },
+    {
+      "prompt": "bracket 80mm wide, -5mm thick",
+      "category": "invalid",
+      "expect": "clarification",
+      "dangerous": true
+    },
+    {
+      "prompt": "bracket 80mm wide 0mm thick",
+      "category": "invalid",
+      "expect": "either",
+      "dangerous": true
+    },
+    {
+      "prompt": "enclosure 99999mm wide",
+      "category": "invalid",
+      "expect": "clarification",
+      "dangerous": true
+    },
+    {
+      "prompt": "bracket 50000mm x 40mm x 5mm",
+      "category": "invalid",
+      "expect": "clarification",
+      "dangerous": true
+    },
+    {
+      "prompt": "adapter plate 50mm square 5mm thick with an 80mm center bore",
+      "category": "invalid",
+      "expect": "clarification",
+      "dangerous": true
+    },
+    {
+      "prompt": "enclosure 30mm wide 30mm deep 20mm tall with 20mm walls",
+      "category": "invalid",
+      "expect": "clarification",
+      "dangerous": true
+    },
+    {
+      "prompt": "spacer 5mm outer diameter with a 10mm bore",
+      "category": "invalid",
+      "expect": "clarification",
+      "dangerous": true
+    },
+    {
+      "prompt": "pipe clamp, 6mm thick",
+      "category": "missing_info",
+      "expect": "clarification",
+      "dangerous": false,
+      "expect_type": "pipe_clamp"
+    },
+    {
+      "prompt": "bracket -100 x -50 x -5",
+      "category": "invalid",
+      "expect": "clarification",
+      "dangerous": true
+    },
+    {
+      "prompt": "enclosure with negative wall thickness -2mm",
+      "category": "invalid",
+      "expect": "either",
+      "dangerous": true
+    },
+    {
+      "prompt": "GoPro mounting bracket 50mm wide 30mm deep 4mm thick with two M3 holes",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Bracket to hang a router on the wall, 90mm wide 60mm deep 5mm thick, four M5 holes",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Speaker mounting plate 80mm square 5mm thick with four M4 countersunk holes",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "LED strip channel bracket 100x25x4mm with two M3 holes",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Enclosure for a buck converter, 55mm x 35mm x 22mm, 2mm walls",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Outdoor sensor enclosure 90x70x45mm, 3mm walls, rounded corners",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "3-gang enclosure 180mm x 120mm x 50mm with a screw lid",
+      "category": "enclosure",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Drill jig for a 19mm hole pattern, 100x60x6mm, four 5mm guide holes",
+      "category": "drill_jig",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "European hinge boring jig 100x50x8mm with 35mm and 8mm guide holes",
+      "category": "drill_jig",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Adapter plate to mount a stepper to extrusion, 80mm square 6mm thick, 22mm bore",
+      "category": "adapter",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Hub adapter plate 100mm square 8mm thick with a 50mm center bore",
+      "category": "adapter",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Standoff 6mm OD 30mm long with a 3mm bore",
+      "category": "spacer",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "spacer"
+    },
+    {
+      "prompt": "Clamp for a 50mm exhaust pipe, 35mm wide, 8mm thick, two M8 holes",
+      "category": "pipe_clamp",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "pipe_clamp"
+    },
+    {
+      "prompt": "L-bracket 100mm x 70mm legs, 60mm wide, 8mm thick",
+      "category": "l_bracket",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "l_bracket"
+    },
+    {
+      "prompt": "Knurled knob 40mm diameter 30mm tall with a 10mm bore",
+      "category": "handle",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "handle"
+    },
+    {
+      "prompt": "Tablet stand bracket 120mm wide 80mm deep 6mm thick with rounded corners",
+      "category": "bracket",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Mounting bracket 60mm wide 40mm deep 4mm thick",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 60mm wide 40mm deep 4mm thick with two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 60mm wide 40mm deep 4mm thick with four M4 countersunk holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 60mm wide 40mm deep 4mm thick with two M5 counterbored holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 60mm wide 40mm deep 4mm thick with rounded corners",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 60mm wide 40mm deep 4mm thick with a gusset and two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 80mm wide 50mm deep 5mm thick",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 80mm wide 50mm deep 5mm thick with two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 80mm wide 50mm deep 5mm thick with four M4 countersunk holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 80mm wide 50mm deep 5mm thick with two M5 counterbored holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 80mm wide 50mm deep 5mm thick with rounded corners",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 80mm wide 50mm deep 5mm thick with a gusset and two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 100mm wide 60mm deep 6mm thick",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 100mm wide 60mm deep 6mm thick with two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 100mm wide 60mm deep 6mm thick with four M4 countersunk holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 100mm wide 60mm deep 6mm thick with two M5 counterbored holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 100mm wide 60mm deep 6mm thick with rounded corners",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 100mm wide 60mm deep 6mm thick with a gusset and two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 120mm wide 80mm deep 8mm thick",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 120mm wide 80mm deep 8mm thick with two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 120mm wide 80mm deep 8mm thick with four M4 countersunk holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 120mm wide 80mm deep 8mm thick with two M5 counterbored holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 120mm wide 80mm deep 8mm thick with rounded corners",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 120mm wide 80mm deep 8mm thick with a gusset and two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 50mm wide 50mm deep 3mm thick",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 50mm wide 50mm deep 3mm thick with two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 50mm wide 50mm deep 3mm thick with four M4 countersunk holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 50mm wide 50mm deep 3mm thick with two M5 counterbored holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 50mm wide 50mm deep 3mm thick with rounded corners",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 50mm wide 50mm deep 3mm thick with a gusset and two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 90mm wide 45mm deep 5mm thick",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 90mm wide 45mm deep 5mm thick with two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 90mm wide 45mm deep 5mm thick with four M4 countersunk holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 90mm wide 45mm deep 5mm thick with two M5 counterbored holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 90mm wide 45mm deep 5mm thick with rounded corners",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 90mm wide 45mm deep 5mm thick with a gusset and two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 140mm wide 70mm deep 6mm thick",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 140mm wide 70mm deep 6mm thick with two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 140mm wide 70mm deep 6mm thick with four M4 countersunk holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 140mm wide 70mm deep 6mm thick with two M5 counterbored holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 140mm wide 70mm deep 6mm thick with rounded corners",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Mounting bracket 140mm wide 70mm deep 6mm thick with a gusset and two M6 holes",
+      "category": "bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "rectangular_bracket"
+    },
+    {
+      "prompt": "Electronics enclosure 60mm wide 40mm deep 25mm tall with 2mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 60mm wide 40mm deep 25mm tall with 2.5mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 60mm wide 40mm deep 25mm tall with 3mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 60mm wide 40mm deep 25mm tall with 2mm walls and M3 corner screws",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 80mm wide 60mm deep 35mm tall with 2mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 80mm wide 60mm deep 35mm tall with 2.5mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 80mm wide 60mm deep 35mm tall with 3mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 80mm wide 60mm deep 35mm tall with 2mm walls and M3 corner screws",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 100mm wide 70mm deep 40mm tall with 2mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 100mm wide 70mm deep 40mm tall with 2.5mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 100mm wide 70mm deep 40mm tall with 3mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 100mm wide 70mm deep 40mm tall with 2mm walls and M3 corner screws",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 120mm wide 90mm deep 50mm tall with 2mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 120mm wide 90mm deep 50mm tall with 2.5mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 120mm wide 90mm deep 50mm tall with 3mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 120mm wide 90mm deep 50mm tall with 2mm walls and M3 corner screws",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 50mm wide 50mm deep 30mm tall with 2mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 50mm wide 50mm deep 30mm tall with 2.5mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 50mm wide 50mm deep 30mm tall with 3mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 50mm wide 50mm deep 30mm tall with 2mm walls and M3 corner screws",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 140mm wide 100mm deep 60mm tall with 2mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 140mm wide 100mm deep 60mm tall with 2.5mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 140mm wide 100mm deep 60mm tall with 3mm walls",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Electronics enclosure 140mm wide 100mm deep 60mm tall with 2mm walls and M3 corner screws",
+      "category": "enclosure_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "enclosure"
+    },
+    {
+      "prompt": "Drill jig plate 80mm by 50mm 6mm thick with 5mm guide holes spaced 20mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 80mm by 50mm 6mm thick with 6mm guide holes spaced 25mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 80mm by 50mm 6mm thick with 8mm holes spaced 30mm and a lip",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 80mm by 50mm 6mm thick with 4mm guide holes spaced 15mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 100mm by 60mm 6mm thick with 5mm guide holes spaced 20mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 100mm by 60mm 6mm thick with 6mm guide holes spaced 25mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 100mm by 60mm 6mm thick with 8mm holes spaced 30mm and a lip",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 100mm by 60mm 6mm thick with 4mm guide holes spaced 15mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 120mm by 80mm 8mm thick with 5mm guide holes spaced 20mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 120mm by 80mm 8mm thick with 6mm guide holes spaced 25mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 120mm by 80mm 8mm thick with 8mm holes spaced 30mm and a lip",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 120mm by 80mm 8mm thick with 4mm guide holes spaced 15mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 150mm by 60mm 6mm thick with 5mm guide holes spaced 20mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 150mm by 60mm 6mm thick with 6mm guide holes spaced 25mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 150mm by 60mm 6mm thick with 8mm holes spaced 30mm and a lip",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 150mm by 60mm 6mm thick with 4mm guide holes spaced 15mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 90mm by 50mm 8mm thick with 5mm guide holes spaced 20mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 90mm by 50mm 8mm thick with 6mm guide holes spaced 25mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 90mm by 50mm 8mm thick with 8mm holes spaced 30mm and a lip",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 90mm by 50mm 8mm thick with 4mm guide holes spaced 15mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 200mm by 60mm 6mm thick with 5mm guide holes spaced 20mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 200mm by 60mm 6mm thick with 6mm guide holes spaced 25mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 200mm by 60mm 6mm thick with 8mm holes spaced 30mm and a lip",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Drill jig plate 200mm by 60mm 6mm thick with 4mm guide holes spaced 15mm",
+      "category": "drill_jig_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "drill_jig"
+    },
+    {
+      "prompt": "Adapter plate 80mm square 5mm thick with a 25mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 80mm square 5mm thick with a 30mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 80mm square 5mm thick with a 40mm center bore and four M6 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 80mm square 5mm thick with a no center bore and four M5 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 100mm square 6mm thick with a 25mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 100mm square 6mm thick with a 30mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 100mm square 6mm thick with a 40mm center bore and four M6 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 100mm square 6mm thick with a no center bore and four M5 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 120mm square 8mm thick with a 25mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 120mm square 8mm thick with a 30mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 120mm square 8mm thick with a 40mm center bore and four M6 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 120mm square 8mm thick with a no center bore and four M5 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 90mm square 6mm thick with a 25mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 90mm square 6mm thick with a 30mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 90mm square 6mm thick with a 40mm center bore and four M6 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 90mm square 6mm thick with a no center bore and four M5 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 110mm square 8mm thick with a 25mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 110mm square 8mm thick with a 30mm center bore",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 110mm square 8mm thick with a 40mm center bore and four M6 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "Adapter plate 110mm square 8mm thick with a no center bore and four M5 holes",
+      "category": "adapter_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "adapter_plate"
+    },
+    {
+      "prompt": "M6 standoff spacer 10mm outer diameter 15mm long",
+      "category": "spacer_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "spacer"
+    },
+    {
+      "prompt": "M6 standoff spacer 12mm outer diameter 20mm long",
+      "category": "spacer_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "spacer"
+    },
+    {
+      "prompt": "M6 standoff spacer 8mm outer diameter 12mm long",
+      "category": "spacer_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "spacer"
+    },
+    {
+      "prompt": "M6 standoff spacer 16mm outer diameter 25mm long",
+      "category": "spacer_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "spacer"
+    },
+    {
+      "prompt": "Pipe clamp for a 20mm pipe, 25mm wide, two M6 holes",
+      "category": "pipe_clamp_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "pipe_clamp"
+    },
+    {
+      "prompt": "Pipe clamp for a 25mm pipe, 25mm wide, two M6 holes",
+      "category": "pipe_clamp_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "pipe_clamp"
+    },
+    {
+      "prompt": "Pipe clamp for a 32mm pipe, 25mm wide, two M6 holes",
+      "category": "pipe_clamp_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "pipe_clamp"
+    },
+    {
+      "prompt": "Pipe clamp for a 40mm pipe, 25mm wide, two M6 holes",
+      "category": "pipe_clamp_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "pipe_clamp"
+    },
+    {
+      "prompt": "L-bracket 40mm legs, 40mm wide, 5mm thick with M6 holes",
+      "category": "l_bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "l_bracket"
+    },
+    {
+      "prompt": "L-bracket 60mm legs, 40mm wide, 5mm thick with M6 holes",
+      "category": "l_bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "l_bracket"
+    },
+    {
+      "prompt": "L-bracket 80mm legs, 40mm wide, 5mm thick with M6 holes",
+      "category": "l_bracket_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "l_bracket"
+    },
+    {
+      "prompt": "Round knob 25mm diameter 22mm tall with an 8mm bore",
+      "category": "handle_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "handle"
+    },
+    {
+      "prompt": "Round knob 30mm diameter 22mm tall with an 8mm bore",
+      "category": "handle_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "handle"
+    },
+    {
+      "prompt": "Round knob 35mm diameter 22mm tall with an 8mm bore",
+      "category": "handle_grid",
+      "expect": "model",
+      "dangerous": false,
+      "expect_type": "handle"
+    },
+    {
+      "prompt": "Aluminum CNC bracket 4 inch wide 2 inch deep 0.25 inch thick",
+      "category": "manufacturing",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Laser cut plate 100mm x 100mm 3mm thick with four M4 holes",
+      "category": "manufacturing",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Sheet metal bracket 80mm x 40mm with two M5 holes",
+      "category": "manufacturing",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Resin printed adapter plate 60mm square 5mm thick",
+      "category": "manufacturing",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "3D printed enclosure 90mm x 60mm x 40mm with 2mm walls",
+      "category": "manufacturing",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Machined aluminum adapter plate 5 inch square 0.5 inch thick",
+      "category": "manufacturing",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "CNC milled mounting bracket 3 inch wide 2 inch deep 6mm thick",
+      "category": "manufacturing",
+      "expect": "model",
+      "dangerous": false
+    },
+    {
+      "prompt": "Laser cut drill jig 120mm x 80mm 4mm thick with 5mm holes spaced 20mm",
+      "category": "manufacturing",
+      "expect": "model",
+      "dangerous": false
+    }
+  ],
+  "modification": [
+    {
+      "prompt": "make it wider",
+      "base": "bracket 80x40x5mm with two M6 holes",
+      "expect": "model"
+    },
+    {
+      "prompt": "make it 120mm wide",
+      "base": "bracket 80x40x5mm with two M6 holes",
+      "expect": "model"
+    },
+    {
+      "prompt": "make it taller",
+      "base": "enclosure 100x60x40mm",
+      "expect": "model"
+    },
+    {
+      "prompt": "move the holes farther apart",
+      "base": "bracket 80x40x5mm with two M6 holes",
+      "expect": "model"
+    },
+    {
+      "prompt": "make the wall thickness 4 mm",
+      "base": "enclosure 100x60x40mm with 2.5mm walls",
+      "expect": "model"
+    },
+    {
+      "prompt": "add rounded edges",
+      "base": "bracket 80x40x5mm",
+      "expect": "model"
+    },
+    {
+      "prompt": "chamfer the edges 2mm",
+      "base": "adapter plate 100mm square 6mm thick",
+      "expect": "model"
+    },
+    {
+      "prompt": "make it bigger",
+      "base": "bracket 80x40x5mm",
+      "expect": "model"
+    },
+    {
+      "prompt": "switch to aluminum",
+      "base": "bracket 80x40x5mm",
+      "expect": "model"
+    },
+    {
+      "prompt": "make it fly to the moon",
+      "base": "bracket 80x40x5mm",
+      "expect": "clarification"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "description": "Plain-English -> CAD eval prompts. Run offline (mock/deterministic) or live (openai) via scripts.run_cad_evals. The pytest tests/test_plain_english_cad.py asserts the detailed geometry.",
+  "prompts": [
+    {
+      "id": "plate",
+      "prompt": "Create a rectangular mounting plate 120mm long, 80mm wide, 8mm thick, with four M6 clearance holes 10mm from each corner and 3mm rounded edges.",
+      "expect": {"bbox_mm": {"x": 120, "y": 80, "z": 8}, "hole_count": 4, "through_hole_count": 4, "must_have": ["plate", "fillet", "hole"], "forbid_template": true}
+    },
+    {
+      "id": "nema",
+      "prompt": "Create a motor mounting plate for a NEMA 17 stepper motor, 70mm square, 5mm thick, with a 22mm center bore and four M3 clearance holes on a 31mm square bolt pattern.",
+      "expect": {"bbox_mm": {"x": 70, "y": 70, "z": 5}, "hole_count": 5, "must_have": ["plate", "hole", "hole_pattern_rect"], "forbid_template": true}
+    },
+    {
+      "id": "flange",
+      "prompt": "Create a blind flange, 150mm outer diameter, 18mm thick, with 8 M10 clearance holes on a 120mm PCD and no center bore.",
+      "expect": {"bbox_mm": {"x": 150, "y": 150, "z": 18}, "hole_count": 8, "through_hole_count": 8, "must_have": ["circular_flange"], "forbid_template": true, "note": "must be circular, not a rectangular plate; no center bore"}
+    },
+    {
+      "id": "spool",
+      "prompt": "Create a straight pipe spool 200mm long, 80mm pipe outer diameter, 60mm bore, with circular flanges on both ends. Each flange is 120mm OD, 12mm thick, with 8 M8 holes on a 100mm PCD.",
+      "expect": {"hole_count": 16, "must_have": ["pipe_spool"], "forbid_template": true, "note": "straight spool with a flange on each end, NOT a tee"}
+    },
+    {
+      "id": "tee",
+      "prompt": "Create a T pipe fitting with a 75mm main pipe, 50mm branch pipe, 5mm wall thickness, and circular flanges on all three ends.",
+      "expect": {"must_have": ["pipe", "circular_flange"], "min_pipes": 2, "flanges": 3, "forbid_template": true}
+    },
+    {
+      "id": "vise",
+      "prompt": "Create a small vise jaw 100mm long, 30mm tall, 20mm thick, with two M6 mounting holes and a 90 degree V groove along the top.",
+      "expect": {"bbox_mm": {"x": 100, "y": 20, "z": 30}, "hole_count": 2, "must_have": ["box", "hole", "v_groove"], "forbid_template": true}
+    },
+    {
+      "id": "ubracket",
+      "prompt": "Create a U-shaped bracket, 80mm wide, 60mm tall, 6mm thick, with two M6 holes on the base and one 8mm pivot hole through each side wall.",
+      "expect": {"hole_count": 4, "must_have": ["plate", "rectangular_wall", "hole"], "forbid_template": true, "note": "base + two side walls, not an enclosure"}
+    },
+    {
+      "id": "bearing",
+      "prompt": "Create a bearing block for a 20mm shaft with a 90mm by 45mm by 12mm base, a raised cylindrical boss 45mm OD and 30mm tall, a 20mm through bore, and four M6 mounting holes.",
+      "expect": {"hole_count": 5, "must_have": ["plate", "boss", "hole"], "forbid_template": true, "note": "must build (no schema string-length crash)"}
+    },
+    {
+      "id": "lbracket",
+      "prompt": "Create an L bracket with a 100mm by 60mm base plate, 8mm thick, and a vertical support wall centered on the base, 60mm tall and 8mm thick. Add four M6 holes in the base.",
+      "expect": {"hole_count": 4, "must_have": ["plate", "rectangular_wall", "hole"], "forbid_template": true}
+    },
+    {
+      "id": "hinge",
+      "prompt": "Create a hinge bracket with a 70mm by 40mm by 6mm base and two side ears, each 30mm tall and 6mm thick, with an 8mm pin hole through both ears.",
+      "expect": {"hole_count": 1, "must_have": ["plate", "rectangular_wall", "hole"], "forbid_template": true, "note": "two ears + coaxial pin hole, not a flat plate"}
+    }
+  ]
+}

@@ -1,0 +1,406 @@
+{
+  "passed": 0,
+  "total": 50,
+  "rows": [
+    {
+      "prompt": "a simple bearing housing for a 8mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a simple bearing housing for a 10mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a simple bearing housing for a 12mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a simple bearing housing for a 15mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a simple bearing housing for a 16mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a simple bearing housing for a 20mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a simple bearing housing for a 25mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a simple bearing housing for a 30mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a simple bearing housing for a 35mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 60mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 60mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 60mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 60mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 80mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 80mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 80mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 80mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 100mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 100mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 100mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 100mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 120mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 120mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 120mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 120mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 140mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 140mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 140mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 140mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 160mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 160mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 160mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 160mm bolt circle",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal gear with a 5mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal spacer with a 5mm through hole",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal gear with a 6mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal spacer with a 6mm through hole",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal gear with a 8mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal spacer with a 8mm through hole",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal gear with a 10mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal spacer with a 10mm through hole",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal gear with a 12mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal spacer with a 12mm through hole",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal gear with a 16mm shaft",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a hexagonal spacer with a 16mm through hole",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 5mm bore",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 6mm bore",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 8mm bore",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 10mm bore",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 12mm bore",
+      "ok": false,
+      "problems": [
+        "compiler failed: none"
+      ],
+      "route": "cadquery_program"
+    }
+  ]
+}

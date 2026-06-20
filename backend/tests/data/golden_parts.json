@@ -1,0 +1,130 @@
+{
+  "_comment": "Golden dimensional benchmark. Each part is an explicit, hand-authored CadPlan with known dimensions. The test compiles it deterministically (no LLM), measures the real BRep + mesh geometry, and FAILS if any measured dimension drifts outside the central tolerance policy (app.cad.tolerance) or if printability regresses. expected.volume_mm3 is the kernel-exact volume; volume_tol_frac guards against geometry changes.",
+  "parts": [
+    {
+      "name": "rectangular_plate_4_holes",
+      "plan": {
+        "object_type": "mounting_plate",
+        "name": "rectangular plate with four holes",
+        "features": [
+          {"id": "base", "kind": "plate", "params": {"width": 100, "depth": 60, "thickness": 6}},
+          {"id": "holes", "kind": "hole_pattern_rect", "op": "cut",
+           "params": {"diameter": 6.6, "nx": 2, "ny": 2, "spacing_x": 70, "spacing_y": 30}}
+        ],
+        "expected": {"bbox_mm": {"x": 100, "y": 60, "z": 6}, "hole_count": 4, "through_hole_count": 4}
+      },
+      "expected": {
+        "bbox_mm": {"x": 100, "y": 60, "z": 6},
+        "hole_count": 4, "through_hole_count": 4,
+        "volume_mm3": 35178.9, "volume_tol_frac": 0.02,
+        "watertight": true, "max_components": 1, "printable": true
+      }
+    },
+    {
+      "name": "l_bracket",
+      "plan": {
+        "object_type": "l_bracket_fg",
+        "name": "L bracket",
+        "features": [
+          {"id": "base", "kind": "plate", "params": {"width": 80, "depth": 60, "thickness": 6}},
+          {"id": "wall", "kind": "rectangular_wall", "params": {"width": 80, "depth": 6, "height": 60}, "at": [0, -27, 0]}
+        ],
+        "expected": {"bbox_mm": {"x": 80, "y": 60, "z": 60}}
+      },
+      "expected": {
+        "bbox_mm": {"x": 80, "y": 60, "z": 60},
+        "volume_mm3": 54720.0, "volume_tol_frac": 0.02,
+        "watertight": true, "max_components": 1, "printable": true
+      }
+    },
+    {
+      "name": "simple_enclosure",
+      "plan": {
+        "object_type": "electronics_enclosure",
+        "name": "simple enclosure",
+        "features": [
+          {"id": "body", "kind": "box", "params": {"width": 80, "depth": 50, "height": 30}},
+          {"id": "hollow", "kind": "shell", "params": {"thickness": 2}, "description": "top"}
+        ],
+        "expected": {"bbox_mm": {"x": 80, "y": 50, "z": 30}}
+      },
+      "expected": {
+        "bbox_mm": {"x": 80, "y": 50, "z": 30},
+        "volume_mm3": 22112.0, "volume_tol_frac": 0.02,
+        "watertight": true, "max_components": 1, "printable": true
+      }
+    },
+    {
+      "name": "pipe_flange",
+      "plan": {
+        "object_type": "flange",
+        "name": "pipe flange",
+        "features": [
+          {"id": "flange", "kind": "circular_flange",
+           "params": {"od": 100, "thickness": 12, "pcd": 80, "bolt_count": 6, "bolt_diameter": 9, "bore": 50}}
+        ],
+        "expected": {"bbox_mm": {"x": 100, "y": 100, "z": 12}, "hole_count": 6, "through_hole_count": 7}
+      },
+      "expected": {
+        "bbox_mm": {"x": 100, "y": 100, "z": 12},
+        "hole_count": 6, "through_hole_count": 7,
+        "volume_mm3": 66105.4, "volume_tol_frac": 0.02,
+        "watertight": true, "max_components": 1, "printable": true
+      }
+    },
+    {
+      "name": "spur_gear_blank",
+      "plan": {
+        "object_type": "simple_gear_or_pulley",
+        "name": "spur gear blank (teeth not modeled)",
+        "features": [
+          {"id": "blank", "kind": "cylinder", "params": {"diameter": 60, "height": 10}},
+          {"id": "bore", "kind": "hole", "op": "cut", "params": {"diameter": 10}, "through": true, "at": [0, 0, 0]}
+        ],
+        "expected": {"bbox_mm": {"x": 60, "y": 60, "z": 10}, "hole_count": 1, "through_hole_count": 1}
+      },
+      "expected": {
+        "bbox_mm": {"x": 60, "y": 60, "z": 10},
+        "hole_count": 1, "through_hole_count": 1,
+        "volume_mm3": 27488.9, "volume_tol_frac": 0.02,
+        "watertight": true, "max_components": 1, "printable": true
+      }
+    },
+    {
+      "name": "phone_stand",
+      "plan": {
+        "object_type": "phone_stand",
+        "name": "phone stand (axis-aligned cradle; lean angle not modeled)",
+        "features": [
+          {"id": "base", "kind": "plate", "params": {"width": 80, "depth": 80, "thickness": 5}},
+          {"id": "back", "kind": "rectangular_wall", "params": {"width": 80, "depth": 6, "height": 70}, "at": [0, -37, 0]},
+          {"id": "lip", "kind": "rectangular_wall", "params": {"width": 80, "depth": 6, "height": 15}, "at": [0, 34, 0]}
+        ],
+        "expected": {"bbox_mm": {"x": 80, "y": 80, "z": 70}}
+      },
+      "expected": {
+        "bbox_mm": {"x": 80, "y": 80, "z": 70},
+        "volume_mm3": 68000.0, "volume_tol_frac": 0.02,
+        "watertight": true, "max_components": 1, "printable": true
+      }
+    },
+    {
+      "name": "spacer_standoff",
+      "plan": {
+        "object_type": "spacer",
+        "name": "round standoff / spacer",
+        "features": [
+          {"id": "body", "kind": "cylinder", "params": {"diameter": 10, "height": 20}},
+          {"id": "bore", "kind": "hole", "op": "cut", "params": {"diameter": 4.2}, "through": true, "at": [0, 0, 0]}
+        ],
+        "expected": {"bbox_mm": {"x": 10, "y": 10, "z": 20}, "hole_count": 1, "through_hole_count": 1}
+      },
+      "expected": {
+        "bbox_mm": {"x": 10, "y": 10, "z": 20},
+        "hole_count": 1, "through_hole_count": 1,
+        "volume_mm3": 1293.7, "volume_tol_frac": 0.02,
+        "watertight": true, "max_components": 1, "printable": true
+      }
+    }
+  ]
+}

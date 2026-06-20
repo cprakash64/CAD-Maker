@@ -1,0 +1,2970 @@
+{
+  "prompts": [
+    {
+      "prompt": "a simple bearing housing for a 8mm shaft",
+      "expected_object_family": "bearing_housing",
+      "required_features": [
+        "shaft_bore",
+        "base"
+      ],
+      "forbidden_failure_modes": [
+        "random_primitives"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a simple bearing housing for a 10mm shaft",
+      "expected_object_family": "bearing_housing",
+      "required_features": [
+        "shaft_bore",
+        "base"
+      ],
+      "forbidden_failure_modes": [
+        "random_primitives"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a simple bearing housing for a 12mm shaft",
+      "expected_object_family": "bearing_housing",
+      "required_features": [
+        "shaft_bore",
+        "base"
+      ],
+      "forbidden_failure_modes": [
+        "random_primitives"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a simple bearing housing for a 15mm shaft",
+      "expected_object_family": "bearing_housing",
+      "required_features": [
+        "shaft_bore",
+        "base"
+      ],
+      "forbidden_failure_modes": [
+        "random_primitives"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 15,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a simple bearing housing for a 16mm shaft",
+      "expected_object_family": "bearing_housing",
+      "required_features": [
+        "shaft_bore",
+        "base"
+      ],
+      "forbidden_failure_modes": [
+        "random_primitives"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a simple bearing housing for a 20mm shaft",
+      "expected_object_family": "bearing_housing",
+      "required_features": [
+        "shaft_bore",
+        "base"
+      ],
+      "forbidden_failure_modes": [
+        "random_primitives"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 20,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a simple bearing housing for a 25mm shaft",
+      "expected_object_family": "bearing_housing",
+      "required_features": [
+        "shaft_bore",
+        "base"
+      ],
+      "forbidden_failure_modes": [
+        "random_primitives"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 25,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a simple bearing housing for a 30mm shaft",
+      "expected_object_family": "bearing_housing",
+      "required_features": [
+        "shaft_bore",
+        "base"
+      ],
+      "forbidden_failure_modes": [
+        "random_primitives"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 30,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a simple bearing housing for a 35mm shaft",
+      "expected_object_family": "bearing_housing",
+      "required_features": [
+        "shaft_bore",
+        "base"
+      ],
+      "forbidden_failure_modes": [
+        "random_primitives"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 35,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 60mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 4,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 60mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 6,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 60mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 8,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 60mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 12,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 80mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 4,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 80mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 6,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 80mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 8,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 80mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 12,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 100mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 4,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 100mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 6,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 100mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 8,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 100mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 12,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 120mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 4,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 120mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 6,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 120mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 8,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 120mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 12,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 140mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 4,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 140mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 6,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 140mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 8,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 140mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 12,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 4 holes on a 160mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 4,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 6 holes on a 160mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 6,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 8 holes on a 160mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 8,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a flange plate with 12 holes on a 160mm bolt circle",
+      "expected_object_family": "flange_plate",
+      "required_features": [
+        "bolt_circle",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "missing_hole_pattern"
+      ],
+      "expected_hole_count": 12,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal gear with a 5mm shaft",
+      "expected_object_family": "hexagonal_gear",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "plain_pulley"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal spacer with a 5mm through hole",
+      "expected_object_family": "hex_spacer",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "round_outer"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal gear with a 6mm shaft",
+      "expected_object_family": "hexagonal_gear",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "plain_pulley"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal spacer with a 6mm through hole",
+      "expected_object_family": "hex_spacer",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "round_outer"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal gear with a 8mm shaft",
+      "expected_object_family": "hexagonal_gear",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "plain_pulley"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal spacer with a 8mm through hole",
+      "expected_object_family": "hex_spacer",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "round_outer"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal gear with a 10mm shaft",
+      "expected_object_family": "hexagonal_gear",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "plain_pulley"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal spacer with a 10mm through hole",
+      "expected_object_family": "hex_spacer",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "round_outer"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal gear with a 12mm shaft",
+      "expected_object_family": "hexagonal_gear",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "plain_pulley"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal spacer with a 12mm through hole",
+      "expected_object_family": "hex_spacer",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "round_outer"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal gear with a 16mm shaft",
+      "expected_object_family": "hexagonal_gear",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk",
+        "plain_pulley"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a hexagonal spacer with a 16mm through hole",
+      "expected_object_family": "hex_spacer",
+      "required_features": [
+        "hex_profile",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "round_outer"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 5mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 6mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 8mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 10mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 12 teeth and a 12mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 16 teeth and a 5mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 16 teeth and a 6mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 16 teeth and a 8mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 16 teeth and a 10mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 16 teeth and a 12mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 18 teeth and a 5mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 18 teeth and a 6mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 18 teeth and a 8mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 18 teeth and a 10mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 18 teeth and a 12mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 20 teeth and a 5mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 20 teeth and a 6mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 20 teeth and a 8mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 20 teeth and a 10mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 20 teeth and a 12mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 24 teeth and a 5mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 24 teeth and a 6mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 24 teeth and a 8mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 24 teeth and a 10mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 24 teeth and a 12mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 28 teeth and a 5mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 28 teeth and a 6mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 28 teeth and a 8mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 28 teeth and a 10mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 28 teeth and a 12mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 32 teeth and a 5mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 32 teeth and a 6mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 32 teeth and a 8mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 32 teeth and a 10mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 32 teeth and a 12mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 40 teeth and a 5mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 5,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 40 teeth and a 6mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 40 teeth and a 8mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 40 teeth and a 10mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spur gear with 40 teeth and a 12mm bore",
+      "expected_object_family": "spur_gear",
+      "required_features": [
+        "teeth",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "plain_disk"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 6mm shaft hole and 30mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 8mm shaft hole and 30mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 10mm shaft hole and 30mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 12mm shaft hole and 30mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 16mm shaft hole and 30mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 6mm shaft hole and 40mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 8mm shaft hole and 40mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 10mm shaft hole and 40mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 12mm shaft hole and 40mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 16mm shaft hole and 40mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 6mm shaft hole and 50mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 8mm shaft hole and 50mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 10mm shaft hole and 50mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 12mm shaft hole and 50mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 16mm shaft hole and 50mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 6mm shaft hole and 60mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 8mm shaft hole and 60mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 10mm shaft hole and 60mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 12mm shaft hole and 60mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 16mm shaft hole and 60mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 6mm shaft hole and 70mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 8mm shaft hole and 70mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 10mm shaft hole and 70mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 12mm shaft hole and 70mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 16mm shaft hole and 70mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 6mm shaft hole and 80mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 8mm shaft hole and 80mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 10mm shaft hole and 80mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 12mm shaft hole and 80mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 16mm shaft hole and 80mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 6mm shaft hole and 100mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 6,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 8mm shaft hole and 100mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 10mm shaft hole and 100mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 12mm shaft hole and 100mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pulley with a 16mm shaft hole and 100mm outer diameter",
+      "expected_object_family": "pulley",
+      "required_features": [
+        "vee_groove",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [
+        "toothed"
+      ],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a shaft collar for a 8mm shaft with an M6 clamp screw",
+      "expected_object_family": "shaft_collar",
+      "required_features": [
+        "bore",
+        "clamp_slit",
+        "clamp_screw"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": 8,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a shaft collar for a 10mm shaft with an M6 clamp screw",
+      "expected_object_family": "shaft_collar",
+      "required_features": [
+        "bore",
+        "clamp_slit",
+        "clamp_screw"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": 10,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a shaft collar for a 12mm shaft with an M6 clamp screw",
+      "expected_object_family": "shaft_collar",
+      "required_features": [
+        "bore",
+        "clamp_slit",
+        "clamp_screw"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": 12,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a shaft collar for a 15mm shaft with an M6 clamp screw",
+      "expected_object_family": "shaft_collar",
+      "required_features": [
+        "bore",
+        "clamp_slit",
+        "clamp_screw"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": 15,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a shaft collar for a 16mm shaft with an M6 clamp screw",
+      "expected_object_family": "shaft_collar",
+      "required_features": [
+        "bore",
+        "clamp_slit",
+        "clamp_screw"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": 16,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a shaft collar for a 20mm shaft with an M6 clamp screw",
+      "expected_object_family": "shaft_collar",
+      "required_features": [
+        "bore",
+        "clamp_slit",
+        "clamp_screw"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": 20,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a shaft collar for a 25mm shaft with an M6 clamp screw",
+      "expected_object_family": "shaft_collar",
+      "required_features": [
+        "bore",
+        "clamp_slit",
+        "clamp_screw"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": 25,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a shaft collar for a 30mm shaft with an M6 clamp screw",
+      "expected_object_family": "shaft_collar",
+      "required_features": [
+        "bore",
+        "clamp_slit",
+        "clamp_screw"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": 30,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a rectangular block with a stepped slot and two counterbored holes",
+      "expected_object_family": "block_with_slot",
+      "required_features": [
+        "stepped_slot",
+        "counterbore"
+      ],
+      "forbidden_failure_modes": [
+        "disconnected_bodies",
+        "floating_holes"
+      ],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a rectangular block with a stepped slot and two counterbored holes",
+      "expected_object_family": "block_with_slot",
+      "required_features": [
+        "stepped_slot",
+        "counterbore"
+      ],
+      "forbidden_failure_modes": [
+        "disconnected_bodies",
+        "floating_holes"
+      ],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a rectangular block with a stepped slot and two counterbored holes",
+      "expected_object_family": "block_with_slot",
+      "required_features": [
+        "stepped_slot",
+        "counterbore"
+      ],
+      "forbidden_failure_modes": [
+        "disconnected_bodies",
+        "floating_holes"
+      ],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a rectangular block with a stepped slot and two counterbored holes",
+      "expected_object_family": "block_with_slot",
+      "required_features": [
+        "stepped_slot",
+        "counterbore"
+      ],
+      "forbidden_failure_modes": [
+        "disconnected_bodies",
+        "floating_holes"
+      ],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a rectangular block with a stepped slot and two counterbored holes",
+      "expected_object_family": "block_with_slot",
+      "required_features": [
+        "stepped_slot",
+        "counterbore"
+      ],
+      "forbidden_failure_modes": [
+        "disconnected_bodies",
+        "floating_holes"
+      ],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a rectangular block with a stepped slot and two counterbored holes",
+      "expected_object_family": "block_with_slot",
+      "required_features": [
+        "stepped_slot",
+        "counterbore"
+      ],
+      "forbidden_failure_modes": [
+        "disconnected_bodies",
+        "floating_holes"
+      ],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a rectangular block with a stepped slot and two counterbored holes",
+      "expected_object_family": "block_with_slot",
+      "required_features": [
+        "stepped_slot",
+        "counterbore"
+      ],
+      "forbidden_failure_modes": [
+        "disconnected_bodies",
+        "floating_holes"
+      ],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a rectangular block with a stepped slot and two counterbored holes",
+      "expected_object_family": "block_with_slot",
+      "required_features": [
+        "stepped_slot",
+        "counterbore"
+      ],
+      "forbidden_failure_modes": [
+        "disconnected_bodies",
+        "floating_holes"
+      ],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 90 degree pipe elbow with circular flanges for a 32mm pipe",
+      "expected_object_family": "pipe_elbow",
+      "required_features": [
+        "flanges",
+        "bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 90 degree pipe elbow with circular flanges for a 40mm pipe",
+      "expected_object_family": "pipe_elbow",
+      "required_features": [
+        "flanges",
+        "bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 90 degree pipe elbow with circular flanges for a 50mm pipe",
+      "expected_object_family": "pipe_elbow",
+      "required_features": [
+        "flanges",
+        "bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 90 degree pipe elbow with circular flanges for a 60mm pipe",
+      "expected_object_family": "pipe_elbow",
+      "required_features": [
+        "flanges",
+        "bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 90 degree pipe elbow with circular flanges for a 80mm pipe",
+      "expected_object_family": "pipe_elbow",
+      "required_features": [
+        "flanges",
+        "bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 90 degree pipe elbow with circular flanges for a 100mm pipe",
+      "expected_object_family": "pipe_elbow",
+      "required_features": [
+        "flanges",
+        "bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a small vise jaw with two mounting holes and a V groove",
+      "expected_object_family": "vise_jaw",
+      "required_features": [
+        "v_groove",
+        "mounting_holes"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a small vise jaw with two mounting holes and a V groove",
+      "expected_object_family": "vise_jaw",
+      "required_features": [
+        "v_groove",
+        "mounting_holes"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a small vise jaw with two mounting holes and a V groove",
+      "expected_object_family": "vise_jaw",
+      "required_features": [
+        "v_groove",
+        "mounting_holes"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a small vise jaw with two mounting holes and a V groove",
+      "expected_object_family": "vise_jaw",
+      "required_features": [
+        "v_groove",
+        "mounting_holes"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a small vise jaw with two mounting holes and a V groove",
+      "expected_object_family": "vise_jaw",
+      "required_features": [
+        "v_groove",
+        "mounting_holes"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a small vise jaw with two mounting holes and a V groove",
+      "expected_object_family": "vise_jaw",
+      "required_features": [
+        "v_groove",
+        "mounting_holes"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": 2,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a motor mounting plate for a NEMA 17 stepper",
+      "expected_object_family": "motor_mount_plate",
+      "required_features": [
+        "nema17_pattern",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a motor mounting plate for a NEMA 17 stepper",
+      "expected_object_family": "motor_mount_plate",
+      "required_features": [
+        "nema17_pattern",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a motor mounting plate for a NEMA 17 stepper",
+      "expected_object_family": "motor_mount_plate",
+      "required_features": [
+        "nema17_pattern",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a motor mounting plate for a NEMA 17 stepper",
+      "expected_object_family": "motor_mount_plate",
+      "required_features": [
+        "nema17_pattern",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a motor mounting plate for a NEMA 17 stepper",
+      "expected_object_family": "motor_mount_plate",
+      "required_features": [
+        "nema17_pattern",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a motor mounting plate for a NEMA 17 stepper",
+      "expected_object_family": "motor_mount_plate",
+      "required_features": [
+        "nema17_pattern",
+        "center_bore"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "cadquery_program",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a mounting bracket 60mm wide 40mm deep 4mm thick",
+      "expected_object_family": "rectangular_bracket",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a mounting bracket 80mm wide 50mm deep 5mm thick",
+      "expected_object_family": "rectangular_bracket",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a mounting bracket 100mm wide 60mm deep 6mm thick",
+      "expected_object_family": "rectangular_bracket",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a mounting bracket 120mm wide 80mm deep 8mm thick",
+      "expected_object_family": "rectangular_bracket",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "an electronics enclosure 60mm x 40mm x 25mm with 2.5mm walls",
+      "expected_object_family": "enclosure",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "an electronics enclosure 100mm x 70mm x 40mm with 2.5mm walls",
+      "expected_object_family": "enclosure",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "an electronics enclosure 120mm x 90mm x 50mm with 2.5mm walls",
+      "expected_object_family": "enclosure",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a drill jig plate 100mm by 60mm 6mm thick with 5mm guide holes",
+      "expected_object_family": "drill_jig",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a drill jig plate 120mm by 80mm 6mm thick with 5mm guide holes",
+      "expected_object_family": "drill_jig",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a drill jig plate 150mm by 60mm 6mm thick with 5mm guide holes",
+      "expected_object_family": "drill_jig",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "an L bracket with 40mm legs 5mm thick",
+      "expected_object_family": "l_bracket",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "an L bracket with 60mm legs 5mm thick",
+      "expected_object_family": "l_bracket",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "an L bracket with 80mm legs 5mm thick",
+      "expected_object_family": "l_bracket",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pipe clamp for a 20mm pipe 6mm thick",
+      "expected_object_family": "pipe_clamp",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pipe clamp for a 25mm pipe 6mm thick",
+      "expected_object_family": "pipe_clamp",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a pipe clamp for a 32mm pipe 6mm thick",
+      "expected_object_family": "pipe_clamp",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "an adapter plate 80mm square 6mm thick with a 25mm center bore",
+      "expected_object_family": "adapter_plate",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "an adapter plate 100mm square 6mm thick with a 25mm center bore",
+      "expected_object_family": "adapter_plate",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "an adapter plate 120mm square 6mm thick with a 25mm center bore",
+      "expected_object_family": "adapter_plate",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "Create a realistic crankshaft for a 4-cylinder inline engine with five main journals, four rod journals, counterweights, keyed front snout and a flywheel flange with six bolts, machined from forged steel.",
+      "expected_object_family": "inline_4_crankshaft",
+      "required_features": [
+        "journals"
+      ],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a knob 25mm diameter 22mm tall with an 8mm bore",
+      "expected_object_family": "handle",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a knob 30mm diameter 22mm tall with an 8mm bore",
+      "expected_object_family": "handle",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a knob 35mm diameter 22mm tall with an 8mm bore",
+      "expected_object_family": "handle",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a knob 40mm diameter 22mm tall with an 8mm bore",
+      "expected_object_family": "handle",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a knob 45mm diameter 22mm tall with an 8mm bore",
+      "expected_object_family": "handle",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spacer 10mm OD 20mm long with a 5mm bore",
+      "expected_object_family": "spacer",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spacer 12mm OD 20mm long with a 5mm bore",
+      "expected_object_family": "spacer",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spacer 16mm OD 20mm long with a 5mm bore",
+      "expected_object_family": "spacer",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spacer 20mm OD 20mm long with a 5mm bore",
+      "expected_object_family": "spacer",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a spacer 24mm OD 20mm long with a 5mm bore",
+      "expected_object_family": "spacer",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "precision_template",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 25mm cube with a 10mm hole",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 25mm cube",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 30mm cube with a 10mm hole",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 30mm cube",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 40mm cube with a 10mm hole",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 40mm cube",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 50mm cube with a 10mm hole",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 50mm cube",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 60mm cube with a 10mm hole",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 60mm cube",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 70mm cube with a 10mm hole",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a 70mm cube",
+      "expected_object_family": "block",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "scad_generator",
+      "should_generate": true,
+      "acceptable_assumptions": true
+    },
+    {
+      "prompt": "a decorative dragon statue",
+      "expected_object_family": "unsupported",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "clarification",
+      "should_generate": false,
+      "acceptable_assumptions": false
+    },
+    {
+      "prompt": "an abstract art sculpture",
+      "expected_object_family": "unsupported",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "clarification",
+      "should_generate": false,
+      "acceptable_assumptions": false
+    },
+    {
+      "prompt": "a cartoon character figurine",
+      "expected_object_family": "unsupported",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "clarification",
+      "should_generate": false,
+      "acceptable_assumptions": false
+    },
+    {
+      "prompt": "a realistic human face bust",
+      "expected_object_family": "unsupported",
+      "required_features": [],
+      "forbidden_failure_modes": [],
+      "expected_hole_count": null,
+      "expected_bore": null,
+      "expected_route": "clarification",
+      "should_generate": false,
+      "acceptable_assumptions": false
+    }
+  ]
+}

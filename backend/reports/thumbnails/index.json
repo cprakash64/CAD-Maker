@@ -1,0 +1,120 @@
+[
+  {
+    "prompt": "a simple bearing housing for a 20mm shaft",
+    "ok": true,
+    "family": "bearing_housing",
+    "thumbnail": "bearing_housing.png",
+    "through_holes": 5,
+    "components": 1,
+    "outer_corners": 61,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "a rectangular block with a stepped slot and two counterbored holes",
+    "ok": true,
+    "family": "block_with_slot",
+    "thumbnail": "block_with_slot.png",
+    "through_holes": 2,
+    "components": 1,
+    "outer_corners": 4,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "a hexagonal spacer with a 6mm through hole",
+    "ok": true,
+    "family": "hex_spacer",
+    "thumbnail": "hex_spacer.png",
+    "through_holes": 1,
+    "components": 1,
+    "outer_corners": 6,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "a shaft collar with an M6 clamp screw",
+    "ok": true,
+    "family": "shaft_collar",
+    "thumbnail": "shaft_collar.png",
+    "through_holes": 0,
+    "components": 1,
+    "outer_corners": 60,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "a flange plate with 8 holes on a 100mm bolt circle",
+    "ok": true,
+    "family": "flange_plate",
+    "thumbnail": "flange_plate.png",
+    "through_holes": 9,
+    "components": 1,
+    "outer_corners": 61,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "a pulley with a 10mm shaft hole and 60mm outer diameter",
+    "ok": true,
+    "family": "pulley",
+    "thumbnail": "pulley.png",
+    "through_holes": 1,
+    "components": 1,
+    "outer_corners": 61,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "a hexagonal gear with a 10mm shaft",
+    "ok": true,
+    "family": "hexagonal_gear",
+    "thumbnail": "hexagonal_gear.png",
+    "through_holes": 1,
+    "components": 1,
+    "outer_corners": 6,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "a 90 degree pipe elbow with circular flanges",
+    "ok": true,
+    "family": "pipe_elbow",
+    "thumbnail": "pipe_elbow.png",
+    "through_holes": 2,
+    "components": 1,
+    "outer_corners": 2,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "a small vise jaw with two mounting holes and a V groove",
+    "ok": true,
+    "family": "vise_jaw",
+    "thumbnail": "vise_jaw.png",
+    "through_holes": 3,
+    "components": 1,
+    "outer_corners": 4,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "a motor mounting plate for a NEMA 17 stepper",
+    "ok": true,
+    "family": "motor_mount_plate",
+    "thumbnail": "motor_mount_plate.png",
+    "through_holes": 9,
+    "components": 1,
+    "outer_corners": 4,
+    "watertight": true,
+    "semantic_passed": true
+  },
+  {
+    "prompt": "full inline-four crankshaft",
+    "ok": true,
+    "family": "inline_4_crankshaft",
+    "thumbnail": "inline_4_crankshaft.png",
+    "through_holes": 6,
+    "components": 1
+  }
+]
