@@ -31,57 +31,60 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
   }
 
   return (
-    <div className="mx-auto max-w-sm space-y-5 py-10">
-      <h1 className="text-2xl font-bold">
-        {isSignup ? "Create your account" : "Sign in"}
-      </h1>
-      <form onSubmit={submit} className="space-y-3">
-        <label className="block">
-          <span className="mb-1 block text-xs text-slate-400">Email</span>
-          <input
-            type="email"
-            required
-            className="input"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-xs text-slate-400">
-            Password{isSignup ? " (min 8 characters)" : ""}
-          </span>
-          <input
-            type="password"
-            required
-            minLength={isSignup ? 8 : undefined}
-            className="input"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete={isSignup ? "new-password" : "current-password"}
-          />
-        </label>
-        {error && (
-          <div className="rounded-md border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-200">
-            {error}
-          </div>
-        )}
-        <button className="btn-primary w-full" disabled={busy}>
-          {busy ? "…" : isSignup ? "Sign up" : "Sign in"}
-        </button>
-      </form>
-      <p className="text-sm text-slate-400">
+    <div className="mx-auto max-w-sm py-14">
+      <div className="card p-6">
+        <h1 className="text-xl font-semibold text-slate-50">
+          {isSignup ? "Create your account" : "Sign in"}
+        </h1>
+        <p className="mt-1 text-sm text-slate-400">
+          {isSignup
+            ? "Start generating validated parametric CAD."
+            : "Welcome back to your part studio."}
+        </p>
+        <form onSubmit={submit} className="mt-5 space-y-3">
+          <label className="block">
+            <span className="label mb-1 block">Email</span>
+            <input
+              type="email"
+              required
+              className="input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+            />
+          </label>
+          <label className="block">
+            <span className="label mb-1 block">
+              Password{isSignup ? " · min 8 characters" : ""}
+            </span>
+            <input
+              type="password"
+              required
+              minLength={isSignup ? 8 : undefined}
+              className="input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={isSignup ? "new-password" : "current-password"}
+            />
+          </label>
+          {error && <div className="banner-danger">{error}</div>}
+          <button className="btn-primary w-full" disabled={busy}>
+            {busy ? "…" : isSignup ? "Create account" : "Sign in"}
+          </button>
+        </form>
+      </div>
+      <p className="mt-4 text-center text-sm text-slate-400">
         {isSignup ? (
           <>
             Already have an account?{" "}
-            <Link href="/signin" className="text-accent underline">
+            <Link href="/signin" className="text-accent hover:underline">
               Sign in
             </Link>
           </>
         ) : (
           <>
             New here?{" "}
-            <Link href="/signup" className="text-accent underline">
+            <Link href="/signup" className="text-accent hover:underline">
               Create an account
             </Link>
           </>

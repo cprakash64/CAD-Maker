@@ -20,12 +20,10 @@ export default function ChecksPanel({ checks }: { checks: Check[] }) {
   const failing = checks.filter((c) => !c.passed);
   return (
     <div className="card p-4">
-      <h2 className="mb-3 flex items-center justify-between text-sm font-semibold uppercase tracking-wide text-slate-300">
-        Manufacturability
-        <span className="text-xs font-normal text-slate-400">
-          {failing.length === 0
-            ? "all clear"
-            : `${failing.length} to review`}
+      <h2 className="mb-3 flex items-center justify-between gap-2">
+        <span className="label">Manufacturability</span>
+        <span className="text-xs text-slate-500">
+          {failing.length === 0 ? "All clear" : `${failing.length} to review`}
         </span>
       </h2>
       <div className="space-y-2">

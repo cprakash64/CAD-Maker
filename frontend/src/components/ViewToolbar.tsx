@@ -20,7 +20,7 @@ interface Props {
 export default function ViewToolbar({ onSelect, onCapturePng, active }: Props) {
   return (
     <div
-      className="flex flex-wrap items-center gap-1 rounded-lg border border-edge bg-panel/70 p-1"
+      className="flex flex-wrap items-center gap-0.5 rounded-md border border-edge bg-raised/80 p-0.5"
       role="toolbar"
       aria-label="View controls"
     >
@@ -29,10 +29,10 @@ export default function ViewToolbar({ onSelect, onCapturePng, active }: Props) {
           key={v.name}
           onClick={() => onSelect(v.name)}
           aria-pressed={active === v.name}
-          className={`rounded px-2.5 py-1 text-xs ${
+          className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
             active === v.name
               ? "bg-accent text-white"
-              : "text-slate-300 hover:bg-edge"
+              : "text-slate-400 hover:bg-edge hover:text-slate-200"
           }`}
         >
           {v.label}
@@ -41,7 +41,7 @@ export default function ViewToolbar({ onSelect, onCapturePng, active }: Props) {
       <span className="mx-1 h-4 w-px bg-edge" />
       <button
         onClick={onCapturePng}
-        className="rounded px-2.5 py-1 text-xs text-slate-300 hover:bg-edge"
+        className="rounded px-2.5 py-1 text-xs font-medium text-slate-400 hover:bg-edge hover:text-slate-200"
         title="Download the current 3D view as a PNG"
       >
         ↓ PNG

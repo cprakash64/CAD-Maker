@@ -183,54 +183,88 @@ export default function StudioPage({ params }: { params: { id: string } }) {
   // blocked (and the backend returns 409 even if a button were clicked).
   const exportBlocked = design.validation_status === "critical_failure";
 
+  const vstatus = design.validation_status;
+  const vmeta =
+    vstatus === "critical_failure"
+      ? { cls: "badge-fail", text: "Failed validation" }
+      : vstatus === "warning"
+        ? { cls: "badge-review", text: "Review" }
+        : vstatus === "pass"
+          ? { cls: "badge-pass", text: "Validated" }
+          : null;
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      {/* --- Top toolbar: identity + status + actions ----------------------- */}
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-edge pb-4">
         <div className="min-w-0">
-          <Link href="/dashboard" className="text-xs text-slate-400 hover:underline">
-            ← Dashboard
+          <Link href="/dashboard" className="text-xs text-slate-500 hover:text-slate-300">
+            ← Designs
           </Link>
-          <h1 className="mt-1 truncate text-xl font-bold">{design.prompt}</h1>
-          <p className="text-xs text-slate-400">
-            {design.object_type ?? "unparsed"}
-            {design.bounding_box_mm &&
-              ` · ${design.bounding_box_mm.x} × ${design.bounding_box_mm.y} × ${design.bounding_box_mm.z} mm`}
-            {DEV && design.provider && ` · provider: ${design.provider}`}
-            {DEV && design.generation_ms != null && ` · ${design.generation_ms}ms`}
-          </p>
-        </div>
-        {exportBlocked ? (
-          <div className="rounded-md border border-red-500/60 bg-red-500/15 px-3 py-2 text-xs text-red-100">
-            <span className="font-semibold">Export blocked</span> — this design
-            failed validation. See the issues below.
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            {design.exports.map((e) => (
-              <button
-                key={e.fmt}
-                className="btn-ghost"
-                onClick={() => downloadExport(id, e.fmt).catch(() => setError("Download failed"))}
-              >
-                ↓ {e.fmt.toUpperCase()}
-              </button>
-            ))}
-            {design.spec && (
-              <button className="btn-primary" onClick={downloadPackage}>
-                ↓ CAD Package
-              </button>
+          <h1 className="mt-1 max-w-2xl truncate text-lg font-semibold text-slate-50">
+            {design.prompt}
+          </h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span className="text-slate-400">{design.object_type ?? "unparsed"}</span>
+            {design.bounding_box_mm && (
+              <span className="stat text-slate-400">
+                {design.bounding_box_mm.x} × {design.bounding_box_mm.y} ×{" "}
+                {design.bounding_box_mm.z} mm
+              </span>
+            )}
+            {design.route && (
+              <span className="badge-neutral">
+                {ROUTE_LABELS[design.route] ?? design.route}
+              </span>
+            )}
+            {vmeta && <span className={vmeta.cls}>{vmeta.text}</span>}
+            {design.auto_repaired && (
+              <span className="badge-neutral">
+                Auto-repaired{design.repair_attempts > 0 ? ` ×${design.repair_attempts}` : ""}
+              </span>
+            )}
+            {DEV && design.provider && <span>· {design.provider}</span>}
+            {DEV && design.generation_ms != null && (
+              <span className="stat">· {design.generation_ms}ms</span>
             )}
           </div>
-        )}
+        </div>
+
+        {!design.needs_clarification &&
+          (exportBlocked ? (
+            <div className="banner-danger max-w-xs px-3 py-2 text-xs">
+              <span className="font-semibold">Export blocked.</span> This design failed
+              validation and can’t be exported as a manufacturable file.
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {design.exports.map((e) => (
+                <button
+                  key={e.fmt}
+                  className="btn-ghost btn-sm"
+                  onClick={() =>
+                    downloadExport(id, e.fmt).catch(() => setError("Download failed"))
+                  }
+                >
+                  ↓ {e.fmt.toUpperCase()}
+                </button>
+              ))}
+              {design.spec && (
+                <button className="btn-primary btn-sm" onClick={downloadPackage}>
+                  ↓ CAD Package
+                </button>
+              )}
+            </div>
+          ))}
       </div>
 
       <MockModeBanner />
 
       {design.needs_clarification && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-amber-100">
-          <p className="font-medium">A bit more info needed</p>
+        <div className="banner-warn p-4">
+          <p className="font-semibold">More information needed</p>
           {design.clarification_questions.length > 0 ? (
-            <ul className="mt-1 space-y-1 text-sm">
+            <ul className="mt-1.5 space-y-1 text-sm">
               {design.clarification_questions.map((q, i) => (
                 <li key={i} className="flex gap-1.5">
                   <span className="text-amber-300">•</span>
@@ -249,13 +283,13 @@ export default function StudioPage({ params }: { params: { id: string } }) {
             )}
           <div className="mt-3 flex gap-2">
             {design.can_generate_with_defaults && (
-              <button className="btn-primary" onClick={generateWithDefaults} disabled={busy}>
+              <button className="btn-primary btn-sm" onClick={generateWithDefaults} disabled={busy}>
                 Generate with defaults
               </button>
             )}
             <Link
               href={`/new?prompt=${encodeURIComponent(design.prompt + " ")}`}
-              className="btn-ghost"
+              className="btn-ghost btn-sm"
             >
               Refine prompt
             </Link>
@@ -263,165 +297,98 @@ export default function StudioPage({ params }: { params: { id: string } }) {
         </div>
       )}
 
-      {/* Route + auto-repair + export-format transparency (v0.4-GEN). */}
-      {!design.needs_clarification && design.route && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-full border border-slate-600 bg-slate-800 px-2 py-0.5 text-slate-200">
-            Route: {ROUTE_LABELS[design.route] ?? design.route}
-          </span>
-          {design.auto_repaired && (
-            <span className="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">
-              Auto-repaired generation{design.repair_attempts > 0 ? ` (${design.repair_attempts}×)` : ""}
-            </span>
-          )}
-          {design.semantic_passed !== null && (
-            <span
-              className={`rounded-full border px-2 py-0.5 ${
-                !design.semantic_passed
-                  ? "border-red-500/50 bg-red-500/10 text-red-200"
-                  : design.warnings.length > 0
-                    ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
-                    : "border-emerald-500/50 bg-emerald-500/10 text-emerald-200"
-              }`}
-            >
-              {!design.semantic_passed
-                ? "Checks failed"
-                : design.warnings.length > 0
-                  ? `Generated with ${design.warnings.length} warning${design.warnings.length > 1 ? "s" : ""}`
-                  : "Checks passed"}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Assumption-first: non-blocking warnings on a compiled model. */}
-      {!design.needs_clarification && design.warnings.length > 0 && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
-          <p className="font-medium">Generated with warnings</p>
-          <p className="mt-0.5 text-xs text-amber-200/90">
-            These are advisory only — the model compiled and STL/STEP are ready to download.
-          </p>
-          <ul className="mt-2 space-y-1 text-xs">
-            {design.warnings.map((w, i) => (
-              <li key={i} className="flex gap-1.5">
-                <span className="text-amber-300">⚠</span>
-                <span>{w}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Feature-level audit: requested mechanical features vs. the model. */}
-      {!design.needs_clarification && design.feature_audit.length > 0 && (
-        <details
-          className="rounded-md border border-slate-700 bg-slate-900/60 p-3 text-sm"
-          open={design.feature_audit_passed === false}
-        >
-          <summary className="cursor-pointer font-medium text-slate-200">
-            Feature audit — {design.feature_audit.filter((i) => i.satisfied).length}/
-            {design.feature_audit.length} requested features verified
-          </summary>
-          <ul className="mt-2 space-y-1">
-            {design.feature_audit.map((i, idx) => (
-              <li key={`${i.feature_id}-${idx}`} className="flex items-center gap-2 text-xs">
-                <span className={i.satisfied ? "text-emerald-400" : "text-amber-400"}>
-                  {i.satisfied ? "✓" : "⚠"}
-                </span>
-                <code className="text-slate-400">{i.feature_id}</code>
-                <span className="text-slate-300">
-                  {i.forbidden ? `must NOT have: ${i.requirement}` : i.requirement}
-                </span>
-                <span className="text-slate-500">{i.detail}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-
-      {/* Semantic verification detail (v0.5-GEN2). */}
-      {!design.needs_clarification && design.semantic_checks.length > 0 && (
-        <details className="rounded-md border border-slate-700 bg-slate-900/60 p-3 text-sm">
-          <summary className="cursor-pointer font-medium text-slate-200">
-            Semantic verification — {design.semantic_checks.filter((c) => c.passed).length}/
-            {design.semantic_checks.length} checks passed
-          </summary>
-          <ul className="mt-2 space-y-1">
-            {design.semantic_checks.map((c) => {
-              const isCritical = c.severity === "error" || c.severity === "critical";
-              const tone = c.passed
-                ? "text-emerald-400"
-                : isCritical
-                  ? "text-red-400"
-                  : "text-amber-400";
-              return (
-                <li key={c.name} className="flex items-center gap-2 text-xs">
-                  <span className={tone}>{c.passed ? "✓" : isCritical ? "✗" : "⚠"}</span>
-                  <span className="text-slate-300">{c.name.replace(/_/g, " ")}</span>
-                  {!c.passed && c.expected && (
-                    <span className="text-slate-500">
-                      expected {c.expected}, got {c.actual}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </details>
-      )}
-
-      {/* Flexible CAD graph provenance. */}
-      {!design.needs_clarification && design.feature_graph_ops.length > 0 && (
-        <div className="rounded-md border border-violet-500/40 bg-violet-500/10 p-3 text-sm text-violet-100">
-          <span className="font-medium">Generated by flexible CAD graph. </span>
-          Built from {design.feature_graph_ops.length} operations:{" "}
-          <span className="text-violet-200/90">{design.feature_graph_ops.join(" → ")}</span>
-        </div>
-      )}
-
-      {/* Generate-first transparency: we built it using documented defaults. */}
-      {!design.needs_clarification && design.default_assumptions.length > 0 && (
-        <div className="rounded-md border border-sky-500/40 bg-sky-500/10 p-3 text-sm text-sky-100">
-          <span className="font-medium">Generated with defaults. </span>
-          {design.default_assumptions.join(" · ")}{" "}
-          <Link
-            href={`/new?prompt=${encodeURIComponent(design.prompt + " ")}`}
-            className="underline"
-          >
-            Refine prompt
-          </Link>
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
-      {notice && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
-          {notice}
-        </div>
-      )}
+      {error && <div className="banner-danger">{error}</div>}
+      {notice && <div className="banner-warn">{notice}</div>}
 
       {!design.needs_clarification && (
-        <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          {/* --- Centerpiece: CAD viewport + build narrative -------------- */}
           <div className="space-y-4">
             <Studio3D
               mesh={design.preview}
               features={design.features ?? []}
               onSelect={setSelectedFeature}
             />
+
             {design.explanation && (
               <div className="card p-4">
-                <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-300">
-                  What was generated
-                </h2>
-                <p className="text-sm leading-relaxed text-slate-200">
+                <h2 className="label mb-2">What was generated</h2>
+                <p className="text-sm leading-relaxed text-slate-300">
                   {design.explanation}
                 </p>
+                {design.default_assumptions.length > 0 && (
+                  <p className="mt-3 border-t border-edge pt-3 text-xs text-slate-500">
+                    Built using documented defaults: {design.default_assumptions.join(" · ")}.{" "}
+                    <Link
+                      href={`/new?prompt=${encodeURIComponent(design.prompt + " ")}`}
+                      className="text-accent hover:underline"
+                    >
+                      Refine prompt
+                    </Link>
+                  </p>
+                )}
+                {design.feature_graph_ops.length > 0 && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Composed from {design.feature_graph_ops.length} parametric operations.
+                  </p>
+                )}
               </div>
             )}
+
+            {/* Verification detail (audit + semantic checks), collapsed. */}
+            {(design.feature_audit.length > 0 || design.semantic_checks.length > 0) && (
+              <details
+                className="card p-4 text-sm"
+                open={design.feature_audit_passed === false || design.semantic_passed === false}
+              >
+                <summary className="label cursor-pointer">Verification detail</summary>
+                {design.feature_audit.length > 0 && (
+                  <ul className="mt-3 space-y-1">
+                    {design.feature_audit.map((i, idx) => (
+                      <li key={`${i.feature_id}-${idx}`} className="flex items-center gap-2 text-xs">
+                        <span className={i.satisfied ? "text-emerald-400" : "text-amber-400"}>
+                          {i.satisfied ? "✓" : "⚠"}
+                        </span>
+                        <code className="stat text-slate-500">{i.feature_id}</code>
+                        <span className="text-slate-300">
+                          {i.forbidden ? `must NOT have: ${i.requirement}` : i.requirement}
+                        </span>
+                        <span className="text-slate-500">{i.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {design.semantic_checks.length > 0 && (
+                  <ul className="mt-3 space-y-1 border-t border-edge pt-3">
+                    {design.semantic_checks.map((c) => {
+                      const isCritical = c.severity === "error" || c.severity === "critical";
+                      const tone = c.passed
+                        ? "text-emerald-400"
+                        : isCritical
+                          ? "text-red-400"
+                          : "text-amber-400";
+                      return (
+                        <li key={c.name} className="flex items-center gap-2 text-xs">
+                          <span className={tone}>{c.passed ? "✓" : isCritical ? "✗" : "⚠"}</span>
+                          <span className="text-slate-300">{c.name.replace(/_/g, " ")}</span>
+                          {!c.passed && c.expected && (
+                            <span className="text-slate-500">
+                              expected {c.expected}, got {c.actual}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </details>
+            )}
+
+            <FeedbackWidget designId={id} existing={design.my_feedback} />
+          </div>
+
+          {/* --- Validation + properties + controls ---------------------- */}
+          <div className="space-y-4">
             <ValidationPanel
               report={design.dimension_report}
               printReadiness={design.print_readiness}
@@ -431,10 +398,7 @@ export default function StudioPage({ params }: { params: { id: string } }) {
               assumptions={design.assumptions ?? []}
             />
             <ChecksPanel checks={design.checks} />
-            <FeedbackWidget designId={id} existing={design.my_feedback} />
-          </div>
 
-          <div className="space-y-4">
             {/* Plain-English edit + parameter editing apply to template-spec
                 designs. Feature-graph (CadPlan) parts are re-edited by prompt. */}
             {design.spec && <ModifyBox onSubmit={modify} busy={busy} />}
@@ -447,25 +411,34 @@ export default function StudioPage({ params }: { params: { id: string } }) {
               />
             )}
             {design.spec && (
-              <HoleTable
-                holes={design.spec?.holes ?? []}
-                onApply={applyHoles}
-                busy={busy}
-              />
+              <HoleTable holes={design.spec?.holes ?? []} onApply={applyHoles} busy={busy} />
             )}
 
-            <div className="card p-4 text-xs text-slate-400">
-              <div className="mb-1 font-semibold text-slate-300">Details</div>
-              <div>Type: {design.object_type ?? "—"}</div>
-              <div>Material: {design.spec?.material ?? "—"}</div>
-              <div>Method: {design.spec?.manufacturing_method ?? "—"}</div>
-              <div>Units: {design.spec?.units ?? "mm"}</div>
-              {design.preview && <div>Mesh: {design.preview.triangle_count} triangles</div>}
-              <div className="mt-1 break-all">Hash: {design.spec_hash}</div>
+            <div className="card p-4">
+              <h2 className="label mb-2">Properties</h2>
+              <dl className="space-y-1.5 text-xs">
+                <Prop k="Type" v={design.object_type ?? "—"} />
+                <Prop k="Material" v={design.spec?.material ?? "—"} />
+                <Prop k="Method" v={design.spec?.manufacturing_method ?? "—"} />
+                <Prop k="Units" v={design.spec?.units ?? "mm"} />
+                {design.preview && (
+                  <Prop k="Mesh" v={`${design.preview.triangle_count} triangles`} />
+                )}
+                <Prop k="Hash" v={design.spec_hash ?? "—"} mono />
+              </dl>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function Prop({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-slate-500">{k}</dt>
+      <dd className={`truncate text-right text-slate-300 ${mono ? "stat" : ""}`}>{v}</dd>
     </div>
   );
 }

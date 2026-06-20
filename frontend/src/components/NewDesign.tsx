@@ -36,40 +36,50 @@ function NewDesignInner() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5 py-8">
-      <h1 className="text-2xl font-bold">New design</h1>
+      <div>
+        <span className="label">New part</span>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+          Describe what you need
+        </h1>
+      </div>
       <MockModeBanner />
-      <p className="text-slate-300">
-        Describe the mechanical part you need. Include key dimensions, hole sizes
-        (e.g. <code>M6</code>), thickness and material if you know them.
-      </p>
-      <textarea
-        className="input min-h-[140px] resize-y"
-        placeholder="e.g. Wall-mounted bracket for a 25 mm pipe with two M6 screw holes, 5 mm thick, 80 mm wide."
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-      />
-      {error && (
-        <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
-      <button className="btn-primary" onClick={submit} disabled={busy || !prompt.trim()}>
-        {busy ? "Generating…" : "Generate part"}
-      </button>
 
-      <div className="space-y-2 pt-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-          Or start from an example
-        </h2>
+      <div className="card p-4">
+        <label className="label mb-2 block">Specification</label>
+        <textarea
+          className="input min-h-[150px] resize-y leading-relaxed"
+          placeholder="e.g. Wall-mounted bracket for a 25 mm pipe with two M6 screw holes, 5 mm thick, 80 mm wide."
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+        />
+        <p className="mt-2 text-xs text-slate-500">
+          Include key dimensions, hole sizes (e.g. <code className="stat text-slate-300">M6</code>),
+          thickness and material where you know them. Missing details are filled with
+          documented defaults and shown back to you.
+        </p>
+        {error && <div className="banner-danger mt-3">{error}</div>}
+        <div className="mt-3">
+          <button
+            className="btn-primary"
+            onClick={submit}
+            disabled={busy || !prompt.trim()}
+          >
+            {busy ? "Generating…" : "Generate part"}
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <h2 className="label">Or start from an example</h2>
         <div className="grid gap-2 sm:grid-cols-2">
           {ONBOARDING_EXAMPLES.map((ex) => (
             <button
               key={ex.label}
-              className="card p-3 text-left hover:border-accent"
+              className="surface p-3 text-left transition-colors hover:border-accent/60"
               onClick={() => setPrompt(ex.prompt)}
             >
-              <div className="text-sm font-medium text-accent">{ex.label}</div>
-              <div className="mt-1 text-xs text-slate-300">{ex.prompt}</div>
+              <div className="label text-slate-300">{ex.label}</div>
+              <div className="mt-1 text-xs text-slate-400">{ex.prompt}</div>
             </button>
           ))}
         </div>

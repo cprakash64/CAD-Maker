@@ -85,10 +85,10 @@ export default function ValidationPanel({
         : "unknown";
 
   const STATE_META = {
-    fail: { cls: "border-red-500/60 bg-red-500/15 text-red-100", text: "Failed validation" },
-    pass: { cls: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200", text: "Looks good" },
-    review: { cls: "border-amber-500/50 bg-amber-500/10 text-amber-200", text: "Review suggested" },
-    unknown: { cls: "border-slate-600 bg-slate-800 text-slate-300", text: "Built — not compared to a target" },
+    fail: { cls: "badge-fail", text: "Fail" },
+    pass: { cls: "badge-pass", text: "Pass" },
+    review: { cls: "badge-review", text: "Review" },
+    unknown: { cls: "badge-neutral", text: "Not verified" },
   }[state];
 
   const toleranceNote =
@@ -102,11 +102,9 @@ export default function ValidationPanel({
 
   return (
     <div className="card p-4">
-      <h2 className="mb-3 flex items-center justify-between text-sm font-semibold uppercase tracking-wide text-slate-300">
-        Validation &amp; print readiness
-        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-normal normal-case ${STATE_META.cls}`}>
-          {STATE_META.text}
-        </span>
+      <h2 className="mb-3 flex items-center justify-between gap-2">
+        <span className="label">Validation &amp; print readiness</span>
+        <span className={STATE_META.cls}>{STATE_META.text}</span>
       </h2>
 
       {/* Critical failures — visually distinct from warnings (red, top of panel). */}

@@ -157,9 +157,9 @@ const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D({ mesh, onPic
   const radiusRef = useRef(100);
 
   return (
-    <div className="relative h-[460px] w-full overflow-hidden rounded-xl border border-edge bg-[#0a0f1f]">
+    <div className="relative h-[520px] w-full overflow-hidden rounded-lg border border-edge bg-viewport lg:h-[640px]">
       {!mesh ? (
-        <div className="flex h-full items-center justify-center text-slate-400">
+        <div className="flex h-full items-center justify-center text-sm text-slate-500">
           No preview yet
         </div>
       ) : (
@@ -173,8 +173,8 @@ const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D({ mesh, onPic
             cellSize={10}
             cellThickness={0.5}
             sectionSize={50}
-            sectionColor="#33415a"
-            cellColor="#1f2a44"
+            sectionColor="#3a4150"
+            cellColor="#23272f"
             position={[0, -0.01, 0]}
             infiniteGrid
             fadeDistance={900}

@@ -12,10 +12,11 @@ export default function MockModeBanner() {
 
   if (provider !== "mock") return null;
   return (
-    <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-100">
-      <strong>Mock mode.</strong> Prompt and image understanding are limited and
-      rule-based — results are approximate. Set{" "}
-      <code>LLM_PROVIDER=openai</code> with an API key for full understanding.
+    <div className="banner-warn">
+      <strong className="font-semibold">Offline mock provider.</strong> Prompt and
+      image understanding are rule-based, so results are approximate. Set{" "}
+      <code className="stat">LLM_PROVIDER=openai</code> with an API key for full
+      understanding.
     </div>
   );
 }

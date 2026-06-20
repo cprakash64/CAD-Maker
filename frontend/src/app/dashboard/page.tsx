@@ -37,31 +37,36 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Your designs</h1>
+      <div className="flex items-end justify-between">
+        <div>
+          <span className="label">Workspace</span>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">Designs</h1>
+        </div>
         <Link href="/designs/new" className="btn-primary">
           New design
         </Link>
       </div>
 
       {error && (
-        <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
+        <div className="banner-danger">
           Could not reach the API ({error}). Is the backend running on {api.base}?
         </div>
       )}
 
       {designs && designs.length === 0 && (
-        <div className="card space-y-3 p-6">
-          <p className="text-slate-300">No designs yet — try an example:</p>
+        <div className="card space-y-4 p-6">
+          <p className="text-sm text-slate-300">
+            No designs yet. Start from a prompt, or pick an example:
+          </p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {ONBOARDING_EXAMPLES.map((ex) => (
               <Link
                 key={ex.label}
                 href={`/new?prompt=${encodeURIComponent(ex.prompt)}`}
-                className="rounded-md border border-edge p-3 text-sm hover:border-accent"
+                className="surface p-3 text-sm transition-colors hover:border-accent/60"
               >
-                <div className="font-medium text-accent">{ex.label}</div>
-                <div className="mt-1 text-xs text-slate-300">{ex.prompt}</div>
+                <div className="label text-slate-300">{ex.label}</div>
+                <div className="mt-1 text-xs text-slate-400">{ex.prompt}</div>
               </Link>
             ))}
           </div>
@@ -69,48 +74,42 @@ export default function DashboardPage() {
       )}
 
       {designs && designs.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-edge">
+        <div className="card overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-panel text-left text-xs uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-edge bg-raised/60 text-left text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2">Prompt</th>
-                <th className="px-4 py-2">Template</th>
-                <th className="px-4 py-2">Export</th>
-                <th className="px-4 py-2">Created</th>
-                <th className="px-4 py-2">Edited</th>
+                <th className="px-4 py-2.5 font-semibold">Part</th>
+                <th className="px-4 py-2.5 font-semibold">Type</th>
+                <th className="px-4 py-2.5 font-semibold">Status</th>
+                <th className="px-4 py-2.5 font-semibold">Created</th>
+                <th className="px-4 py-2.5 font-semibold">Edited</th>
               </tr>
             </thead>
             <tbody>
               {designs.map((d) => (
-                <tr
-                  key={d.id}
-                  className="border-t border-edge hover:bg-panel/50"
-                >
-                  <td className="max-w-xs truncate px-4 py-2">
-                    <Link href={`/studio/${d.id}`} className="hover:underline">
+                <tr key={d.id} className="border-t border-edge/70 hover:bg-raised/40">
+                  <td className="max-w-sm truncate px-4 py-3">
+                    <Link
+                      href={`/studio/${d.id}`}
+                      className="text-slate-200 hover:text-accent hover:underline"
+                    >
                       {d.prompt}
                     </Link>
                   </td>
-                  <td className="px-4 py-2 text-slate-300">
-                    {d.object_type ?? "—"}
-                  </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-3 text-slate-400">{d.object_type ?? "—"}</td>
+                  <td className="px-4 py-3">
                     {d.needs_clarification ? (
-                      <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-200">
-                        needs info
-                      </span>
+                      <span className="badge-review">Needs info</span>
                     ) : d.export_ready ? (
-                      <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-200">
-                        ready
-                      </span>
+                      <span className="badge-pass">Ready</span>
                     ) : (
-                      <span className="text-xs text-slate-500">—</span>
+                      <span className="badge-neutral">Draft</span>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-xs text-slate-400">
+                  <td className="px-4 py-3 text-xs text-slate-500">
                     {new Date(d.created_at).toLocaleDateString()}
                   </td>
-                  <td className="px-4 py-2 text-xs text-slate-400">
+                  <td className="px-4 py-3 text-xs text-slate-500">
                     {timeAgo(d.updated_at)}
                   </td>
                 </tr>
