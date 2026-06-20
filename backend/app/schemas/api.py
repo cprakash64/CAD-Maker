@@ -137,6 +137,16 @@ class DesignDTO(BaseModel):
     dimension_report: Optional[dict] = None
     print_readiness: Optional[dict] = None
     dimensions_within_tolerance: Optional[bool] = None
+    # Overall validation severity: "pass" | "warning" | "critical_failure".
+    validation_status: Optional[str] = None
+    validation_critical_failures: list[str] = []
+    validation_warnings: list[str] = []
+    # Critical-failure recovery transparency + export gating.
+    recovery_attempted: bool = False
+    recovery_strategy: Optional[str] = None
+    recovery_succeeded: bool = False
+    # Non-null only when a manufacturable export is blocked (critical failure).
+    download_blocked_reason: Optional[str] = None
 
 
 class DesignSummaryDTO(BaseModel):

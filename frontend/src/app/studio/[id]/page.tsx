@@ -179,6 +179,10 @@ export default function StudioPage({ params }: { params: { id: string } }) {
   }
   if (!design) return <div className="py-10 text-slate-400">Loading design…</div>;
 
+  // Critical-failure designs stay inspectable, but manufacturable exports are
+  // blocked (and the backend returns 409 even if a button were clicked).
+  const exportBlocked = design.validation_status === "critical_failure";
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -195,22 +199,29 @@ export default function StudioPage({ params }: { params: { id: string } }) {
             {DEV && design.generation_ms != null && ` · ${design.generation_ms}ms`}
           </p>
         </div>
-        <div className="flex gap-2">
-          {design.exports.map((e) => (
-            <button
-              key={e.fmt}
-              className="btn-ghost"
-              onClick={() => downloadExport(id, e.fmt).catch(() => setError("Download failed"))}
-            >
-              ↓ {e.fmt.toUpperCase()}
-            </button>
-          ))}
-          {design.spec && (
-            <button className="btn-primary" onClick={downloadPackage}>
-              ↓ CAD Package
-            </button>
-          )}
-        </div>
+        {exportBlocked ? (
+          <div className="rounded-md border border-red-500/60 bg-red-500/15 px-3 py-2 text-xs text-red-100">
+            <span className="font-semibold">Export blocked</span> — this design
+            failed validation. See the issues below.
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            {design.exports.map((e) => (
+              <button
+                key={e.fmt}
+                className="btn-ghost"
+                onClick={() => downloadExport(id, e.fmt).catch(() => setError("Download failed"))}
+              >
+                ↓ {e.fmt.toUpperCase()}
+              </button>
+            ))}
+            {design.spec && (
+              <button className="btn-primary" onClick={downloadPackage}>
+                ↓ CAD Package
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <MockModeBanner />
@@ -337,14 +348,15 @@ export default function StudioPage({ params }: { params: { id: string } }) {
           </summary>
           <ul className="mt-2 space-y-1">
             {design.semantic_checks.map((c) => {
+              const isCritical = c.severity === "error" || c.severity === "critical";
               const tone = c.passed
                 ? "text-emerald-400"
-                : c.severity === "error"
+                : isCritical
                   ? "text-red-400"
                   : "text-amber-400";
               return (
                 <li key={c.name} className="flex items-center gap-2 text-xs">
-                  <span className={tone}>{c.passed ? "✓" : c.severity === "error" ? "✗" : "⚠"}</span>
+                  <span className={tone}>{c.passed ? "✓" : isCritical ? "✗" : "⚠"}</span>
                   <span className="text-slate-300">{c.name.replace(/_/g, " ")}</span>
                   {!c.passed && c.expected && (
                     <span className="text-slate-500">
@@ -414,6 +426,8 @@ export default function StudioPage({ params }: { params: { id: string } }) {
               report={design.dimension_report}
               printReadiness={design.print_readiness}
               withinTolerance={design.dimensions_within_tolerance}
+              validationStatus={design.validation_status}
+              criticalFailures={design.validation_critical_failures}
               assumptions={design.assumptions ?? []}
             />
             <ChecksPanel checks={design.checks} />

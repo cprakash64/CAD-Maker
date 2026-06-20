@@ -16,3 +16,4 @@ frontend/.env.local
 # OS / editor
 .DS_Store
 *.log
+frontend/tsconfig.tsbuildinfo

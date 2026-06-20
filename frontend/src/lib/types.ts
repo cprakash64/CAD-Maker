@@ -33,7 +33,7 @@ export interface PreviewMesh {
 
 export interface Check {
   check: string;
-  severity: "info" | "warning" | "error";
+  severity: "info" | "warning" | "error" | "critical";
   passed: boolean;
   message: string;
 }
@@ -86,6 +86,10 @@ export interface Design {
   dimension_report?: DimensionReport | null;
   print_readiness?: PrintReadiness | null;
   dimensions_within_tolerance?: boolean | null;
+  // Overall validation severity + the specific critical failures / warnings.
+  validation_status?: ValidationStatus | null;
+  validation_critical_failures?: string[];
+  validation_warnings?: string[];
 }
 
 export interface FeatureAuditItem {
@@ -160,6 +164,14 @@ export interface DimensionMeasured {
   through_holes_genus?: number;
 }
 
+export type ValidationStatus = "pass" | "warning" | "critical_failure";
+
+export interface ValidationSummary {
+  status?: ValidationStatus;
+  critical_failures?: string[];
+  warnings?: string[];
+}
+
 export interface DimensionReport {
   unit?: string;
   tolerance?: DimensionTolerance;
@@ -173,6 +185,7 @@ export interface DimensionReport {
   comparisons?: DimensionComparison[];
   within_tolerance?: boolean | null;
   print_readiness?: PrintReadiness;
+  validation?: ValidationSummary;
   notes?: string[];
 }
 

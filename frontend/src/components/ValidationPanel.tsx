@@ -1,6 +1,6 @@
 "use client";
 
-import type { DimensionReport, PrintReadiness } from "@/lib/types";
+import type { DimensionReport, PrintReadiness, ValidationStatus } from "@/lib/types";
 
 // Minimal, non-engineer-friendly "Validation & print readiness" panel driven by
 // the additive backend fields. Every field is treated as optional so missing or
@@ -38,6 +38,8 @@ interface Props {
   report?: DimensionReport | null;
   printReadiness?: PrintReadiness | null;
   withinTolerance?: boolean | null;
+  validationStatus?: ValidationStatus | null;
+  criticalFailures?: string[];
   assumptions?: string[];
 }
 
@@ -45,6 +47,8 @@ export default function ValidationPanel({
   report,
   printReadiness,
   withinTolerance,
+  validationStatus,
+  criticalFailures,
   assumptions = [],
 }: Props) {
   const pr: PrintReadiness = printReadiness ?? report?.print_readiness ?? {};
@@ -54,29 +58,34 @@ export default function ValidationPanel({
   const tol = report?.tolerance ?? {};
   const notes = report?.notes ?? [];
   const within = report?.within_tolerance ?? withinTolerance ?? null;
+  // Prefer the backend's authoritative status + list; fall back to the report.
+  const status = validationStatus ?? report?.validation?.status ?? null;
+  const critical = criticalFailures ?? report?.validation?.critical_failures ?? [];
 
   // Nothing useful to show -> render nothing (no empty card).
   const hasReport = !!report;
   if (!hasReport && assumptions.length === 0) return null;
 
-  // Overall, deliberately conservative state (no overclaiming):
-  //  review  -> something measurable looks off
+  // Overall state. Critical failures dominate (distinct, red). Otherwise:
+  //  review  -> non-critical issue worth a look
   //  pass    -> dimensions matched a requested target AND geometry looks healthy
   //  unknown -> built & looks printable, but no requested target to compare to
   const isFalse = (v: boolean | undefined) => v === false;
-  const problem =
-    pr.printable === false ||
-    within === false ||
-    isFalse(pr.watertight) ||
-    isFalse(pr.manifold) ||
-    issues.length > 0;
-  const state: "pass" | "review" | "unknown" = problem
-    ? "review"
-    : within === true
-      ? "pass"
-      : "unknown";
+  const hasCritical = status === "critical_failure" || critical.length > 0;
+  const warningish =
+    status === "warning" || pr.printable === false || within === false ||
+    isFalse(pr.watertight) || isFalse(pr.manifold) || issues.length > 0;
+
+  const state: "fail" | "pass" | "review" | "unknown" = hasCritical
+    ? "fail"
+    : warningish
+      ? "review"
+      : within === true || status === "pass"
+        ? "pass"
+        : "unknown";
 
   const STATE_META = {
+    fail: { cls: "border-red-500/60 bg-red-500/15 text-red-100", text: "Failed validation" },
     pass: { cls: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200", text: "Looks good" },
     review: { cls: "border-amber-500/50 bg-amber-500/10 text-amber-200", text: "Review suggested" },
     unknown: { cls: "border-slate-600 bg-slate-800 text-slate-300", text: "Built — not compared to a target" },
@@ -99,6 +108,23 @@ export default function ValidationPanel({
           {STATE_META.text}
         </span>
       </h2>
+
+      {/* Critical failures — visually distinct from warnings (red, top of panel). */}
+      {critical.length > 0 && (
+        <div className="mb-3 rounded-md border border-red-500/60 bg-red-500/15 p-2">
+          <div className="mb-1 text-xs font-semibold text-red-100">
+            Critical issues — not safe to manufacture as-is
+          </div>
+          <ul className="space-y-1 text-xs text-red-100/90">
+            {critical.map((c, i) => (
+              <li key={i} className="flex gap-1.5">
+                <span>✕</span>
+                <span>{c}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Requested vs generated dimensions (only when a comparison exists). */}
       {comparisons.length > 0 && (

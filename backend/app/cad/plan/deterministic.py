@@ -231,7 +231,68 @@ def _plan_u_bracket(t: str) -> CadPlan:
     )
 
 
+def _spaced(length: float, n: int, start: float) -> list[float]:
+    """`n` positions evenly spread along [start, length-start] (clear of ends)."""
+    if n <= 0:
+        return []
+    if n == 1:
+        return [length / 2]
+    end = length - start
+    if end <= start:  # leg too short for the inset — fall back to a centered band
+        start, end = length * 0.25, length * 0.75
+    return [start + (end - start) * i / (n - 1) for i in range(n)]
+
+
+def _plan_l_angle_bracket(t: str) -> CadPlan:
+    """True L / angle bracket: two equal legs fused at the corner, with mounting
+    holes through each face. Corner at the origin; legs grow +x and +z."""
+    leg = _near(t, "legs", "leg", "long", "tall") or 60
+    thk = _near(t, "thick") or 5
+    width = _near(t, "width", "wide") or 20
+    sc = _screws(t)
+    hd = sc[0] if sc else (_near(t, "mounting hole", "mm hole", "hole") or 6.0)
+    per_face = _count(t, "holes", "mounting holes") or 2
+    each = bool(re.search(r"each (face|leg|side)|per (face|leg|side)|both (faces|legs|sides)", t))
+    n_h = per_face
+    n_v = per_face if each else 0  # default: holes on the base face only
+
+    features = [
+        Feature(id="horizontal_leg", kind="plate", description="horizontal leg / base face",
+                params={"width": leg, "depth": width, "thickness": thk}, at=[leg / 2, 0, 0]),
+        Feature(id="vertical_leg", kind="rectangular_wall", description="vertical leg face",
+                params={"width": thk, "depth": width, "height": leg}, at=[thk / 2, 0, 0]),
+    ]
+    inset = thk + 5
+    for i, x in enumerate(_spaced(leg, n_h, inset)):
+        features.append(Feature(
+            id=f"hole_horizontal_{i}", kind="hole", axis="z", through=True,
+            description="mounting hole through the horizontal face",
+            params={"diameter": hd}, at=[x, 0, 0]))
+    for i, z in enumerate(_spaced(leg, n_v, inset)):
+        features.append(Feature(
+            id=f"hole_vertical_{i}", kind="hole", axis="x", through=True,
+            description="mounting hole through the vertical face",
+            params={"diameter": hd}, at=[thk / 2, 0, z]))
+    total = n_h + n_v
+    return CadPlan(
+        object_type="l_bracket_fg", name="L bracket",
+        assumptions=[
+            f"Two equal {leg:g}mm legs, {thk:g}mm thick, {width:g}mm wide, fused at the corner",
+            (f"{per_face} × Ø{hd:g}mm holes through each face" if each
+             else f"{total} × Ø{hd:g}mm holes through the base face"),
+        ],
+        features=features,
+        expected=Expected(bbox_mm={"x": leg, "y": width, "z": leg},
+                          hole_count=total, through_hole_count=total),
+    )
+
+
 def _plan_l_bracket(t: str) -> CadPlan:
+    # "legs" / "each face" describes a true angle bracket (equal legs, holes on
+    # both faces); a "base plate + support wall" describes a flat base + riser.
+    if "leg" in t and not ("base plate" in t or "support wall" in t):
+        return _plan_l_angle_bracket(t)
+
     ns = _nums(t)
     base_w = _near(t, "by") or (ns[0] if ns else 100)
     base_d = 60.0

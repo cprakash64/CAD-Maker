@@ -3,12 +3,14 @@
 import type { Check } from "@/lib/types";
 
 const STYLES: Record<Check["severity"], string> = {
+  critical: "border-red-500/60 bg-red-500/15 text-red-100",
   error: "border-red-500/40 bg-red-500/10 text-red-200",
   warning: "border-amber-500/40 bg-amber-500/10 text-amber-200",
   info: "border-edge bg-ink text-slate-300",
 };
 
 const ICON: Record<Check["severity"], string> = {
+  critical: "✕",
   error: "✕",
   warning: "!",
   info: "i",

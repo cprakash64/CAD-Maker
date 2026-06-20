@@ -98,6 +98,49 @@ def _compensation_notes() -> list[str]:
     return ["No printer compensation applied — requested dimensions preserved exactly."]
 
 
+def _validation_summary(measured: dict, requested: dict,
+                        within_tolerance: bool | None, pr: dict) -> dict:
+    """Classify the build into pass / warning / critical_failure.
+
+    CRITICAL (production-blocking trust failures): disconnected bodies, out-of-
+    tolerance dimensions, hole-count / through-hole mismatch, non-watertight or
+    non-manifold mesh, zero/negative volume. WARNINGS: non-blocking printability
+    advisories (e.g. a hole below the printable minimum). Everything else passes.
+    """
+    crit: list[str] = []
+    if measured.get("components", 1) != 1:
+        crit.append(
+            f"Disconnected geometry: {measured.get('components')} separate bodies "
+            "(expected one fused solid)."
+        )
+    if within_tolerance is False:
+        crit.append("Generated dimensions are outside the requested tolerance.")
+    if measured.get("watertight") is False:
+        crit.append("Mesh is not watertight (open / leaking surface).")
+    if measured.get("manifold") is False:
+        crit.append("Mesh is non-manifold (edges shared by more than two faces).")
+    if (measured.get("volume_mm3") or 0) <= 0:
+        crit.append("Generated solid has zero or negative volume.")
+    rc = requested.get("hole_count")
+    if rc is not None and measured.get("hole_count") != rc:
+        crit.append(
+            f"Missing/extra holes: requested {rc}, generated {measured.get('hole_count')}."
+        )
+    rt = requested.get("through_hole_count")
+    if rt is not None and measured.get("through_hole_count") != rt:
+        crit.append(
+            f"Through-hole count mismatch: requested {rt}, "
+            f"generated {measured.get('through_hole_count')}."
+        )
+
+    # Non-critical printability advisories (geometry-health issues are already
+    # criticals above, so only keep the "printable" floor warnings here).
+    warn = [i for i in (pr.get("issues") or []) if "printable" in i]
+
+    status = "critical_failure" if crit else ("warning" if warn else "pass")
+    return {"status": status, "critical_failures": crit, "warnings": warn}
+
+
 def build_spec_report(
     *, requested_dimensions_mm: dict, bbox_mm: dict, volume_mm3: float,
     surface_area_mm2: float, hole_count: int, smallest_hole_mm: float | None,
@@ -113,6 +156,10 @@ def build_spec_report(
         "bbox_mm": bbox_mm, "volume_mm3": volume_mm3,
         "surface_area_mm2": surface_area_mm2, "hole_count": hole_count, **mesh,
     }
+    pr = _print_readiness(measured, smallest_hole_mm)
+    # No requested hole/bbox targets in the template path, so only geometry-health
+    # criticals (disconnected / non-watertight / non-manifold / zero volume) apply.
+    requested: dict = {}
     return {
         "unit": "mm",
         "tolerance": policy_dict(),
@@ -120,7 +167,8 @@ def build_spec_report(
         "measured": measured,
         "comparisons": [],
         "within_tolerance": None,
-        "print_readiness": _print_readiness(measured, smallest_hole_mm),
+        "print_readiness": pr,
+        "validation": _validation_summary(measured, requested, None, pr),
         "notes": _compensation_notes(),
     }
 
@@ -155,8 +203,16 @@ def build_dimension_report(plan: CadPlan, result: CadPlanResult, stl_bytes: byte
             "delta_mm": result.hole_count - exp.hole_count,
             "within": result.hole_count == exp.hole_count,
         })
+    if exp.through_hole_count is not None:
+        comparisons.append({
+            "name": "through_hole_count", "requested_mm": exp.through_hole_count,
+            "measured_mm": result.through_hole_count, "tolerance_mm": 0,
+            "delta_mm": result.through_hole_count - exp.through_hole_count,
+            "within": result.through_hole_count == exp.through_hole_count,
+        })
 
     within_tol = all(c["within"] for c in comparisons) if comparisons else None
+    pr = _print_readiness(measured, _smallest_requested_hole(plan))
 
     return {
         "unit": "mm",
@@ -165,6 +221,7 @@ def build_dimension_report(plan: CadPlan, result: CadPlanResult, stl_bytes: byte
         "measured": measured,
         "comparisons": comparisons,
         "within_tolerance": within_tol,
-        "print_readiness": _print_readiness(measured, _smallest_requested_hole(plan)),
+        "print_readiness": pr,
+        "validation": _validation_summary(measured, requested, within_tol, pr),
         "notes": _compensation_notes(),
     }

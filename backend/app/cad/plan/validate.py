@@ -144,14 +144,14 @@ def validate(
     if exp.hole_count is not None:
         report.checks.append(Check(
             name="hole_count", passed=result.hole_count == exp.hole_count,
-            severity="warning", expected=str(exp.hole_count), actual=str(result.hole_count),
+            severity="critical", expected=str(exp.hole_count), actual=str(result.hole_count),
         ))
 
     if exp.through_hole_count is not None:
         report.checks.append(Check(
             name="through_hole_count",
             passed=result.through_hole_count == exp.through_hole_count,
-            severity="warning",
+            severity="critical",
             expected=str(exp.through_hole_count), actual=str(result.through_hole_count),
         ))
 
@@ -166,9 +166,13 @@ def validate(
             expected=f">={want_through} (mesh genus)", actual=str(stats.through_holes),
         ))
 
-    # --- DIMENSION REPORT + 3D-PRINT READINESS (advisory) -----------------
-    # Compute BRep + mesh ground truth, compare against the requested dims, and
-    # surface printability. All advisory: a compiled, exported model still ships.
+    # --- DIMENSION REPORT + 3D-PRINT READINESS ----------------------------
+    # Compute BRep + mesh ground truth and compare against the requested dims.
+    # Geometry-trust failures (disconnected bodies, dim drift, hole mismatch,
+    # non-watertight/non-manifold, zero volume) are CRITICAL — surfaced via the
+    # report's validation status. They do NOT change export-blocking semantics
+    # (report.passed stays based on not_empty/exports_present), so an inspectable
+    # model is still produced, but it is clearly marked "Failed validation".
     report.dimension_report = build_dimension_report(plan, result, stl_bytes)
     measured = report.dimension_report["measured"]
     pr = report.dimension_report["print_readiness"]
@@ -176,22 +180,22 @@ def validate(
     wt = report.dimension_report["within_tolerance"]
     if wt is not None:
         report.checks.append(Check(
-            name="dimensions_within_tolerance", passed=wt, severity="warning",
+            name="dimensions_within_tolerance", passed=wt, severity="critical",
             expected="all measured dims within tolerance",
             actual="within tolerance" if wt else "drift detected",
         ))
     report.checks.append(Check(
         name="watertight_manifold",
         passed=bool(measured["watertight"] and measured["manifold"]),
-        severity="warning", expected="closed, manifold mesh",
+        severity="critical", expected="closed, manifold mesh",
         actual=f"watertight={measured['watertight']} manifold={measured['manifold']}",
     ))
     report.checks.append(Check(
-        name="single_body", passed=measured["components"] == 1, severity="warning",
+        name="single_body", passed=measured["components"] == 1, severity="critical",
         expected="1 fused body", actual=f"{measured['components']} component(s)",
     ))
     report.checks.append(Check(
-        name="positive_volume", passed=measured["volume_mm3"] > 0, severity="warning",
+        name="positive_volume", passed=measured["volume_mm3"] > 0, severity="critical",
         expected=">0 mm³", actual=f"{measured['volume_mm3']} mm³",
     ))
     if pr["min_hole_diameter_mm"] is not None:

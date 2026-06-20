@@ -24,6 +24,33 @@ from app.schemas.design_spec import DesignSpec
 from app.storage.storage import StorageError, get_storage
 
 
+# User-safe message returned when a manufacturable export is blocked.
+DOWNLOAD_BLOCKED_MESSAGE = (
+    "This design failed validation and is not safe to export as a manufacturable file."
+)
+
+
+def validation_summary(design: Design) -> dict:
+    """The dimension report's validation block ({status, critical_failures,
+    warnings}), or {} when there's no report (older / non-CadPlan designs)."""
+    report = (design.semantic_json or {}).get("dimension_report") or {}
+    return report.get("validation") or {}
+
+
+def validation_status(design: Design) -> str | None:
+    return validation_summary(design).get("status")
+
+
+def is_critical_failure(design: Design) -> bool:
+    """True only when validation found a production-blocking failure. A None/
+    missing status (no report) is NOT critical — those designs export as before."""
+    return validation_status(design) == "critical_failure"
+
+
+def recovery_info(design: Design) -> dict:
+    return (design.semantic_json or {}).get("recovery") or {}
+
+
 def user_owns_design(db: Session, design: Design, user_id: str) -> bool:
     project = db.get(Project, design.project_id)
     return project is not None and project.user_id == user_id
@@ -203,6 +230,58 @@ def _plan_explanation(plan, result) -> str:
     return " ".join(bits)
 
 
+def _outcome_status(outcome) -> str | None:
+    """validation_status of a freshly-built outcome (before persistence)."""
+    report = getattr(outcome.report, "dimension_report", None) or {}
+    return (report.get("validation") or {}).get("status")
+
+
+def _outcome_criticals(outcome) -> list[str]:
+    report = getattr(outcome.report, "dimension_report", None) or {}
+    return (report.get("validation") or {}).get("critical_failures") or []
+
+
+def _attempt_recovery(prompt: str, plan, outcome, provider):
+    """Try to turn a critical_failure build into a non-critical one, ONCE.
+
+    Strategies, in order: (1) LLM ``repair`` re-prompted with the exact critical
+    diagnostics; (2) the offline deterministic planner as a fallback route. The
+    first candidate that compiles, exports, and is no longer critical wins.
+
+    Returns ``(plan, outcome, strategy, succeeded)`` — the originals unchanged
+    when nothing improved (with ``strategy`` = the first thing we tried)."""
+    from app.cad.base import CadGenerationError
+    from app.cad.plan import deterministic
+    from app.cad.plan.normalize import normalize_cad_plan
+    from app.cad.plan.planner import build_and_validate, repair_plan
+
+    diag = (
+        "The compiled model FAILED critical validation and must be rebuilt: "
+        + "; ".join(_outcome_criticals(outcome))
+        + ". Produce a single fused solid (no disconnected bodies), keep the "
+        "requested overall dimensions, and cut every requested hole through."
+    )
+    candidates: list[tuple[str, object]] = []
+    repaired = repair_plan(prompt, plan, diag, provider)
+    if repaired is not None and not repaired.clarification_required and repaired.features:
+        candidates.append(("repair", normalize_cad_plan(repaired, prompt)))
+    det = deterministic.plan(prompt)
+    if det is not None and not det.clarification_required and det.features:
+        det_norm = normalize_cad_plan(det, prompt)
+        if det_norm.model_dump(mode="json") != plan.model_dump(mode="json"):
+            candidates.append(("deterministic_fallback", det_norm))
+
+    for strategy, cand in candidates:
+        try:
+            retry = build_and_validate(cand)
+        except CadGenerationError:
+            continue
+        if retry.report.passed and _outcome_status(retry) != "critical_failure":
+            return cand, retry, strategy, True
+
+    return plan, outcome, (candidates[0][0] if candidates else None), False
+
+
 def _try_cad_plan(db: Session, design: Design, prompt: str, parse_start: float) -> Design | None:
     """Primary route: plain English -> CadPlan -> deterministic CadQuery compile
     -> validate -> (one repair pass). Returns the finished/clarification design,
@@ -290,17 +369,38 @@ def _try_cad_plan(db: Session, design: Design, prompt: str, parse_start: float) 
                 if retry_audit.passed:
                     outcome, plan, audit, repair_attempts = retry, repaired, retry_audit, 1
 
-    _store_plan(db, design, plan, outcome, repair_attempts, audit)
+    # CRITICAL-FAILURE RECOVERY: a model that compiled+exported but failed
+    # critical validation (disconnected bodies, dimension drift, missing/through
+    # holes, non-watertight/manifold, zero volume) is NOT a usable result. Try
+    # ONE automatic recovery (repair, then deterministic fallback) and re-validate
+    # before finalizing. We always record what was attempted; the design is still
+    # stored (inspectable) even if recovery fails — the export route blocks it.
+    recovery = {"attempted": False, "strategy": None, "succeeded": False}
+    if _outcome_status(outcome) == "critical_failure":
+        recovery["attempted"] = True
+        new_plan, new_outcome, strategy, ok = _attempt_recovery(prompt, plan, outcome, provider)
+        recovery["strategy"] = strategy
+        recovery["succeeded"] = ok
+        log_event("critical_recovery", design_id=design.id, strategy=strategy,
+                  succeeded=ok, criticals=len(_outcome_criticals(outcome)))
+        if ok:
+            outcome, plan = new_outcome, new_plan
+            repair_attempts += 1
+            audit = audit_plan(prompt, plan, outcome.result)
+
+    _store_plan(db, design, plan, outcome, repair_attempts, audit, recovery=recovery)
     log_event("prompt_parsed", design_id=design.id, provider=provider.name,
               routed="cad_plan", produced_spec=True,
-              validated=outcome.report.passed, latency_ms=elapsed_ms(parse_start))
+              validated=outcome.report.passed,
+              validation_status=_outcome_status(outcome),
+              latency_ms=elapsed_ms(parse_start))
     db.commit()
     db.refresh(design)
     return design
 
 
 def _store_plan(db: Session, design: Design, plan, outcome, repair_attempts: int,
-                audit=None) -> None:
+                audit=None, recovery: dict | None = None) -> None:
     """Persist a CadPlan-built design: exports, preview, validation, assumptions."""
     import hashlib
     import json as _json
@@ -337,6 +437,9 @@ def _store_plan(db: Session, design: Design, plan, outcome, repair_attempts: int
              "expected": i.requirement, "actual": i.detail, "severity": "warning"}
             for i in audit.items if not i.satisfied
         )
+    semantic["recovery"] = recovery or {
+        "attempted": False, "strategy": None, "succeeded": False
+    }
     design.semantic_json = semantic
     design.features_json = result.feature_meta
     design.missing_required = []

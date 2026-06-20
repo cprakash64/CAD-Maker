@@ -18,13 +18,14 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
 from app.cad.base import CadGenerationError
+from app.config import settings
 from app.database import get_db
 from app.drawing import STANDARD_VIEWS
 from app.drawing.render import render_view
@@ -66,6 +67,13 @@ def _feedback_dto(fb: Feedback) -> FeedbackDTO:
         comment=fb.comment,
         created_at=fb.created_at.isoformat(),
     )
+
+
+def _dim_validation(design: Design) -> dict:
+    """The dimension report's validation block ({status, critical_failures,
+    warnings}), or an empty dict when no report exists."""
+    report = (design.semantic_json or {}).get("dimension_report") or {}
+    return report.get("validation") or {}
 
 
 def _to_dto(design: Design, user: User) -> DesignDTO:
@@ -137,6 +145,16 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         dimension_report=(design.semantic_json or {}).get("dimension_report"),
         print_readiness=((design.semantic_json or {}).get("dimension_report") or {}).get("print_readiness"),
         dimensions_within_tolerance=((design.semantic_json or {}).get("dimension_report") or {}).get("within_tolerance"),
+        validation_status=_dim_validation(design).get("status"),
+        validation_critical_failures=_dim_validation(design).get("critical_failures", []),
+        validation_warnings=_dim_validation(design).get("warnings", []),
+        recovery_attempted=bool(design_service.recovery_info(design).get("attempted")),
+        recovery_strategy=design_service.recovery_info(design).get("strategy"),
+        recovery_succeeded=bool(design_service.recovery_info(design).get("succeeded")),
+        download_blocked_reason=(
+            design_service.DOWNLOAD_BLOCKED_MESSAGE
+            if design_service.is_critical_failure(design) else None
+        ),
     )
 
 
@@ -146,6 +164,23 @@ def _owned_or_404(db: Session, design_id: str, user: User) -> Design:
     if design is None or not design_service.user_owns_design(db, design, user.id):
         raise HTTPException(status_code=404, detail="Design not found")
     return design
+
+
+def _block_export_if_critical(design: Design, allow_failed: bool = False) -> None:
+    """Refuse to hand out a manufacturable file for a critical-failure design.
+
+    The design stays fully inspectable (GET /{id}, preview, drawing views); only
+    the STEP/STL/package exports are gated. A dev-only override (`?allow_failed=
+    true`, honored solely when DEV_MODE is on) lets engineers pull the broken file
+    for debugging — never available in staging/production."""
+    if not design_service.is_critical_failure(design):
+        return
+    if allow_failed and settings.dev_mode:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=design_service.DOWNLOAD_BLOCKED_MESSAGE,
+    )
 
 
 @router.post("/create", response_model=DesignDTO, dependencies=[rate_limit("create")])
@@ -216,6 +251,7 @@ def export_design(
     design = _owned_or_404(db, design_id, user)
     if not design.spec_json:
         raise HTTPException(status_code=409, detail="Nothing to export yet")
+    _block_export_if_critical(design)
     if not design.exports:
         design_service._regenerate_geometry(db, design, DesignSpec(**design.spec_json))
         db.commit()
@@ -227,12 +263,17 @@ def export_design(
 def download_file(
     design_id: str,
     fmt: str,
+    allow_failed: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Owner-checked download. Streams from local storage or redirects to a
-    short-lived S3 presigned URL. Private files are never publicly addressable."""
+    short-lived S3 presigned URL. Private files are never publicly addressable.
+
+    Blocked (409) for critical-failure designs so a failed result is never handed
+    out as a manufacturable file."""
     design = _owned_or_404(db, design_id, user)
+    _block_export_if_critical(design, allow_failed)
     export = next((e for e in design.exports if e.fmt == fmt), None)
     if export is None:
         raise HTTPException(status_code=404, detail="No such export")
@@ -280,11 +321,15 @@ def get_view(
 @router.get("/{design_id}/package", dependencies=[rate_limit("package")])
 def download_package(
     design_id: str,
+    allow_failed: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Download a complete CAD package (STEP, STL, spec, report, drawings) as ZIP."""
+    """Download a complete CAD package (STEP, STL, spec, report, drawings) as ZIP.
+
+    Blocked (409) for critical-failure designs (it bundles manufacturable files)."""
     design = _owned_or_404(db, design_id, user)
+    _block_export_if_critical(design, allow_failed)
     if not design.spec_json:
         raise HTTPException(status_code=409, detail="Nothing to package yet")
     try:
