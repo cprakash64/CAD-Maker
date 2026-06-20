@@ -3,14 +3,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
 
-_connect_args = (
-    {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-)
+_is_sqlite = settings.database_url.startswith("sqlite")
+_connect_args = {"check_same_thread": False} if _is_sqlite else {}
 # pool_pre_ping recycles connections that a Postgres server (or a proxy/idle
 # timeout) has dropped, so a long-running worker never serves a dead connection.
 # Harmless for SQLite.
@@ -20,6 +19,20 @@ engine = create_engine(
     pool_pre_ping=True,
     future=True,
 )
+
+if _is_sqlite:
+    # SQLite hardening so the dev server tolerates concurrent / duplicate writes
+    # instead of raising "database is locked": WAL lets a writer and readers
+    # coexist, and busy_timeout makes a blocked writer wait rather than fail.
+    # (Production should use Postgres; these are no-ops there.)
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_conn, _record):  # pragma: no cover - driver glue
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.execute("PRAGMA busy_timeout=10000")  # ms
+        cur.close()
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

@@ -126,6 +126,11 @@ class Settings:
     # OpenAI client retries transient 429/5xx/connection errors with backoff).
     openai_timeout_seconds: int = 60
     openai_max_retries: int = 2
+    # Total wall-clock budget for ONE generation (all LLM fallbacks + repair
+    # passes combined). Bounds the model-fallback chain so a request can never
+    # hang for minutes; exceeding it returns a clean 503. Alias accepted at load
+    # time: TOTAL_LLM_TIMEOUT_SECONDS.
+    cad_generation_timeout_seconds: int = 120
 
     # CAD feature-graph engine (plain-English → CadPlan → CadQuery).
     # cad_engine="feature_graph" makes the CadPlan compiler the primary route;
@@ -170,6 +175,14 @@ class Settings:
                 kwargs[f.name] = _get_opt(f.name)
             else:
                 kwargs[f.name] = _get(f.name, str(f.default))
+        # Alias: TOTAL_LLM_TIMEOUT_SECONDS -> cad_generation_timeout_seconds when
+        # the canonical var isn't set.
+        if not _env_is_set("CAD_GENERATION_TIMEOUT_SECONDS") and _env_is_set(
+            "TOTAL_LLM_TIMEOUT_SECONDS"
+        ):
+            kwargs["cad_generation_timeout_seconds"] = _get_int(
+                "TOTAL_LLM_TIMEOUT_SECONDS", 120
+            )
         return cls(**kwargs)
 
     # --- environment / provider gating ---

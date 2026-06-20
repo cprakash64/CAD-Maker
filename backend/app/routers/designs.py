@@ -155,6 +155,8 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
             design_service.DOWNLOAD_BLOCKED_MESSAGE
             if design_service.is_critical_failure(design) else None
         ),
+        needs_decomposition=design.route == "needs_decomposition",
+        decomposition=(design.semantic_json or {}).get("decomposition"),
     )
 
 

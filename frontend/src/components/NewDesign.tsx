@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useRequireAuth } from "@/lib/auth";
 import { ONBOARDING_EXAMPLES } from "@/lib/examples";
@@ -14,19 +14,25 @@ function NewDesignInner() {
   const [prompt, setPrompt] = useState(params.get("prompt") ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Ref guard: blocks a second POST from a fast double-click before React has
+  // re-rendered the disabled button (state updates are async).
+  const submitting = useRef(false);
 
   async function submit() {
-    if (!prompt.trim()) return;
+    if (submitting.current || !prompt.trim()) return;
+    submitting.current = true;
     setBusy(true);
     setError(null);
     try {
       const design = await api.createDesign(prompt.trim());
+      // Navigating away; keep `submitting` latched so nothing re-fires.
       router.push(`/studio/${design.id}`);
     } catch (e) {
-      // Surface the exact backend reason (validation detail), never a vague
-      // "something went wrong".
+      // Surface the exact backend reason (validation / 503 detail), never a vague
+      // "something went wrong". Re-enable so the user can retry.
       setError(e instanceof ApiError ? e.message : `Generation failed: ${String(e)}`);
       setBusy(false);
+      submitting.current = false;
     }
   }
 

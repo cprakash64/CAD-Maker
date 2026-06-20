@@ -230,7 +230,7 @@ export default function StudioPage({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        {!design.needs_clarification &&
+        {!design.needs_clarification && !design.needs_decomposition &&
           (exportBlocked ? (
             <div className="banner-danger max-w-xs px-3 py-2 text-xs">
               <span className="font-semibold">Export blocked.</span> This design failed
@@ -259,6 +259,63 @@ export default function StudioPage({ params }: { params: { id: string } }) {
       </div>
 
       <MockModeBanner />
+
+      {design.needs_decomposition && (
+        <div className="card p-5">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="badge-review">Complex assembly</span>
+            <h2 className="text-sm font-semibold text-slate-100">
+              This is a complex assembly — generate it one part at a time
+            </h2>
+          </div>
+          <p className="text-sm leading-relaxed text-slate-400">
+            {design.decomposition?.reason ??
+              design.explanation ??
+              "This describes a large multi-part assembly, which is beyond single-part generation. Break it into individual components and generate them one by one."}
+          </p>
+
+          {(design.decomposition?.components?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <h3 className="label mb-1.5">Suggested components</h3>
+              <div className="flex flex-wrap gap-1.5">
+                {design.decomposition!.components!.map((c) => (
+                  <span key={c} className="badge-neutral">{c}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {design.decomposition?.recommended_first && (
+            <p className="mt-4 text-sm text-slate-300">
+              <span className="label">Start here:</span>{" "}
+              {design.decomposition.recommended_first}
+            </p>
+          )}
+
+          {(design.decomposition?.examples?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <h3 className="label mb-1.5">Try one of these smaller parts</h3>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {design.decomposition!.examples!.map((ex) => (
+                  <Link
+                    key={ex}
+                    href={`/new?prompt=${encodeURIComponent(ex)}`}
+                    className="surface p-3 text-left text-xs text-slate-300 transition-colors hover:border-accent/60"
+                  >
+                    {ex}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4">
+            <Link href="/designs/new" className="btn-ghost btn-sm">
+              New single part
+            </Link>
+          </div>
+        </div>
+      )}
 
       {design.needs_clarification && (
         <div className="banner-warn p-4">
@@ -300,7 +357,7 @@ export default function StudioPage({ params }: { params: { id: string } }) {
       {error && <div className="banner-danger">{error}</div>}
       {notice && <div className="banner-warn">{notice}</div>}
 
-      {!design.needs_clarification && (
+      {!design.needs_clarification && !design.needs_decomposition && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           {/* --- Centerpiece: CAD viewport + build narrative -------------- */}
           <div className="space-y-4">

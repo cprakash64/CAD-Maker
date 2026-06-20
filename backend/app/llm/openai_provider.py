@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 
 from app.config import settings
+from app.llm.budget import budget_expired, remaining_seconds
 from app.llm.base import (
     CAD_PLAN_SYSTEM_PROMPT,
     DRAWING_SYSTEM_PROMPT,
@@ -32,6 +33,10 @@ from app.llm.schemas import (
     GENERAL_CAD_PLAN_SCHEMA,
 )
 
+_BUDGET_MESSAGE = (
+    "Generation took too long and was stopped. Please try a simpler or more "
+    "specific part, then try again."
+)
 _CLARIFY_SYSTEM = (
     "You are a CAD intake assistant. The user's request could not be turned into "
     "a valid part. In one short, friendly sentence, ask for the single most "
@@ -104,11 +109,23 @@ class OpenAIProvider(LLMProvider):
         ``factory(model)`` builds the request kwargs for a given model. On any
         failure (timeout, unknown model, transport error, unparseable output) we
         try the next model; once the chain is exhausted we raise a user-safe
-        ``LLMUnavailableError`` (never a raw provider stack trace)."""
+        ``LLMUnavailableError`` (never a raw provider stack trace).
+
+        The shared per-request budget (``app.llm.budget``) bounds total time: each
+        call's timeout is capped to the remaining budget, and we stop trying once
+        it is spent — so the fallback chain can never run for minutes."""
         last_exc: Exception | None = None
         for idx, model in enumerate(models):
+            if budget_expired():
+                log_event("llm_budget_exhausted", label=label)
+                raise LLMUnavailableError(_BUDGET_MESSAGE)
             try:
-                resp = self._client.responses.create(**factory(model))
+                kwargs = factory(model)
+                rem = remaining_seconds()
+                if rem is not None:
+                    # Never exceed the remaining budget on a single call.
+                    kwargs["timeout"] = max(1.0, min(rem, settings.openai_timeout_seconds))
+                resp = self._client.responses.create(**kwargs)
                 text = _output_text(resp)
                 result = parse(text) if parse else text
                 if idx > 0:
@@ -120,6 +137,8 @@ class OpenAIProvider(LLMProvider):
                     "openai_call_failed", label=label, model=model,
                     error_type=type(exc).__name__, detail=str(exc)[:200],
                 )
+        if budget_expired():
+            raise LLMUnavailableError(_BUDGET_MESSAGE) from last_exc
         raise LLMUnavailableError(
             "The AI service is temporarily unavailable — please try again in a "
             "moment. If this keeps happening, the configured model may be invalid "

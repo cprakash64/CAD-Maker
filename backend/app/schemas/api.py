@@ -147,6 +147,10 @@ class DesignDTO(BaseModel):
     recovery_succeeded: bool = False
     # Non-null only when a manufacturable export is blocked (critical failure).
     download_blocked_reason: Optional[str] = None
+    # Large-assembly gate: set when the prompt describes a whole machine /
+    # multi-subsystem assembly that must be decomposed into single parts.
+    needs_decomposition: bool = False
+    decomposition: Optional[dict] = None
 
 
 class DesignSummaryDTO(BaseModel):

@@ -90,6 +90,17 @@ export interface Design {
   validation_status?: ValidationStatus | null;
   validation_critical_failures?: string[];
   validation_warnings?: string[];
+  // Large-assembly gate: the prompt describes a whole machine / multi-subsystem
+  // assembly and must be decomposed into single parts before generation.
+  needs_decomposition?: boolean;
+  decomposition?: Decomposition | null;
+}
+
+export interface Decomposition {
+  reason?: string;
+  components?: string[];
+  recommended_first?: string;
+  examples?: string[];
 }
 
 export interface FeatureAuditItem {

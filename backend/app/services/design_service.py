@@ -11,8 +11,10 @@ import time
 from sqlalchemy.orm import Session
 
 from app.cad.base import CadGenerationError
+from app.cad.complexity import assess_complexity
 from app.cad.registry import get_template
 from app.config import settings
+from app.llm.budget import generation_budget
 from app.explain import explain
 from app.export.exporter import generate
 from app.manufacturability.checks import run_checks
@@ -596,6 +598,21 @@ def _store_program(db: Session, design: Design, out) -> None:
               triangle_count=result.preview.triangle_count)
 
 
+def _store_decomposition(db: Session, design: Design, assessment) -> None:
+    """Persist a 'this is a large assembly — decompose it' result (no geometry)."""
+    design.object_type = "assembly"
+    design.route = "needs_decomposition"
+    design.route_reason = "Large multi-part assembly — generate one component at a time."
+    design.explanation = assessment.reason
+    design.assumptions = []
+    design.missing_required = []
+    design.clarification_question = None
+    design.spec_json = None
+    design.semantic_json = {"decomposition": assessment.to_dict()}
+    db.commit()
+    db.refresh(design)
+
+
 def create_design(
     db: Session,
     prompt: str,
@@ -606,9 +623,34 @@ def create_design(
     project = _ensure_project(db, project_id, name, user_id)
     design = Design(project_id=project.id, prompt=prompt)
     db.add(design)
-    db.flush()
+    # Persist the placeholder and COMMIT immediately, so we never hold a write
+    # transaction (and its SQLite write lock) open across the slow LLM / CadQuery
+    # work below. This is what prevents "database is locked" under concurrent or
+    # duplicate submits — each request locks only briefly to write, not for the
+    # whole multi-second generation.
+    db.commit()
+    db.refresh(design)
+
+    # COMPLEXITY GATE (cheap, no LLM/CAD): whole machines / large multi-subsystem
+    # assemblies (car chassis, airframe, ...) are guided to decomposition fast
+    # instead of being attempted as one synchronous part (which would burn minutes
+    # of LLM fallback and produce nothing usable).
+    assessment = assess_complexity(prompt)
+    if assessment.is_complex:
+        _store_decomposition(db, design, assessment)
+        log_event("prompt_decomposition_required", design_id=design.id,
+                  subsystems=len(assessment.subsystems))
+        return design
 
     parse_start = time.perf_counter()
+    # Bound the TOTAL generation time (all model fallbacks + repair passes) so a
+    # request can never hang for minutes; exceeding it raises LLMUnavailableError
+    # which the API surfaces as a clean 503.
+    with generation_budget(settings.cad_generation_timeout_seconds):
+        return _run_generation(db, design, prompt, parse_start)
+
+
+def _run_generation(db: Session, design: Design, prompt: str, parse_start: float) -> Design:
     # PRIMARY ROUTE: plain English -> CadPlan feature graph -> deterministic
     # CadQuery compile -> validate -> repair. Composes primitives instead of
     # routing the whole prompt to a fixed template (no flange->adapter_plate,
