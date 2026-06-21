@@ -151,6 +151,9 @@ class DesignDTO(BaseModel):
     # multi-subsystem assembly that must be decomposed into single parts.
     needs_decomposition: bool = False
     decomposition: Optional[dict] = None
+    # "single_part" | "assembly" — assembly designs are validated with the
+    # assembly profile (multi-body allowed) and labelled as concept models.
+    design_mode: Optional[str] = None
 
 
 class DesignSummaryDTO(BaseModel):

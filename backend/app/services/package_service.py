@@ -82,6 +82,23 @@ def build_package_zip(spec: DesignSpec, design_id: str) -> bytes:
     return buf.getvalue()
 
 
+def build_files_package(name: str, files: dict[str, bytes], metadata: dict,
+                        readme: str) -> bytes:
+    """Package already-generated export bytes (STEP/STL) + metadata + README.
+
+    Used for designs that have no DesignSpec (CadPlan feature-graph parts and
+    concept assemblies) — we bundle the stored files rather than rebuilding from
+    a spec that doesn't exist."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fmt, data in files.items():
+            if data:
+                zf.writestr(f"{name}.{fmt}", data)
+        zf.writestr("metadata.json", json.dumps(metadata, indent=2, default=str))
+        zf.writestr("README.txt", readme)
+    return buf.getvalue()
+
+
 _PACKAGE_README = """SourceCAD AI Part Studio — CAD Package
 =======================================
 Part: {part}

@@ -157,6 +157,7 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         ),
         needs_decomposition=design.route == "needs_decomposition",
         decomposition=(design.semantic_json or {}).get("decomposition"),
+        design_mode=(design.semantic_json or {}).get("design_mode"),
     )
 
 
@@ -332,13 +333,49 @@ def download_package(
     Blocked (409) for critical-failure designs (it bundles manufacturable files)."""
     design = _owned_or_404(db, design_id, user)
     _block_export_if_critical(design, allow_failed)
-    if not design.spec_json:
-        raise HTTPException(status_code=409, detail="Nothing to package yet")
-    try:
-        data = build_package_zip(DesignSpec(**design.spec_json), design.id)
-    except CadGenerationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    name = f"{design.object_type or 'part'}_package.zip"
+    base = design.object_type or "part"
+    if design.spec_json:
+        try:
+            data = build_package_zip(DesignSpec(**design.spec_json), design.id)
+        except CadGenerationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    else:
+        # CadPlan feature-graph parts and concept assemblies have no DesignSpec —
+        # bundle their stored STEP/STL plus a metadata + caveat README.
+        from app.services.package_service import build_files_package
+
+        storage = get_storage()
+        files: dict[str, bytes] = {}
+        for e in design.exports:
+            try:
+                files[e.fmt] = storage.read(e.storage_key)
+            except StorageError:
+                continue
+        if not files:
+            raise HTTPException(status_code=409, detail="Nothing to package yet")
+        report = (design.semantic_json or {}).get("dimension_report") or {}
+        metadata = {
+            "object_type": base,
+            "route": design.route,
+            "design_mode": (design.semantic_json or {}).get("design_mode", "single_part"),
+            "bounding_box_mm": design.bounding_box,
+            "assumptions": design.assumptions or [],
+            "validation": report.get("validation"),
+            "components": report.get("components"),
+            "sections": report.get("sections"),
+        }
+        is_assembly = (design.semantic_json or {}).get("design_mode") == "assembly"
+        readme = (
+            "SourceCAD — CAD Package\n=======================\n"
+            f"Part: {base}\n\n"
+            "Contents: STEP + STL solids and metadata.json (bounding box, "
+            "components, validation).\n\n"
+            + ("NOTE: This is a CONCEPT ASSEMBLY model — a geometric first pass, "
+               "NOT a certified or structurally-analyzed (FEA) design.\n"
+               if is_assembly else "")
+        )
+        data = build_files_package(base, files, metadata, readme)
+    name = f"{base}_package.zip"
     return Response(
         content=data,
         media_type="application/zip",

@@ -598,6 +598,108 @@ def _store_program(db: Session, design: Design, out) -> None:
               triangle_count=result.preview.triangle_count)
 
 
+def _try_assembly(db: Session, design: Design, prompt: str) -> Design:
+    """Generate a simplified CONCEPT assembly for a supported complex family
+    (tubular chassis / space frame). Deterministic CadQuery — no LLM."""
+    from app.cad.assembly.chassis import build_chassis
+    from app.cad.assembly.report import build_assembly_report
+    from app.cad.plan.compiler import export_solid
+
+    build = build_chassis(prompt)
+    stl_bytes, step_bytes, preview = export_solid(build.solid)
+    report = build_assembly_report(build, stl_bytes, step_bytes)
+    _store_assembly(db, design, build, stl_bytes, step_bytes, preview, report)
+    log_event("assembly_generated", design_id=design.id, family="tubular_chassis",
+              components=len(build.components), tubes=build.tube_count,
+              status=report["validation"]["status"])
+    db.commit()
+    db.refresh(design)
+    return design
+
+
+def _store_assembly(db: Session, design: Design, build, stl_bytes: bytes,
+                    step_bytes: bytes, preview, report: dict) -> None:
+    """Persist a concept-assembly design: exports, preview, validation, components."""
+    import hashlib
+    import json as _json
+
+    storage = get_storage()
+    digest = hashlib.sha256(
+        _json.dumps(report.get("components"), sort_keys=True, default=str).encode()
+    ).hexdigest()[:16]
+    env = build.envelope_mm
+    val = report["validation"]
+
+    design.object_type = "tubular_chassis_assembly"
+    design.spec_json = None
+    design.spec_hash = digest
+    design.route = "assembly"
+    design.route_reason = "Simplified concept assembly (tubular chassis / space frame)."
+    design.bounding_box = report["measured"]["bbox_mm"]
+    design.provider = settings.cad_llm_provider or settings.llm_provider
+    design.explanation = (
+        f"Simplified concept assembly — tubular chassis / space frame, "
+        f"~{env['x']:g}×{env['y']:g}×{env['z']:g} mm, {build.tube_count} tubes, "
+        f"{len(build.components)} named components. Concept CAD — not structurally certified."
+    )
+    design.assumptions = [
+        f"Target envelope {env['x']:g}×{env['y']:g}×{env['z']:g} mm",
+        f"Round tubes Ø{build.tube_od:g}mm, {build.tube_wall:g}mm wall (metadata)",
+        "Concept assembly — not a certified or FEA-analyzed structural design",
+    ]
+    design.missing_required = []
+    design.clarification_question = None
+    design.auto_repaired = False
+    design.repair_attempts = 0
+    design.export_formats = ["step", "stl"]
+    design.features_json = []  # an assembly is not single-feature editable
+    design.semantic_json = {
+        "design_mode": "assembly",
+        "dimension_report": report,
+        "checks": [],  # detail lives in dimension_report + ManufacturingCheck rows
+        "passed": val["status"] != "critical_failure",
+    }
+    design.preview_json = {
+        "positions": preview.positions,
+        "indices": preview.indices,
+        "vertex_count": preview.vertex_count,
+        "triangle_count": preview.triangle_count,
+    }
+
+    for old in list(design.exports):
+        db.delete(old)
+    db.flush()
+    for fmt, data in (("stl", stl_bytes), ("step", step_bytes)):
+        if not data:
+            continue
+        key = f"{design.id}/{digest}.{fmt}"
+        try:
+            storage.save(key, data)
+        except StorageError:
+            log_event("export_failed", design_id=design.id, fmt=fmt)
+            raise
+        db.add(ExportFile(
+            design_id=design.id, fmt=fmt, storage_key=key,
+            url=f"{settings.public_base_url}/api/designs/{design.id}/files/{fmt}",
+            size_bytes=len(data),
+        ))
+
+    for old in list(design.checks):
+        db.delete(old)
+    db.flush()
+    db.add(ManufacturingCheck(
+        design_id=design.id, check="validation_profile", severity="info",
+        passed=True, message="Validation profile: Assembly (concept model)."))
+    for msg in val["critical_failures"]:
+        db.add(ManufacturingCheck(
+            design_id=design.id, check="assembly_critical", severity="critical",
+            passed=False, message=msg))
+    for msg in val["warnings"]:
+        db.add(ManufacturingCheck(
+            design_id=design.id, check="assembly_warning", severity="warning",
+            passed=False, message=msg))
+
+
 def _store_decomposition(db: Session, design: Design, assessment) -> None:
     """Persist a 'this is a large assembly — decompose it' result (no geometry)."""
     design.object_type = "assembly"
@@ -637,6 +739,15 @@ def create_design(
     # of LLM fallback and produce nothing usable).
     assessment = assess_complexity(prompt)
     if assessment.is_complex:
+        # Supported assembly families get a simplified CONCEPT model instead of
+        # a bare decomposition prompt. Deterministic + fast (no LLM). If the
+        # build fails for any reason, fall back to decomposition guidance.
+        if assessment.supported_family == "tubular_chassis":
+            try:
+                return _try_assembly(db, design, prompt)
+            except CadGenerationError as exc:
+                log_event("assembly_generation_failed", design_id=design.id,
+                          detail=str(exc)[:200])
         _store_decomposition(db, design, assessment)
         log_event("prompt_decomposition_required", design_id=design.id,
                   subsystems=len(assessment.subsystems))

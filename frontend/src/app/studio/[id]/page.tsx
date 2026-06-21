@@ -50,6 +50,7 @@ const ROUTE_LABELS: Record<string, string> = {
   feature_graph: "Flexible CAD graph",
   scad_generator: "SCAD generator",
   clarification: "Needs clarification",
+  assembly: "Concept assembly",
 };
 
 export default function StudioPage({ params }: { params: { id: string } }) {
@@ -182,6 +183,9 @@ export default function StudioPage({ params }: { params: { id: string } }) {
   // Critical-failure designs stay inspectable, but manufacturable exports are
   // blocked (and the backend returns 409 even if a button were clicked).
   const exportBlocked = design.validation_status === "critical_failure";
+  const isAssembly = design.design_mode === "assembly";
+  const assemblyComponents = design.dimension_report?.components ?? [];
+  const assemblyEnvelope = design.bounding_box_mm;
 
   const vstatus = design.validation_status;
   const vmeta =
@@ -361,6 +365,42 @@ export default function StudioPage({ params }: { params: { id: string } }) {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           {/* --- Centerpiece: CAD viewport + build narrative -------------- */}
           <div className="space-y-4">
+            {isAssembly && (
+              <div className="card p-4">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="badge-neutral">Assembly</span>
+                  <h2 className="text-sm font-semibold text-slate-100">
+                    Simplified assembly generated
+                  </h2>
+                </div>
+                <p className="text-xs leading-relaxed text-amber-200/90">
+                  Concept CAD — a geometric first pass, <strong>not structurally
+                  certified</strong> (no FEA / load analysis). Refine individual
+                  parts before manufacturing.
+                </p>
+                {assemblyEnvelope && (
+                  <p className="mt-2 text-xs text-slate-400">
+                    Envelope:{" "}
+                    <span className="stat text-slate-200">
+                      {assemblyEnvelope.x} × {assemblyEnvelope.y} × {assemblyEnvelope.z} mm
+                    </span>{" "}
+                    · {assemblyComponents.length} components
+                  </p>
+                )}
+                {assemblyComponents.length > 0 && (
+                  <div className="mt-3">
+                    <h3 className="label mb-1.5">Components</h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {assemblyComponents.map((c) => (
+                        <span key={c.id} className="badge-neutral" title={c.section}>
+                          {c.id.replace(/_/g, " ")}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <Studio3D
               mesh={design.preview}
               features={design.features ?? []}
@@ -453,6 +493,7 @@ export default function StudioPage({ params }: { params: { id: string } }) {
               validationStatus={design.validation_status}
               criticalFailures={design.validation_critical_failures}
               assumptions={design.assumptions ?? []}
+              designMode={design.design_mode}
             />
             <ChecksPanel checks={design.checks} />
 

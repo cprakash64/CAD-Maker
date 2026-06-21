@@ -43,10 +43,30 @@ _ASSEMBLY_WORDS = [
 _LONG_PROMPT = 1200  # chars
 
 
+# Supported assembly families that we can generate a simplified concept model
+# for (rather than only returning needs_decomposition).
+_TUBULAR_CHASSIS_PATTERNS = [
+    r"\bchassis\b", r"\bspace[- ]?frame\b", "roll cage", "rollcage", r"\broll hoop\b",
+    r"tubular .{0,20}frame", r"welded .{0,20}(tube|tubular)", r"tube .{0,12}frame",
+]
+
+
+def detect_assembly_family(prompt: str) -> str | None:
+    """Return a supported assembly family key, or None.
+
+    Currently only the tubular vehicle chassis / roll cage / welded space-frame
+    family is supported for concept-assembly generation."""
+    t = (prompt or "").lower()
+    if any(re.search(p, t) for p in _TUBULAR_CHASSIS_PATTERNS):
+        return "tubular_chassis"
+    return None
+
+
 @dataclass
 class ComplexityAssessment:
     is_complex: bool
     reason: str = ""
+    supported_family: str | None = None
     subsystems: list[str] = field(default_factory=list)
     components: list[str] = field(default_factory=list)
     recommended_first: str = ""
@@ -90,6 +110,8 @@ def assess_complexity(prompt: str) -> ComplexityAssessment:
     if not is_complex:
         return ComplexityAssessment(is_complex=False)
 
+    family = detect_assembly_family(t)
+
     # Build human-friendly guidance from what we detected.
     pretty = [s.replace("-", " ").title() for s in subsystems]
     components = pretty or ["Main frame", "Mounting brackets", "Sub-assemblies"]
@@ -128,6 +150,7 @@ def assess_complexity(prompt: str) -> ComplexityAssessment:
     return ComplexityAssessment(
         is_complex=True,
         reason=reason,
+        supported_family=family,
         subsystems=subsystems,
         components=base_components,
         recommended_first=recommended_first,

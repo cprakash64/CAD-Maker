@@ -11,7 +11,16 @@ const AXIS_LABEL: Record<string, string> = {
   bbox_y: "Depth (Y)",
   bbox_z: "Height (Z)",
   hole_count: "Hole count",
+  through_hole_count: "Through holes",
+  envelope_x: "Length (X)",
+  envelope_y: "Width (Y)",
+  envelope_z: "Height (Z)",
+  component_count: "Components",
 };
+
+function dimUnit(name: string): string {
+  return name.startsWith("bbox") || name.startsWith("envelope") ? " mm" : "";
+}
 
 function label(name: string): string {
   return AXIS_LABEL[name] ?? name.replace(/_/g, " ");
@@ -41,6 +50,7 @@ interface Props {
   validationStatus?: ValidationStatus | null;
   criticalFailures?: string[];
   assumptions?: string[];
+  designMode?: string | null;
 }
 
 export default function ValidationPanel({
@@ -50,7 +60,9 @@ export default function ValidationPanel({
   validationStatus,
   criticalFailures,
   assumptions = [],
+  designMode,
 }: Props) {
+  const isAssembly = (designMode ?? report?.design_mode) === "assembly";
   const pr: PrintReadiness = printReadiness ?? report?.print_readiness ?? {};
   const measured = report?.measured ?? {};
   const comparisons = report?.comparisons ?? [];
@@ -130,7 +142,8 @@ export default function ValidationPanel({
           <div className="mb-1 text-xs font-medium text-slate-400">Requested vs generated</div>
           <div className="space-y-1 text-xs">
             {comparisons.map((c, i) => {
-              const unit = c.name.startsWith("bbox") ? " mm" : "";
+              const unit = dimUnit(c.name);
+              const dec = unit ? 1 : 0;
               return (
                 <div key={`${c.name}-${i}`} className="flex items-center gap-2">
                   <span className={c.within === false ? "text-amber-400" : "text-emerald-400"}>
@@ -138,8 +151,8 @@ export default function ValidationPanel({
                   </span>
                   <span className="w-24 shrink-0 text-slate-300">{label(c.name)}</span>
                   <span className="text-slate-400">
-                    asked {fmt(c.requested_mm, c.name.startsWith("bbox") ? 1 : 0)}
-                    {unit} → got {fmt(c.measured_mm, c.name.startsWith("bbox") ? 1 : 0)}
+                    asked {fmt(c.requested_mm, dec)}
+                    {unit} → got {fmt(c.measured_mm, dec)}
                     {unit}
                   </span>
                 </div>
@@ -158,17 +171,28 @@ export default function ValidationPanel({
         </div>
       )}
 
+      {/* Validation profile (assembly designs use the assembly profile). */}
+      {hasReport && (
+        <div className="mb-2 flex items-center gap-2 text-xs">
+          <span className="text-slate-500">Validation profile:</span>
+          <span className="badge-neutral">{isAssembly ? "Assembly" : "Single part"}</span>
+        </div>
+      )}
+
       {/* Geometry health (only when a report exists). */}
       {hasReport && (
         <div className="mb-3 space-y-1 text-xs">
           <StatusRow ok={pr.watertight} label="Sealed surface (watertight)" />
           <StatusRow ok={pr.manifold} label="Clean surface (manifold)" />
-          <StatusRow ok={pr.single_body} label="One solid body" />
+          {/* Multi-body is EXPECTED for an assembly — don't flag it. */}
+          {!isAssembly && <StatusRow ok={pr.single_body} label="One solid body" />}
           <StatusRow ok={pr.positive_volume} label="Has solid volume" />
           <div className="flex items-center gap-2">
             <span className="text-slate-500">•</span>
             <span className="text-slate-300">
-              Holes cut: {typeof measured.hole_count === "number" ? measured.hole_count : "—"}
+              {isAssembly
+                ? `Components: ${measured.component_count ?? "—"} · Tubes: ${measured.tube_count ?? "—"}`
+                : `Holes cut: ${typeof measured.hole_count === "number" ? measured.hole_count : "—"}`}
               {typeof measured.volume_mm3 === "number" &&
                 ` · Volume: ${fmt(measured.volume_mm3, 0)} mm³`}
             </span>

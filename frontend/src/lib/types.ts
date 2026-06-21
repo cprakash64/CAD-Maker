@@ -94,6 +94,8 @@ export interface Design {
   // assembly and must be decomposed into single parts before generation.
   needs_decomposition?: boolean;
   decomposition?: Decomposition | null;
+  // "single_part" | "assembly" (concept model).
+  design_mode?: string | null;
 }
 
 export interface Decomposition {
@@ -173,6 +175,19 @@ export interface DimensionMeasured {
   boundary_edges?: number;
   components?: number;
   through_holes_genus?: number;
+  // Assembly mode:
+  component_count?: number;
+  tube_count?: number;
+  mesh_components?: number;
+  sections_present?: string[];
+}
+
+export interface AssemblyComponent {
+  id: string;
+  section: string;
+  kind: string;
+  type: string;
+  anchor?: number[];
 }
 
 export type ValidationStatus = "pass" | "warning" | "critical_failure";
@@ -198,6 +213,10 @@ export interface DimensionReport {
   print_readiness?: PrintReadiness;
   validation?: ValidationSummary;
   notes?: string[];
+  // Assembly mode:
+  design_mode?: string;
+  components?: AssemblyComponent[];
+  sections?: { present?: string[]; missing?: string[] };
 }
 
 export interface DesignSummary {

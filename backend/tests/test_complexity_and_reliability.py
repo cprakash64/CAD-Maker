@@ -29,6 +29,12 @@ SPORTS_CAR = (
     "mounts, and cross braces."
 )
 
+# Complex but NOT a supported assembly family -> still decomposes (no geometry).
+UNSUPPORTED_HUGE = (
+    "Design a complete aircraft fuselage with wings, landing gear, cockpit, avionics "
+    "bay, fuel system, control surfaces, cargo hold and tail assembly."
+)
+
 NORMAL_PROMPTS = [
     "Create a rectangular mounting plate 120mm long, 80mm wide, 8mm thick, with four M6 holes",
     "A round standoff spacer 10mm outer diameter, 20mm long, 4mm bore",
@@ -40,10 +46,10 @@ def _create(client, auth, prompt: str):
     return client.post("/api/designs/create", json={"prompt": prompt}, headers=auth["headers"])
 
 
-# --- complex assembly -> decomposition, fast, no LLM ----------------------
-def test_sports_car_returns_decomposition_quickly(client, auth):
+# --- unsupported complex assembly -> decomposition, fast, no LLM ----------
+def test_unsupported_huge_returns_decomposition_quickly(client, auth):
     start = time.perf_counter()
-    r = _create(client, auth, SPORTS_CAR)
+    r = _create(client, auth, UNSUPPORTED_HUGE)
     elapsed = time.perf_counter() - start
     assert r.status_code == 200, r.text
     d = r.json()
@@ -70,7 +76,7 @@ def test_no_llm_call_for_decomposed_assembly(client, auth, monkeypatch):
         return real()
 
     monkeypatch.setattr(factory, "get_cad_provider", spy)
-    r = _create(client, auth, SPORTS_CAR)
+    r = _create(client, auth, UNSUPPORTED_HUGE)
     assert r.status_code == 200 and r.json()["needs_decomposition"] is True
     assert calls["n"] == 0, "planner/LLM was invoked for a decomposed assembly"
 
@@ -163,9 +169,11 @@ def test_concurrent_creates_do_not_lock_db(auth):
     def worker():
         try:
             with TestClient(app) as c:
+                # Use the decomposition path (fast, no threaded CadQuery) so the
+                # test isolates the DB-locking fix, not CAD-kernel concurrency.
                 r = c.post(
                     "/api/designs/create",
-                    json={"prompt": SPORTS_CAR},
+                    json={"prompt": UNSUPPORTED_HUGE},
                     headers=auth["headers"],
                 )
                 results.append(r.status_code)
