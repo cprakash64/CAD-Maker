@@ -206,6 +206,26 @@ the legacy template pipeline: `rectangular_bracket`, `l_bracket`, `enclosure`
 them at `GET /api/templates`. (Kept as a safety net + UI examples, not as the
 primary generation path.)
 
+## CAD families & capability registry
+
+To scale across many CAD types (not one hardcoded example), the backend keeps a
+single **family registry** ([`backend/app/cad/families.py`](backend/app/cad/families.py))
+that every supported part/assembly family is declared in — with its honest
+**maturity** (`production_ready` / `beta` / `concept` / `unsupported`), required
+dimensions, default assumptions, example prompts, and **known limitations** (no
+fake accuracy claims). A deterministic, offline **classifier**
+([`backend/app/cad/classification.py`](backend/app/cad/classification.py)) runs
+before generation and tags every design with a structured `classification`
+block (family, confidence, design mode, complexity, generation strategy,
+`can_generate_now`, missing inputs, assumptions, limitations).
+
+Browse the live catalog at `GET /api/capabilities`. Full details — maturity
+meanings, what "validated" and "concept assembly" mean, why some prompts ask for
+decomposition/clarification, and how to add a new family — are in
+[docs/CAD_FAMILIES.md](docs/CAD_FAMILIES.md). The
+[golden prompt benchmark](backend/tests/data/golden_prompts.json) pins routing
+for 35 prompts across these families.
+
 ## API
 
 | Method | Route                          | Purpose                                   |
@@ -226,6 +246,7 @@ primary generation path.)
 | GET    | `/api/designs/{id}`            | full design (spec, preview, exports, checks) |
 | GET    | `/api/designs`                 | list design summaries                     |
 | GET    | `/api/templates`               | template catalog + parameter ranges       |
+| GET    | `/api/capabilities`            | CAD family catalog: maturity, examples, limitations |
 
 ## Manufacturability checks
 

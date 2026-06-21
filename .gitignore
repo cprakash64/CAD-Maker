@@ -3,6 +3,8 @@ backend/.venv/
 __pycache__/
 *.pyc
 backend/cadmaker.db
+backend/cadmaker.db-shm
+backend/cadmaker.db-wal
 backend/storage_data/
 backend/.env
 backend/tmp/

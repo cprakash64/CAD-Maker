@@ -158,6 +158,7 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         needs_decomposition=design.route == "needs_decomposition",
         decomposition=(design.semantic_json or {}).get("decomposition"),
         design_mode=(design.semantic_json or {}).get("design_mode"),
+        classification=(design.semantic_json or {}).get("classification"),
     )
 
 

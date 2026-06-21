@@ -154,6 +154,9 @@ class DesignDTO(BaseModel):
     # "single_part" | "assembly" — assembly designs are validated with the
     # assembly profile (multi-body allowed) and labelled as concept models.
     design_mode: Optional[str] = None
+    # Structured, offline prompt classification (family/strategy/maturity/
+    # limitations) computed before generation. Advisory metadata for the UI.
+    classification: Optional[dict] = None
 
 
 class DesignSummaryDTO(BaseModel):

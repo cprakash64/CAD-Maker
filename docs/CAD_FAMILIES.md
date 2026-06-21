@@ -1,0 +1,130 @@
+# CAD families, maturity & the capability registry
+
+SourceCAD generates CAD from plain English across a growing set of **part /
+assembly families**. Rather than hardcoding one example at a time, the backend
+keeps a single, honest **family registry** that the classifier, the API, the
+benchmark, and this document all read from. This is the scalability layer: adding
+a new CAD type means registering a family, not rewriting the router.
+
+- Registry: [`backend/app/cad/families.py`](../backend/app/cad/families.py)
+- Classifier: [`backend/app/cad/classification.py`](../backend/app/cad/classification.py)
+- Capability API: `GET /api/capabilities`
+- Golden benchmark: [`backend/tests/data/golden_prompts.json`](../backend/tests/data/golden_prompts.json)
+- Tests: [`backend/tests/test_family_registry.py`](../backend/tests/test_family_registry.py),
+  [`backend/tests/test_capabilities_api.py`](../backend/tests/test_capabilities_api.py)
+
+## Maturity levels (what the labels honestly mean)
+
+| Maturity | Meaning |
+| --- | --- |
+| `production_ready` | Validated, dimension-checked, exportable as STEP + STL. Covered by golden generation tests. |
+| `beta` | Generates real CAD, but with narrower coverage / fewer guarantees than production. |
+| `concept` | Plausible **concept** geometry — *not* certified, FEA-analyzed, or standards-checked. |
+| `unsupported` | Not generated as a single part; routed to **decomposition** guidance instead. |
+
+We deliberately make **no fake accuracy or manufacturing claims**. A concept
+tubular chassis is labelled concept and flagged "not FEA-certified"; an
+approximate gear blank says its teeth are not a true involute profile.
+
+## Supported families
+
+| Family | Mode | Maturity | Notes / key limitation |
+| --- | --- | --- | --- |
+| `mounting_plate` | single part | production_ready | Flat plates/brackets with hole patterns. |
+| `spacer` | single part | production_ready | Round/hex spacers, standoffs, bushings (no threads). |
+| `l_bracket` | single part | production_ready | Two-flange right-angle bracket. |
+| `flange` | single part | beta | Flange/adapter/transition plates; no ANSI/DIN standard tables. |
+| `enclosure` | single part | beta | Single-cavity shelled box with bosses. |
+| `pipe_fitting` | single part | beta | Spool/tee/clamp; geometry only, no pressure rating or NPT threads. |
+| `drill_jig` | single part | beta | Guide-hole plate; plain bores (no hardened bushings). |
+| `handle_knob` | single part | beta | Simple revolved/extruded grips. |
+| `gear_blank` | single part | concept | **Approximate** teeth — not a true involute; use as a blank. |
+| `crankshaft` | single part | beta | Inline-4 geometric model; not balance/stress validated. |
+| `generic_feature_graph_part` | single part | beta | Anything composed from safe primitives (box/cylinder/tube/boss/rib/hole + booleans). No threads/splines/free-form. |
+| `tube_chassis` | assembly | concept | Tubular space frame — concept CAD; tubes export as solid cylinders. |
+| `reference_buggy_tubular_chassis` | assembly | concept | Hand-authored reference buggy/sports-car layout; concept only. |
+| `generic_assembly_decomposition` | assembly | unsupported | Whole machines → decomposition plan, no geometry. |
+
+The live, machine-readable version (with required/optional dimensions, default
+assumptions, example prompts and per-family limitations) is always available at
+`GET /api/capabilities`.
+
+## What "validated" means
+
+For a generated single part, validation (the `production_ready`/`beta`
+guarantee) asserts:
+
+- a **STEP** and an **STL** file were exported and are non-empty;
+- the model is **not empty** (positive volume);
+- the measured **bounding box** is within tolerance of the requested envelope;
+- expected **hole counts** match the plan metadata;
+- compile errors are surfaced clearly (never silently swallowed).
+
+See [`backend/tests/test_golden_benchmark.py`](../backend/tests/test_golden_benchmark.py)
+for the dimensional safety net that enforces this on hand-authored parts.
+
+## What "concept assembly" means
+
+A concept assembly (e.g. a tubular chassis) produces a **previewable, exportable**
+multi-body model that is *representative*, not engineering-validated:
+
+- tubes are exported as **solid cylinders**; wall thickness is carried as
+  cut-list metadata, not modelled as a hollow section;
+- node/joint positions are **idealized** — no weld prep, load-driven gusseting,
+  or triangulation optimization;
+- it is **not** FEA-analyzed, homologated, or certified for structural use.
+
+These assemblies are validated with the *assembly profile* (multi-body allowed)
+and always labelled concept in the UI and API.
+
+## Why some prompts ask for decomposition or clarification
+
+The classifier runs **before** any expensive generation (pure string analysis,
+no LLM/CadQuery):
+
+- **Decomposition** — a prompt describing a whole machine or many subsystems
+  (a complete car, an airframe, a drone) is far beyond single-part generation.
+  Attempting it synchronously would burn minutes and produce nothing usable, so
+  the system returns a decomposition plan: build one component at a time.
+- **Clarification** — a prompt that is decorative/organic or too vague to map to
+  safe mechanical geometry asks for a clearer description rather than guessing.
+
+Every design now carries a structured `classification` block
+(`family_id`, `confidence`, `design_mode`, `complexity`,
+`generation_strategy`, `can_generate_now`, `required_missing_inputs`,
+`visible_assumptions`, `limitations`) in `semantic_json` and in the design DTO.
+
+## Generation strategies
+
+| Strategy | When |
+| --- | --- |
+| `deterministic_template` | A strong parametric template matches the prompt. |
+| `cadplan` | Built from the CadPlan feature graph (safe primitives + booleans). |
+| `assembly_generator` | A supported concept-assembly builder (chassis). |
+| `needs_clarification` | Missing critical info, or decorative/ambiguous. |
+| `needs_decomposition` | Large multi-part assembly — split into single parts. |
+| `unsupported` | Cannot be mapped to safe geometry. |
+
+> Note: the family is the *kind of part*; the strategy is *how it is built this
+> time*. A flange may be built via a template or, when the prompt needs a more
+> flexible shape, via the feature graph (`cadplan`). Both are honest.
+
+## How to add a new family
+
+1. **Register it** in `backend/app/cad/families.py` — add one `CADFamily(...)`
+   entry with its `family_id`, `display_name`, `design_mode`, honest `maturity`,
+   `keywords`, generator `object_types`, required/optional dimensions, default
+   assumptions, `generation_strategy`, `validation_profile`, `export_policy`,
+   `known_limitations`, and `example_prompts`.
+2. **Wire the generator** if it's new — a reusable parametric template
+   (`backend/app/cad/templates/`) registered in
+   [`backend/app/cad/registry.py`](../backend/app/cad/registry.py), or feature-graph
+   support. Per project rules, generators are deterministic and never execute
+   LLM-authored code.
+3. **Add golden prompts** in `backend/tests/data/golden_prompts.json` (every
+   `production_ready` family must have at least one — enforced by a test).
+4. **Run the tests** — `test_family_registry.py` checks registry integrity,
+   classifier routing, and benchmark coverage; add an end-to-end
+   generation/export test for production-ready families.
+5. **It auto-appears** in `GET /api/capabilities` and this catalog stays the
+   single source of truth.

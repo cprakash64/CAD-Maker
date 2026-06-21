@@ -12,7 +12,7 @@ from app.config import settings
 from app.database import init_db
 from app.llm.base import LLMUnavailableError
 from app.observability import log_event
-from app.routers import auth, designs, drawings, templates
+from app.routers import auth, capabilities, designs, drawings, templates
 
 # Fail fast on unsafe production config (mock provider in prod, default JWT
 # secret, missing DATABASE_URL / CORS / storage, dev_mode on, etc.).
@@ -45,6 +45,7 @@ app.include_router(auth.router)
 app.include_router(designs.router)
 app.include_router(drawings.router)
 app.include_router(templates.router)
+app.include_router(capabilities.router)
 
 
 @app.middleware("http")

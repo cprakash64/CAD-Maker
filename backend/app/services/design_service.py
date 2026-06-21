@@ -717,6 +717,17 @@ def _store_decomposition(db: Session, design: Design, assessment) -> None:
     db.refresh(design)
 
 
+def _attach_classification(db: Session, design: Design, classification) -> None:
+    """Merge the structured prompt classification into the design's semantic_json
+    (advisory metadata; never blocks or changes geometry). Committed in place."""
+    semantic = dict(design.semantic_json or {})
+    semantic["classification"] = classification.to_dict()
+    design.semantic_json = semantic
+    db.add(design)
+    db.commit()
+    db.refresh(design)
+
+
 def create_design(
     db: Session,
     prompt: str,
@@ -735,6 +746,19 @@ def create_design(
     db.commit()
     db.refresh(design)
 
+    # STRUCTURED CLASSIFICATION (cheap, offline): record what family/strategy the
+    # prompt maps to BEFORE generation. Stored as advisory metadata and surfaced
+    # in the API; it never blocks or alters the geometry pipeline below.
+    from app.cad.classification import classify_prompt
+
+    classification = classify_prompt(prompt)
+
+    design = _dispatch_generation(db, design, prompt)
+    _attach_classification(db, design, classification)
+    return design
+
+
+def _dispatch_generation(db: Session, design: Design, prompt: str) -> Design:
     # COMPLEXITY GATE (cheap, no LLM/CAD): whole machines / large multi-subsystem
     # assemblies (car chassis, airframe, ...) are guided to decomposition fast
     # instead of being attempted as one synchronous part (which would burn minutes
