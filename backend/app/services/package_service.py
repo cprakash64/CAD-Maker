@@ -116,6 +116,21 @@ def assembly_cut_list_csv(components: list[dict]) -> str:
     return "\n".join(rows) + "\n"
 
 
+def assembly_plate_list_csv(components: list[dict]) -> str:
+    """CSV list of plate/tab/gusset members (id, type, zone, size, holes, slots)."""
+    rows = ["id,type,zone,system,w_mm,d_mm,thk_mm,bolt_holes,slots"]
+    for c in components:
+        if c.get("kind") != "plate":
+            continue
+        size = c.get("size") or [0, 0, 0]
+        rows.append(
+            f"{c.get('id', '')},{c.get('type', '')},{c.get('zone', '')},"
+            f"{c.get('system', '')},{size[0]},{size[1]},{size[2]},"
+            f"{c.get('bolt_holes', 0)},{c.get('slots', 0)}"
+        )
+    return "\n".join(rows) + "\n"
+
+
 _PACKAGE_README = """SourceCAD AI Part Studio — CAD Package
 =======================================
 Part: {part}

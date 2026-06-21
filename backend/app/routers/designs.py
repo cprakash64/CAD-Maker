@@ -344,7 +344,9 @@ def download_package(
         # bundle their stored STEP/STL plus metadata, BOM/cut-list and caveat README.
         import json as _json
 
-        from app.services.package_service import assembly_cut_list_csv, build_files_package
+        from app.services.package_service import (
+            assembly_cut_list_csv, assembly_plate_list_csv, build_files_package,
+        )
 
         storage = get_storage()
         files: dict[str, bytes] = {}
@@ -357,17 +359,29 @@ def download_package(
             raise HTTPException(status_code=409, detail="Nothing to package yet")
         report = (design.semantic_json or {}).get("dimension_report") or {}
         components = report.get("components") or []
+        snap = report.get("snapshot") or {}
+        rmeas = report.get("measured") or {}
         metadata = {
             "object_type": base,
             "route": design.route,
             "design_mode": (design.semantic_json or {}).get("design_mode", "single_part"),
+            "style": rmeas.get("chassis_style") or snap.get("chassis_style"),
+            "envelope_mm": (report.get("requested") or {}).get("envelope_mm"),
             "bounding_box_mm": design.bounding_box,
+            "tube_outer_diameter_mm": (report.get("spec") or {}).get("tube_outer_diameter_mm"),
+            "tube_wall_thickness_mm": (report.get("spec") or {}).get("tube_wall_thickness_mm"),
+            "tube_count": rmeas.get("tube_count"),
+            "plate_count": rmeas.get("plate_count"),
+            "component_count": len(components),
+            "hole_feature_count": rmeas.get("hole_feature_count"),
+            "slot_feature_count": rmeas.get("slot_feature_count"),
+            "symmetry_pairs": snap.get("symmetry_pairs"),
             "assumptions": design.assumptions or [],
             "spec": report.get("spec"),
+            "recommended_material": report.get("recommended_material"),
             "validation": report.get("validation"),
             "zones": report.get("zones") or report.get("sections"),
             "systems": report.get("systems"),
-            "component_count": len(components),
         }
         is_assembly = (design.semantic_json or {}).get("design_mode") == "assembly"
         extra: dict[str, str] = {}
@@ -375,16 +389,16 @@ def download_package(
             extra["assembly_metadata.json"] = _json.dumps(metadata, indent=2, default=str)
             extra["component_list.json"] = _json.dumps(components, indent=2, default=str)
             extra["tube_cut_list.csv"] = assembly_cut_list_csv(components)
+            extra["plate_list.csv"] = assembly_plate_list_csv(components)
         readme = (
             "CAD Maker — CAD Package\n=======================\n"
             f"Part: {base}\n\n"
-            "Contents: STEP + STL solids and metadata.json (bounding box, "
-            "components, validation)"
-            + (", assembly_metadata.json, component_list.json, tube_cut_list.csv"
-               if is_assembly else "")
+            "Contents: STEP + STL solids and metadata.json"
+            + (", assembly_metadata.json, component_list.json, tube_cut_list.csv, "
+               "plate_list.csv" if is_assembly else "")
             + ".\n\n"
-            + ("NOTE: Concept CAD only. This is a geometric first-pass concept "
-               "assembly — NOT FEA analyzed or structurally certified. Tubes are "
+            + ("NOTE: Detailed concept CAD only. Not FEA analyzed. Not structurally "
+               "certified. Requires engineering review before fabrication. Tubes are "
                "exported as solid cylinders; use tube_cut_list.csv for OD / wall / "
                "cut-length fabrication data.\n"
                if is_assembly else "")

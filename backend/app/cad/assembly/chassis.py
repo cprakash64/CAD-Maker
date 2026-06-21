@@ -25,15 +25,35 @@ DEFAULT_LENGTH = 4200.0
 DEFAULT_WIDTH = 1800.0
 DEFAULT_HEIGHT = 1200.0
 
-# Validation taxonomy (imported by report.py).
-REQUIRED_ZONES = ["front", "engine_bay", "cabin", "roll_cage", "rear"]
-REQUIRED_SYSTEMS = [
+# Validation taxonomy — "detailed" (lighter) frame.
+ZONES_DETAILED = ["front", "engine_bay", "cabin", "roll_cage", "rear"]
+SYSTEMS_DETAILED = [
     "main_frame", "roll_cage", "transmission_tunnel", "side_impact",
     "suspension_mounts", "engine_mounts", "radiator_mount", "fuel_tank_mount",
     "seat_mounts",
 ]
-# Back-compat alias (older imports referenced REQUIRED_SECTIONS).
-REQUIRED_SECTIONS = REQUIRED_ZONES
+# Reference-grade buggy/sports-car taxonomy.
+ZONES_BUGGY = [
+    "front_nose", "front_suspension", "engine_bay", "floor", "cockpit",
+    "roll_cage", "side_impact", "rear_suspension", "rear_frame",
+]
+SYSTEMS_BUGGY = [
+    "main_frame", "roll_cage", "side_impact", "transmission_tunnel",
+    "floor_panels", "suspension_tabs", "engine_mounts", "steering_column_mount",
+    "radiator_mount", "fuel_tank_mount", "body_panel_tabs",
+]
+# Back-compat aliases (older imports).
+REQUIRED_ZONES = ZONES_DETAILED
+REQUIRED_SYSTEMS = SYSTEMS_DETAILED
+REQUIRED_SECTIONS = ZONES_DETAILED
+
+
+def required_zones(level: str) -> list[str]:
+    return ZONES_BUGGY if level == "reference" else ZONES_DETAILED
+
+
+def required_systems(level: str) -> list[str]:
+    return SYSTEMS_BUGGY if level == "reference" else SYSTEMS_DETAILED
 
 
 @dataclass
@@ -101,7 +121,8 @@ class Component:
     side: str = "c"        # l | r | c
     mirrored_from: str | None = None
     group: str | None = None        # bent-member group (segments share a group)
-    bolt_holes: int = 0             # plates: nominal bolt-hole count (metadata)
+    bolt_holes: int = 0             # plates: bolt-hole count (cut + metadata)
+    slots: int = 0                  # plates: elongated slot count (cut + metadata)
 
     @property
     def length(self) -> float:
@@ -128,6 +149,8 @@ class Component:
             d["anchor"] = [round(v, 1) for v in self.center]
             if self.bolt_holes:
                 d["bolt_holes"] = self.bolt_holes
+            if self.slots:
+                d["slots"] = self.slots
         return d
 
 
@@ -185,11 +208,12 @@ def parse_envelope(prompt: str) -> tuple[float, float, float]:
     return length, width, height
 
 
-# Keywords that upgrade a chassis prompt to the reference-grade layout.
+# Keywords that upgrade a chassis prompt to the reference-grade buggy layout.
 _REFERENCE_KEYS = (
+    "detailed tubular chassis", "welded steel tubular", "welded tubular",
     "detailed", "roll cage", "rollcage", "welded", "suspension mount",
-    "suspension mounting", "body panel", "space frame", "spaceframe", "buggy",
-    "reference",
+    "suspension mounting", "side-impact", "side impact", "body panel",
+    "sports car chassis", "buggy", "space frame", "spaceframe", "reference",
 )
 
 
@@ -217,7 +241,7 @@ def make_spec(prompt: str) -> ChassisSpec:
         tube_outer_diameter_mm=od, tube_wall_thickness_mm=2.5,
         cage_outer_diameter_mm=45.0, mount_plate_thickness_mm=6.0,
         design_detail_level=level, drive_layout="front_engine_rwd", seats=2,
-        chassis_style=("reference_tubular_buggy_chassis" if level == "reference"
+        chassis_style=("reference_buggy_tubular_chassis" if level == "reference"
                        else "tubular_space_frame"),
     )
 
@@ -440,11 +464,11 @@ def _layout(spec: ChassisSpec) -> list[Component]:
     return comps
 
 
-def _layout_reference(spec: ChassisSpec) -> list[Component]:
-    """Reference-grade buggy/sports-car space frame: tapered nose, curved (bent)
-    rails built from grouped segments, full roll cage + roof, dense side
-    triangulation, and a rich set of mount plates/tabs/gussets with bolt holes.
-    Left/right symmetric."""
+def _build_buggy(spec: ChassisSpec) -> list[Component]:
+    """Reference-grade buggy/sports-car tubular chassis — a hand-authored
+    blueprint: normalized 3D nodes, bent rail groups, dense triangulation, a full
+    roll cage, and a rich set of plates/tabs/gussets with bolt holes and floor
+    slots. Left/right symmetric. CONCEPT geometry only (no FEA)."""
     L, W, H = spec.length_mm, spec.width_mm, spec.height_mm
     od, wall, cage = spec.tube_outer_diameter_mm, spec.tube_wall_thickness_mm, spec.cage_outer_diameter_mm
     pt = spec.mount_plate_thickness_mm
@@ -453,47 +477,51 @@ def _layout_reference(spec: ChassisSpec) -> list[Component]:
     ty = W * 0.11
     z_low = H * 0.07
     z_mid = H * 0.30
+    z_door = H * 0.38
     z_up = H * 0.46
     z_dash = H * 0.58
     z_ws = H * 0.84
     z_top = H * 0.95
 
-    x = {"nose": -L / 2 + od, "rad": -0.41 * L, "fsus": -0.33 * L, "dash": -0.13 * L,
-         "seat": -0.02 * L, "hoop": 0.13 * L, "rsus": 0.29 * L, "tail": L / 2 - od}
-    wf = {"nose": 0.34, "rad": 0.60, "fsus": 0.86, "dash": 1.0, "seat": 1.0,
-          "hoop": 1.0, "rsus": 0.84, "tail": 0.64}
-    lz = {"nose": z_low + H * 0.14, "rad": z_low + H * 0.05, "fsus": z_low, "dash": z_low,
-          "seat": z_low, "hoop": z_low, "rsus": z_low, "tail": z_low + H * 0.05}
-    uz = {"fsus": z_up * 0.78, "dash": z_up, "seat": z_up, "hoop": z_up,
-          "rsus": z_up * 0.9, "tail": z_up * 0.76}
-    zone = {"nose": "front", "rad": "front", "fsus": "engine_bay", "dash": "cabin",
-            "seat": "cabin", "hoop": "cabin", "rsus": "rear", "tail": "rear"}
+    x = {"nose": -L / 2 + od, "bumper_f": -0.46 * L, "rad": -0.41 * L, "fsus": -0.33 * L,
+         "fbulk": -0.20 * L, "dash": -0.12 * L, "seat": -0.02 * L, "hoop": 0.13 * L,
+         "rsus": 0.29 * L, "tail": 0.42 * L, "bumper_r": L / 2 - od}
+    wf = {"nose": 0.30, "bumper_f": 0.42, "rad": 0.58, "fsus": 0.84, "fbulk": 0.95,
+          "dash": 1.0, "seat": 1.0, "hoop": 1.0, "rsus": 0.86, "tail": 0.66, "bumper_r": 0.50}
+    lzo = {"nose": 0.14, "bumper_f": 0.12, "rad": 0.05, "fsus": 0.0, "fbulk": 0.0,
+           "dash": 0.0, "seat": 0.0, "hoop": 0.0, "rsus": 0.0, "tail": 0.04, "bumper_r": 0.10}
+    uzf = {"fsus": 0.80, "fbulk": 0.92, "dash": 1.0, "seat": 1.0, "hoop": 1.0,
+           "rsus": 0.92, "tail": 0.80}
+    zone_of = {"nose": "front_nose", "bumper_f": "front_nose", "rad": "front_suspension",
+               "fsus": "front_suspension", "fbulk": "engine_bay", "dash": "cockpit",
+               "seat": "cockpit", "hoop": "cockpit", "rsus": "rear_suspension",
+               "tail": "rear_frame", "bumper_r": "rear_frame"}
 
     N: dict[str, tuple] = {}
 
-    def node(name, px, py, pz):
-        N[name] = (px, py, pz)
-
     def node_pair(base, px, py, pz):
-        node(f"{base}_l", px, py, pz)
-        node(f"{base}_r", px, -py, pz)
+        N[f"{base}_l"] = (px, py, pz)
+        N[f"{base}_r"] = (px, -py, pz)
 
     for s in x:
-        node_pair(f"low_{s}", x[s], hy * wf[s], lz[s])
+        node_pair(f"low_{s}", x[s], hy * wf[s], z_low + H * lzo[s])
+    for s in uzf:
+        node_pair(f"up_{s}", x[s], hy * wf[s], z_up * uzf[s])
     for s in ("dash", "seat", "hoop"):
         node_pair(f"mid_{s}", x[s], hy * wf[s] * 0.99, z_mid)
-    for s in uz:
-        node_pair(f"up_{s}", x[s], hy * wf[s], uz[s])
-    node_pair("nosetop", x["nose"] + (x["rad"] - x["nose"]) * 0.45, hy * 0.30, z_low + H * 0.20)
+        node_pair(f"door_{s}", x[s], hy * wf[s] * 0.99, z_door)
+    for s in ("fbulk", "dash", "seat", "hoop"):
+        node_pair(f"tun_{s}", x[s], ty, z_low)
+    node_pair("nosetop", x["nose"] + (x["rad"] - x["nose"]) * 0.4, hy * 0.28, z_low + H * 0.20)
     node_pair("ws", x["dash"], hy * 0.96, z_ws)
-    node_pair("main", x["hoop"], hy, z_top)
     node_pair("roofmid", (x["dash"] + x["hoop"]) / 2, hy * 0.98, z_top * 0.99)
-    node_pair("tailtop", x["tail"] - (x["tail"] - x["rsus"]) * 0.15, hy * 0.60, z_up * 0.86)
-    node_pair("tun_dash", x["dash"], ty, z_low)
-    node_pair("tun_seat", x["seat"], ty, z_low)
-    node_pair("tun_hoop", x["hoop"], ty, z_low)
+    node_pair("main_top", x["hoop"], hy, z_top)
+    node_pair("rhoop_top", x["rsus"], hy * 0.84, z_top * 0.86)
+    node_pair("tailtop", x["tail"], hy * 0.62, z_up * 0.86)
     node_pair("harness", x["hoop"], hy, (z_up + z_top) / 2)
     node_pair("dashbar", x["dash"], hy * 0.95, z_dash)
+    node_pair("floor_a", (x["dash"] + x["seat"]) / 2, hy * 0.9, z_low)
+    node_pair("floor_b", (x["seat"] + x["hoop"]) / 2, hy * 0.9, z_low)
     node_pair("seatrail_f", x["seat"] - L * 0.045, hy * 0.5, z_low)
     node_pair("seatrail_b", x["seat"] + L * 0.045, hy * 0.5, z_low)
 
@@ -511,183 +539,218 @@ def _layout_reference(spec: ChassisSpec) -> list[Component]:
     def cross(cid, zn, system, role, base, o=od, w=wall, group=None):
         tube(cid, zn, system, role, f"{base}_l", f"{base}_r", o, w, "c", group)
 
-    def plate(cid, zn, system, role, center, size, side="c", holes=0, mfrom=None):
+    def diag(cid, zn, a, b, group=None):
+        tube(cid, zn, "main_frame", "diagonal_brace", a, b, side="c", group=group)
+
+    def plate(cid, zn, system, role, center, size, side="c", holes=0, slots=0, mfrom=None):
         comps.append(Component(id=cid, zone=zn, system=system, kind="plate", type=role,
                                center=tuple(center), size=tuple(size), side=side,
-                               bolt_holes=holes, mirrored_from=mfrom))
+                               bolt_holes=holes, slots=slots, mirrored_from=mfrom))
 
-    def plate_pair(cid, zn, system, role, center, size, holes=0):
-        plate(f"{cid}_left", zn, system, role, center, size, "l", holes)
+    def plate_pair(cid, zn, system, role, center, size, holes=0, slots=0):
+        plate(f"{cid}_left", zn, system, role, center, size, "l", holes, slots)
         plate(f"{cid}_right", zn, system, role, (center[0], -center[1], center[2]),
-              size, "r", holes, f"{cid}_left")
+              size, "r", holes, slots, f"{cid}_left")
 
-    # --- bent longitudinal rails (grouped segments) ---
-    lower_stations = ["nose", "rad", "fsus", "dash", "seat", "hoop", "rsus", "tail"]
-    for a, b in zip(lower_stations, lower_stations[1:]):
-        tube_pair(f"side_lower_rail_{a}_{b}", zone[a], "main_frame", "lower_rail",
-                  f"low_{a}", f"low_{b}", group="side_lower_rail")
-    upper_stations = ["fsus", "dash", "seat", "hoop", "rsus", "tail"]
-    for a, b in zip(upper_stations, upper_stations[1:]):
-        tube_pair(f"side_upper_rail_{a}_{b}", zone[a], "main_frame", "upper_rail",
-                  f"up_{a}", f"up_{b}", group="side_upper_rail")
+    # --- bent perimeter / side rails (grouped segments) ---
+    low_st = ["nose", "bumper_f", "rad", "fsus", "fbulk", "dash", "seat", "hoop",
+              "rsus", "tail", "bumper_r"]
+    for a, b in zip(low_st, low_st[1:]):
+        tube_pair(f"lower_perimeter_{a}_{b}", zone_of[a], "main_frame", "lower_rail",
+                  f"low_{a}", f"low_{b}", group="lower_perimeter_rail")
+    up_st = ["fsus", "fbulk", "dash", "seat", "hoop", "rsus", "tail"]
+    for a, b in zip(up_st, up_st[1:]):
+        tube_pair(f"upper_side_{a}_{b}", zone_of[a], "main_frame", "upper_rail",
+                  f"up_{a}", f"up_{b}", group="upper_side_rail")
     for a, b in (("dash", "seat"), ("seat", "hoop")):
-        tube_pair(f"side_impact_{a}_{b}", "cabin", "side_impact", "side_impact_bar",
+        tube_pair(f"side_impact_{a}_{b}", "side_impact", "side_impact", "side_impact_bar",
                   f"mid_{a}", f"mid_{b}", group="side_impact_rail")
 
-    # --- tapered nose perimeter (bent) ---
-    nose_path = ["low_fsus", "low_rad", "low_nose", "nosetop", "up_fsus"]
+    # --- tapered front nose perimeter + bumper hoop ---
+    nose_path = ["low_fsus", "low_rad", "low_bumper_f", "low_nose", "nosetop", "up_fsus"]
     for a, b in zip(nose_path, nose_path[1:]):
-        tube_pair(f"nose_perimeter_{a}_{b}", "front", "main_frame", "nose_perimeter",
+        tube_pair(f"nose_perimeter_{a}_{b}", "front_nose", "main_frame", "nose_perimeter",
                   a, b, group="front_nose_perimeter")
-    cross("nose_tip_cross", "front", "main_frame", "nose_perimeter", "low_nose")
-    cross("nose_top_cross", "front", "main_frame", "nose_perimeter", "nosetop")
-    tube_pair("nose_crash_diag", "front", "main_frame", "diagonal_brace",
-              "low_nose", "low_rad", group="front_crash")
-    tube_pair("nose_to_cockpit_diag", "front", "main_frame", "diagonal_brace",
-              "low_rad", "up_fsus", group="front_crash")
+    cross("nose_bumper_cross", "front_nose", "main_frame", "bumper_hoop", "low_nose")
+    cross("nose_top_cross", "front_nose", "main_frame", "bumper_hoop", "nosetop")
+    tube_pair("nose_bumper_upright", "front_nose", "main_frame", "bumper_hoop",
+              "low_nose", "nosetop", group="front_bumper_hoop")
 
-    # --- roof / cage ---
-    for a, b in (("ws", "roofmid"), ("roofmid", "main")):
+    # --- rear perimeter hoop ---
+    tube_pair("rear_perimeter_post", "rear_frame", "main_frame", "rear_hoop",
+              "low_tail", "up_tail", group="rear_perimeter_hoop")
+    tube_pair("rear_perimeter_top", "rear_frame", "main_frame", "rear_hoop",
+              "up_tail", "tailtop", group="rear_perimeter_hoop")
+    cross("rear_top_cross", "rear_frame", "main_frame", "rear_hoop", "tailtop")
+    cross("rear_bumper_cross", "rear_frame", "main_frame", "rear_hoop", "low_bumper_r")
+
+    # --- roll cage ---
+    roof_path = ["ws", "roofmid", "main_top", "rhoop_top"]
+    for a, b in zip(roof_path, roof_path[1:]):
         tube_pair(f"roof_rail_{a}_{b}", "roll_cage", "roll_cage", "roof_rail",
-                  a, b, cage, wall, group="roof_rail")
+                  a, b, cage, wall, group="roof_perimeter_rail")
     cross("roof_cross_ws", "roll_cage", "roll_cage", "roof_crossbar", "ws", cage, wall)
     cross("roof_cross_mid", "roll_cage", "roll_cage", "roof_crossbar", "roofmid", cage, wall)
-    cross("roof_cross_main", "roll_cage", "roll_cage", "roof_crossbar", "main", cage, wall)
-    tube("roof_diag_a", "roll_cage", "roll_cage", "roof_diagonal", "ws_l", "main_r", cage, wall)
-    tube("roof_diag_b", "roll_cage", "roll_cage", "roof_diagonal", "ws_r", "main_l", cage, wall)
+    cross("roof_cross_main", "roll_cage", "roll_cage", "roof_crossbar", "main_top", cage, wall)
+    cross("roof_cross_rear", "roll_cage", "roll_cage", "roof_crossbar", "rhoop_top", cage, wall)
+    tube("roof_diag_a", "roll_cage", "roll_cage", "roof_diagonal", "ws_l", "main_top_r", cage, wall)
+    tube("roof_diag_b", "roll_cage", "roll_cage", "roof_diagonal", "ws_r", "main_top_l", cage, wall)
+    tube_pair("main_hoop_post", "roll_cage", "roll_cage", "roll_cage_bar",
+              "up_hoop", "main_top", cage, wall, group="main_roll_hoop")
+    cross("harness_bar", "roll_cage", "roll_cage", "roll_cage_bar", "harness", cage, wall)
     tube_pair("a_pillar", "roll_cage", "roll_cage", "roll_cage_bar",
               "up_dash", "ws", cage, wall, group="windshield_hoop")
-    tube_pair("main_hoop_post", "roll_cage", "roll_cage", "roll_cage_bar",
-              "up_hoop", "main", cage, wall, group="main_hoop")
-    cross("harness_bar", "roll_cage", "roll_cage", "roll_cage_bar", "harness", cage, wall)
-    tube_pair("rear_stay", "rear", "roll_cage", "roll_cage_bar",
-              "main", "up_tail", cage, wall, group="rear_stay")
+    tube_pair("rear_hoop_post", "roll_cage", "roll_cage", "roll_cage_bar",
+              "up_rsus", "rhoop_top", cage, wall, group="rear_roll_hoop")
+    tube_pair("rear_stay", "rear_frame", "roll_cage", "roll_cage_bar",
+              "main_top", "up_tail", cage, wall, group="rear_stay")
 
-    # --- rear hoop (bent) ---
-    for a, b in (("low_tail_l", "up_tail_l"), ("up_tail_l", "tailtop_l"),
-                 ("tailtop_l", "tailtop_r"), ("tailtop_r", "up_tail_r"),
-                 ("up_tail_r", "low_tail_r")):
-        side = "l" if a.endswith("_l") and b.endswith("_l") else ("r" if a.endswith("_r") else "c")
-        tube(f"rear_hoop_{a}_{b}", "rear", "roll_cage", "rear_hoop", a, b, cage, wall, side,
-             group="rear_hoop")
-    tube_pair("rear_bumper_diag", "rear", "main_frame", "diagonal_brace",
-              "low_tail", "low_rsus", group="rear_bumper")
+    # --- dashboard + steering brace ---
+    cross("dashboard_support", "cockpit", "main_frame", "dashboard_support", "dashbar")
+    tube("steering_brace", "cockpit", "main_frame", "diagonal_brace", "dashbar_l", "up_dash_l", side="l")
+
+    # --- door opening frame + side impact diagonals ---
+    tube_pair("door_bar", "side_impact", "side_impact", "door_bar", "door_dash", "door_hoop",
+              group="door_frame")
+    tube_pair("door_diag", "side_impact", "side_impact", "door_bar", "low_dash", "door_hoop",
+              group="door_frame")
 
     # --- verticals ---
     for s in ("dash", "seat", "hoop"):
-        tube_pair(f"vert_low_mid_{s}", zone[s], "main_frame", "vertical_strut",
+        tube_pair(f"vert_low_mid_{s}", zone_of[s], "main_frame", "vertical_strut",
                   f"low_{s}", f"mid_{s}", group="vertical")
-        tube_pair(f"vert_mid_up_{s}", zone[s], "main_frame", "vertical_strut",
+        tube_pair(f"vert_mid_up_{s}", zone_of[s], "main_frame", "vertical_strut",
                   f"mid_{s}", f"up_{s}", group="vertical")
-    for s in ("fsus", "rsus", "tail"):
-        tube_pair(f"vert_low_up_{s}", zone[s], "main_frame", "vertical_strut",
+    for s in ("fsus", "fbulk", "rsus", "tail"):
+        tube_pair(f"vert_low_up_{s}", zone_of[s], "main_frame", "vertical_strut",
                   f"low_{s}", f"up_{s}", group="vertical")
 
     # --- crossmembers ---
-    for s in lower_stations:
-        cross(f"lower_cross_{s}", zone[s], "main_frame", "cross_member", f"low_{s}", group="lower_cross")
+    for s in low_st:
+        cross(f"lower_cross_{s}", zone_of[s], "main_frame", "cross_member", f"low_{s}",
+              group="lower_cross")
     for s in ("dash", "seat", "hoop"):
-        cross(f"mid_cross_{s}", "cabin", "main_frame", "cross_member", f"mid_{s}", group="mid_cross")
-    for s in ("dash", "seat", "hoop", "tail"):
-        cross(f"upper_cross_{s}", zone[s], "main_frame", "cross_member", f"up_{s}", group="upper_cross")
+        cross(f"mid_cross_{s}", "cockpit", "main_frame", "cross_member", f"mid_{s}",
+              group="mid_cross")
+    for s in ("fbulk", "dash", "seat", "hoop", "tail"):
+        cross(f"upper_cross_{s}", zone_of[s], "main_frame", "cross_member", f"up_{s}",
+              group="upper_cross")
 
     # --- transmission tunnel ---
-    for a, b in (("tun_dash", "tun_seat"), ("tun_seat", "tun_hoop")):
-        tube(f"tunnel_rail_l_{a}", "cabin", "transmission_tunnel", "transmission_tunnel",
-             f"{a}_l", f"{b}_l", side="l", group="tunnel")
-        tube(f"tunnel_rail_r_{a}", "cabin", "transmission_tunnel", "transmission_tunnel",
-             f"{a}_r", f"{b}_r", side="r", group="tunnel", mfrom=f"tunnel_rail_l_{a}")
-    for s in ("tun_dash", "tun_seat", "tun_hoop"):
-        cross(f"tunnel_cross_{s}", "cabin", "transmission_tunnel", "cross_member", s, group="tunnel")
+    tun_st = ["fbulk", "dash", "seat", "hoop"]
+    for a, b in zip(tun_st, tun_st[1:]):
+        tube(f"tunnel_rail_l_{a}", "floor", "transmission_tunnel", "transmission_tunnel",
+             f"tun_{a}_l", f"tun_{b}_l", side="l", group="transmission_tunnel")
+        tube(f"tunnel_rail_r_{a}", "floor", "transmission_tunnel", "transmission_tunnel",
+             f"tun_{a}_r", f"tun_{b}_r", side="r", group="transmission_tunnel",
+             mfrom=f"tunnel_rail_l_{a}")
+    for s in tun_st:
+        cross(f"tunnel_cross_{s}", "floor", "transmission_tunnel", "cross_member",
+              f"tun_{s}", group="transmission_tunnel")
+
+    # --- floor crossmembers (footwell) ---
+    cross("floor_cross_a", "floor", "main_frame", "floor_crossmember", "floor_a", group="floor_cross")
+    cross("floor_cross_b", "floor", "main_frame", "floor_crossmember", "floor_b", group="floor_cross")
 
     # --- floor X-bracing (center) ---
-    bays = [("rad", "fsus"), ("fsus", "dash"), ("dash", "seat"),
-            ("seat", "hoop"), ("hoop", "rsus"), ("rsus", "tail")]
-    for a, b in bays:
-        tube(f"floor_x_{a}_{b}_a", zone[a], "main_frame", "diagonal_brace",
-             f"low_{a}_l", f"low_{b}_r", group="floor_xbrace")
-        if a in ("dash", "seat"):  # extra crossing brace in the cabin floor
-            tube(f"floor_x_{a}_{b}_b", zone[a], "main_frame", "diagonal_brace",
-                 f"low_{a}_r", f"low_{b}_l", group="floor_xbrace")
+    def floor_x(cid, zn, a, b, full):
+        diag(f"{cid}_a", zn, f"low_{a}_l", f"low_{b}_r", "floor_xbrace")
+        if full:
+            diag(f"{cid}_b", zn, f"low_{a}_r", f"low_{b}_l", "floor_xbrace")
 
-    # --- side triangulation (per side) ---
-    side_bays = [("fsus", "dash", True), ("dash", "seat", True), ("seat", "hoop", True),
-                 ("hoop", "rsus", False), ("rsus", "tail", False)]
+    floor_x("fbx_bumper", "front_nose", "bumper_f", "rad", True)
+    floor_x("ebx_rad", "front_suspension", "rad", "fsus", True)
+    floor_x("ebx_fsus", "engine_bay", "fsus", "fbulk", True)
+    floor_x("ebx_fbulk", "engine_bay", "fbulk", "dash", True)
+    floor_x("cfx_dash", "floor", "dash", "seat", True)
+    floor_x("cfx_seat", "floor", "seat", "hoop", True)
+    floor_x("rfx_hoop", "rear_suspension", "hoop", "rsus", True)
+    floor_x("rfx_rsus", "rear_frame", "rsus", "tail", True)
+
+    # --- side X-bracing (per side) ---
+    side_bays = [("fsus", "fbulk", True), ("fbulk", "dash", True), ("dash", "seat", False),
+                 ("seat", "hoop", False), ("hoop", "rsus", False), ("rsus", "tail", False)]
     for a, b, full in side_bays:
-        tube_pair(f"side_brace_{a}_{b}_a", zone[a], "main_frame", "diagonal_brace",
+        tube_pair(f"side_brace_{a}_{b}_a", zone_of[a], "main_frame", "diagonal_brace",
                   f"low_{a}", f"up_{b}", group="side_brace")
         if full:
-            tube_pair(f"side_brace_{a}_{b}_b", zone[a], "main_frame", "diagonal_brace",
+            tube_pair(f"side_brace_{a}_{b}_b", zone_of[a], "main_frame", "diagonal_brace",
                       f"up_{a}", f"low_{b}", group="side_brace")
 
-    # --- dashboard + steering ---
-    cross("dashboard_support", "cabin", "main_frame", "dashboard_support", "dashbar")
-    tube("steering_brace", "cabin", "main_frame", "diagonal_brace", "dashbar_l", "up_dash_l", side="l")
+    # --- rear triangulation + shock braces ---
+    tube_pair("rear_stay_brace", "rear_suspension", "main_frame", "diagonal_brace",
+              "up_hoop", "low_rsus", group="rear_tri")
+    tube_pair("rear_tri_brace", "rear_frame", "main_frame", "diagonal_brace",
+              "up_rsus", "low_tail", group="rear_tri")
+    tube_pair("front_shock_brace", "front_suspension", "main_frame", "diagonal_brace",
+              "up_fsus", "up_fbulk", group="front_shock_brace")
+    tube_pair("rear_shock_brace", "rear_suspension", "main_frame", "diagonal_brace",
+              "up_rsus", "up_hoop", group="rear_shock_brace")
 
-    # --- seat rails ---
-    tube_pair("seat_rail", "cabin", "seat_mounts", "seat_rail", "seatrail_f", "seatrail_b",
-              group="seat_rail")
-
-    # --- mount plates / tabs / gussets (with bolt holes) ---
+    # --- plates / tabs / gussets (with holes + slots) ---
     big = (W * 0.07, W * 0.05, pt)
     tab = (W * 0.05, W * 0.04, pt)
     gus = (od * 1.9, od * 1.9, pt)
-    side_plate = (L * 0.06, W * 0.03, pt)
+    skid = (L * 0.18, W * 0.05, pt)
+    bumper_side = (W * 0.10, W * 0.05, pt)
+    floorpan = (L * 0.18, W * 0.20, pt * 0.6)
+    seatpan = (W * 0.18, W * 0.22, pt)
 
-    plate("front_bulkhead_plate", "front", "main_frame", "front_bulkhead",
+    plate("front_bulkhead_plate", "front_suspension", "main_frame", "front_bulkhead",
           (x["rad"], 0.0, z_low + H * 0.12), (W * 0.30, W * 0.18, pt), holes=6)
+    plate_pair("bumper_side_plate", "front_nose", "main_frame", "bumper_side_plate",
+               (x["bumper_f"], hy * wf["bumper_f"] * 0.96, z_low + H * 0.08), bumper_side, holes=3)
+    plate_pair("side_skid_plate", "side_impact", "main_frame", "side_skid_plate",
+               (x["seat"], hy * 0.99, z_low + H * 0.04), skid, holes=5)
+    plate_pair("floor_pan", "floor", "floor_panels", "floor_pan",
+               (x["seat"], hy * 0.30, z_low - H * 0.005), floorpan, holes=2, slots=3)
+    plate_pair("seat_mount", "cockpit", "floor_panels", "seat_mount",
+               (x["seat"], hy * 0.45, z_low + H * 0.02), seatpan, holes=4)
     plate_pair("engine_mount", "engine_bay", "engine_mounts", "engine_mount",
-               (-0.28 * L, hy * 0.55, z_low + H * 0.05), big, holes=4)
-    plate("transmission_mount", "cabin", "engine_mounts", "transmission_mount",
+               (-0.27 * L, hy * 0.55, z_low + H * 0.05), big, holes=4)
+    plate("transmission_mount", "floor", "engine_mounts", "transmission_mount",
           (x["seat"], 0.0, z_low + H * 0.04), big, holes=4)
-    plate_pair("front_lower_arm_tab", "front", "suspension_mounts", "suspension_tab",
-               (x["fsus"], hy * 0.97, z_low + H * 0.03), tab, holes=2)
-    plate_pair("front_upper_arm_tab", "front", "suspension_mounts", "suspension_tab",
-               (x["fsus"], hy * 0.9, z_up * 0.78), tab, holes=2)
-    plate_pair("rear_lower_arm_tab", "rear", "suspension_mounts", "suspension_tab",
-               (x["rsus"], hy * 0.9, z_low + H * 0.03), tab, holes=2)
-    plate_pair("rear_upper_arm_tab", "rear", "suspension_mounts", "suspension_tab",
-               (x["rsus"], hy * 0.82, z_up * 0.9), tab, holes=2)
-    plate_pair("rear_trailing_arm_tab", "rear", "suspension_mounts", "suspension_tab",
-               (x["rsus"] - L * 0.04, hy * 0.7, z_low + H * 0.02), tab, holes=2)
-    plate_pair("front_shock_tower", "front", "suspension_mounts", "shock_tower",
-               (x["fsus"] + L * 0.02, hy * 0.68, z_up), big, holes=3)
-    plate_pair("rear_shock_tower", "rear", "suspension_mounts", "shock_tower",
-               (x["rsus"] - L * 0.02, hy * 0.64, z_up * 0.9), big, holes=3)
-    plate_pair("radiator_mount", "front", "radiator_mount", "radiator_mount",
-               (x["rad"], hy * 0.42, z_low + H * 0.12), tab, holes=2)
-    plate("fuel_tank_cradle", "rear", "fuel_tank_mount", "fuel_tank_cradle",
-          (0.23 * L, 0.0, z_low + H * 0.03), (W * 0.30, W * 0.18, pt), holes=4)
-    plate_pair("fuel_tank_tab", "rear", "fuel_tank_mount", "fuel_tank_tab",
-               (0.23 * L, hy * 0.6, z_low + H * 0.05), tab, holes=2)
-    plate("steering_column_bracket", "cabin", "seat_mounts", "steering_column_bracket",
+    plate("steering_column_bracket", "cockpit", "steering_column_mount", "steering_column_bracket",
           (x["dash"], W * 0.16, z_dash), tab, holes=2)
-    plate_pair("seat_base_plate", "cabin", "seat_mounts", "seat_base_plate",
-               (x["seat"], hy * 0.45, z_low + H * 0.02), (W * 0.16, W * 0.20, pt), holes=4)
-    plate_pair("floor_panel", "cabin", "seat_mounts", "floor_panel",
-               (x["seat"], hy * 0.22, z_low - H * 0.005), (L * 0.16, W * 0.18, pt * 0.6), holes=2)
-    plate_pair("harness_tab", "cabin", "seat_mounts", "harness_tab",
-               (x["hoop"], hy * 0.5, (z_up + z_top) / 2), tab, holes=2)
-    plate_pair("body_panel_tab_front", "front", "main_frame", "body_panel_tab",
+    plate_pair("dashboard_bracket_tab", "cockpit", "body_panel_tabs", "dashboard_tab",
+               (x["dash"], hy * 0.6, z_dash * 0.92), tab, holes=2)
+    plate_pair("radiator_tab", "front_nose", "radiator_mount", "radiator_mount",
+               (x["rad"], hy * 0.42, z_low + H * 0.12), tab, holes=2)
+    plate("fuel_tank_cradle", "rear_frame", "fuel_tank_mount", "fuel_tank_cradle",
+          (0.22 * L, 0.0, z_low + H * 0.03), (W * 0.30, W * 0.18, pt), holes=4)
+    plate_pair("fuel_tank_tab", "rear_frame", "fuel_tank_mount", "fuel_tank_tab",
+               (0.22 * L, hy * 0.6, z_low + H * 0.05), tab, holes=2)
+    plate_pair("body_panel_tab_front", "front_nose", "body_panel_tabs", "body_panel_tab",
                (x["rad"], hy * 0.82, z_up * 0.7), tab, holes=2)
-    plate_pair("body_panel_tab_rear", "rear", "main_frame", "body_panel_tab",
+    plate_pair("body_panel_tab_rear", "rear_frame", "body_panel_tabs", "body_panel_tab",
                (x["rsus"], hy * 0.82, z_up * 0.7), tab, holes=2)
-    # Side mounting plates near the sills (front/cabin/rear) — like the reference.
-    plate_pair("side_mount_plate_front", "engine_bay", "main_frame", "side_mount_plate",
-               (x["fsus"], hy * 0.96, z_low + H * 0.05), side_plate, holes=3)
-    plate_pair("side_mount_plate_mid", "cabin", "main_frame", "side_mount_plate",
-               (x["seat"], hy * 0.99, z_low + H * 0.05), side_plate, holes=3)
-    plate_pair("side_mount_plate_rear", "rear", "main_frame", "side_mount_plate",
-               (x["rsus"], hy * 0.85, z_low + H * 0.05), side_plate, holes=3)
-    # Gussets at key joints.
-    plate_pair("gusset_main_hoop", "roll_cage", "roll_cage", "gusset",
-               (x["hoop"], hy, z_up + H * 0.05), gus)
-    plate_pair("gusset_windshield", "roll_cage", "roll_cage", "gusset",
-               (x["dash"], hy * 0.96, z_up + H * 0.05), gus)
-    plate_pair("gusset_front_susp", "engine_bay", "main_frame", "gusset",
-               (x["fsus"], hy, z_low + H * 0.07), gus)
-    plate_pair("gusset_rear_susp", "rear", "main_frame", "gusset",
-               (x["rsus"], hy * 0.85, z_low + H * 0.07), gus)
+    # Suspension tabs (16): front/rear upper+lower arms, shock, trailing/steer.
+    plate_pair("front_lower_arm_tab", "front_suspension", "suspension_tabs", "suspension_tab",
+               (x["fsus"], hy * 0.97, z_low + H * 0.03), tab, holes=2)
+    plate_pair("front_upper_arm_tab", "front_suspension", "suspension_tabs", "suspension_tab",
+               (x["fsus"], hy * 0.9, z_up * 0.78), tab, holes=2)
+    plate_pair("front_shock_tab", "front_suspension", "suspension_tabs", "suspension_tab",
+               (x["fsus"] + L * 0.02, hy * 0.7, z_up), tab, holes=2)
+    plate_pair("front_steer_tab", "front_suspension", "suspension_tabs", "suspension_tab",
+               (x["fsus"] - L * 0.02, hy * 0.8, z_low + H * 0.05), tab, holes=2)
+    plate_pair("rear_lower_arm_tab", "rear_suspension", "suspension_tabs", "suspension_tab",
+               (x["rsus"], hy * 0.9, z_low + H * 0.03), tab, holes=2)
+    plate_pair("rear_upper_arm_tab", "rear_suspension", "suspension_tabs", "suspension_tab",
+               (x["rsus"], hy * 0.82, z_up * 0.9), tab, holes=2)
+    plate_pair("rear_shock_tab", "rear_suspension", "suspension_tabs", "suspension_tab",
+               (x["rsus"] - L * 0.02, hy * 0.66, z_up * 0.9), tab, holes=2)
+    plate_pair("rear_trailing_arm_tab", "rear_suspension", "suspension_tabs", "suspension_tab",
+               (x["rsus"] - L * 0.04, hy * 0.7, z_low + H * 0.02), tab, holes=2)
+    # Gussets (12) at key roll-cage / suspension nodes.
+    for cid, zn, sysn, gx, gy, gz in [
+        ("gusset_main_hoop", "roll_cage", "roll_cage", x["hoop"], hy, z_up + H * 0.05),
+        ("gusset_windshield", "roll_cage", "roll_cage", x["dash"], hy * 0.96, z_up + H * 0.05),
+        ("gusset_rear_hoop", "roll_cage", "roll_cage", x["rsus"], hy * 0.84, z_up + H * 0.04),
+        ("gusset_front_susp", "front_suspension", "main_frame", x["fsus"], hy, z_low + H * 0.07),
+        ("gusset_rear_susp", "rear_suspension", "main_frame", x["rsus"], hy * 0.85, z_low + H * 0.07),
+        ("gusset_roof_corner", "roll_cage", "roll_cage", x["hoop"], hy * 0.96, z_top * 0.95),
+    ]:
+        plate_pair(cid, zn, sysn, "gusset", (gx, gy, gz), gus)
 
     return comps
 
@@ -714,19 +777,31 @@ def _plate_solid(c: Component):
     if min(w, d) <= 0:
         return None
     thk = max(h, 1.0)
-    wp = cq.Workplane("XY").box(w, d, thk)
+    base = cq.Workplane("XY").box(w, d, thk)
+    wp = base
     n = int(c.bolt_holes)
     if n > 0:
         dia = max(2.0, min(w, d) * 0.16)
         span = w - 2 * (dia + 2)
-        if span > 0 and n > 1:
-            xs = [-span / 2 + span * i / (n - 1) for i in range(n)]
-        else:
-            xs = [0.0]
+        xs = [-span / 2 + span * i / (n - 1) for i in range(n)] if (span > 0 and n > 1) else [0.0]
         try:
             wp = wp.faces(">Z").workplane().pushPoints([(hx, 0.0) for hx in xs]).hole(dia)
         except Exception:  # noqa: BLE001 - keep the plate if holes can't be cut
-            wp = cq.Workplane("XY").box(w, d, thk)
+            wp = base
+    ns = int(c.slots)
+    if ns > 0:
+        slot_w = max(3.0, w * 0.5)
+        slot_h = max(2.0, min(d * 0.18, 12.0))
+        dy = d / (ns + 1)
+        ys = [-d / 2 + dy * (i + 1) for i in range(ns)]
+        try:
+            cut = wp
+            for sy in ys:
+                cut = (cut.faces(">Z").workplane()
+                       .pushPoints([(0.0, sy)]).slot2D(slot_w, slot_h, 0).cutThruAll())
+            wp = cut
+        except Exception:  # noqa: BLE001 - keep the plate if slots can't be cut
+            pass
     return wp.translate(tuple(c.center)).val()
 
 
@@ -736,7 +811,7 @@ def build_chassis(prompt: str) -> ChassisBuild:
     Reference-grade prompts get the dense ``_layout_reference`` frame; others get
     the lighter ``_layout``."""
     spec = make_spec(prompt)
-    components = (_layout_reference(spec) if spec.design_detail_level == "reference"
+    components = (_build_buggy(spec) if spec.design_detail_level == "reference"
                  else _layout(spec))
 
     solids, built = [], 0

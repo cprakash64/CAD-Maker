@@ -5,6 +5,7 @@ __pycache__/
 backend/cadmaker.db
 backend/storage_data/
 backend/.env
+backend/tmp/
 .pytest_cache/
 
 # Node / Next
