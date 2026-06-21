@@ -1,12 +1,13 @@
-"""Assembly-mode validation report (detailed tubular chassis).
+"""Assembly-mode validation report (detailed / reference tubular chassis).
 
 Mirrors the single-part dimension report shape (so the DTO, export gating and the
 frontend ValidationPanel work unchanged) but applies ASSEMBLY rules:
 
 * multi-body is EXPECTED — never a failure.
 * validate: non-empty geometry, exports present, positive volume, approximate
-  envelope, tube/component counts, required ZONES + SYSTEMS, left/right symmetry.
-* watertight/manifold are advisory for an assembly of intersecting members
+  envelope, tube/component counts, required ZONES + SYSTEMS, left/right symmetry,
+  and (reference-grade) plate/tab/roof/section counts.
+* watertight/manifold are advisory for an assembly of intersecting welded members
   (surfaced, never hidden).
 
 CRITICAL (export-blocking): no geometry, missing exports, zero/impossible
@@ -15,13 +16,22 @@ severe envelope mismatch.
 """
 from __future__ import annotations
 
+import collections
+
 from app.cad.assembly.chassis import REQUIRED_SYSTEMS, REQUIRED_ZONES, ChassisBuild
 from app.cad.measure import measure_solid, mesh_facts
 
 _WITHIN_FRAC = 0.20      # within this -> "within tolerance"
 _SEVERE_FRAC = 0.40      # beyond this -> critical envelope mismatch
-# Count floors by detail level.
-_FLOORS = {"detailed": (70, 90), "simple": (14, 20)}
+_FLOORS = {"reference": (100, 130), "detailed": (70, 90), "simple": (14, 20)}
+
+# Reference-grade minimums.
+_MIN_SIDE_PLATES = 6
+_MIN_SUSP_TABS = 8
+_MIN_FLOOR_SEAT_PLATES = 2
+_MIN_ROOF_MEMBERS = 6
+_FLOOR_SEAT_TYPES = {"seat_base_plate", "floor_panel", "seat_mount"}
+_ROOF_TYPES = {"roof_rail", "roof_crossbar", "roof_diagonal"}
 
 
 def _envelope_compare(env: dict, measured: dict) -> tuple[list[dict], list[str], list[str]]:
@@ -52,12 +62,37 @@ def _symmetry_ok(build: ChassisBuild) -> bool:
     return bool(lefts) and all(i[:-5] + "_right" in ids for i in lefts)
 
 
+def _plates_within_envelope(build: ChassisBuild, bbox: dict) -> bool:
+    """No mount plate floats far outside the chassis bounding envelope."""
+    mx = bbox["x"] / 2 * 1.15 + 50
+    my = bbox["y"] / 2 * 1.15 + 50
+    mz = bbox["z"] * 1.15 + 50
+    for c in build.components:
+        if c.kind != "plate":
+            continue
+        px, py, pz = c.center
+        if abs(px) > mx or abs(py) > my or pz > mz or pz < -50:
+            return False
+    return True
+
+
 def build_assembly_report(build: ChassisBuild, stl_bytes: bytes, step_bytes: bytes) -> dict:
     brep = measure_solid(build.solid)
     mesh = mesh_facts(stl_bytes)
+    spec = build.spec
     zones_present = build.zones_present
     systems_present = build.systems_present
-    min_tubes, min_components = _FLOORS.get(build.spec.design_detail_level, _FLOORS["detailed"])
+    is_reference = spec.design_detail_level == "reference"
+    min_tubes, min_components = _FLOORS.get(spec.design_detail_level, _FLOORS["detailed"])
+
+    types = collections.Counter(c.type for c in build.components)
+    side_plate_count = types.get("side_mount_plate", 0)
+    susp_tab_count = types.get("suspension_tab", 0)
+    floor_seat_count = sum(types.get(t, 0) for t in _FLOOR_SEAT_TYPES)
+    roof_member_count = sum(types.get(t, 0) for t in _ROOF_TYPES)
+    has_nose = types.get("nose_perimeter", 0) > 0
+    has_rear_hoop = types.get("rear_hoop", 0) > 0
+    side_impact_present = types.get("side_impact_bar", 0) > 0
 
     measured = {
         "bbox_mm": brep["bbox_mm"],
@@ -65,12 +100,21 @@ def build_assembly_report(build: ChassisBuild, stl_bytes: bytes, step_bytes: byt
         "surface_area_mm2": brep["surface_area_mm2"],
         "component_count": len(build.components),
         "tube_count": build.tube_count,
+        "plate_count": sum(1 for c in build.components if c.kind == "plate"),
         "mesh_components": mesh["components"],
         "watertight": mesh["watertight"],
         "manifold": mesh["manifold"],
         "zones_present": zones_present,
         "systems_present": systems_present,
         "sections_present": zones_present,  # back-compat
+        "side_mount_plate_count": side_plate_count,
+        "suspension_tab_count": susp_tab_count,
+        "floor_or_seat_plate_count": floor_seat_count,
+        "roof_member_count": roof_member_count,
+        "has_front_nose_section": has_nose,
+        "has_rear_hoop_section": has_rear_hoop,
+        "side_impact_present": side_impact_present,
+        "chassis_style": spec.chassis_style,
     }
 
     comparisons, env_warn, env_crit = _envelope_compare(build.envelope_mm, brep["bbox_mm"])
@@ -110,9 +154,27 @@ def build_assembly_report(build: ChassisBuild, stl_bytes: bytes, step_bytes: byt
         warn.append(f"Only {len(build.components)} components (expected ≥ {min_components}).")
     if not _symmetry_ok(build):
         warn.append("Left/right symmetry could not be confirmed.")
+    if not _plates_within_envelope(build, brep["bbox_mm"]):
+        warn.append("One or more mount plates sit outside the chassis envelope.")
     if not (mesh["watertight"] and mesh["manifold"]):
         warn.append("Mesh is not fully watertight/manifold (intersecting welded "
                     "members; advisory for a concept assembly).")
+
+    if is_reference:
+        if side_plate_count < _MIN_SIDE_PLATES:
+            warn.append(f"Only {side_plate_count} side mount plates (expected ≥ {_MIN_SIDE_PLATES}).")
+        if susp_tab_count < _MIN_SUSP_TABS:
+            warn.append(f"Only {susp_tab_count} suspension tabs (expected ≥ {_MIN_SUSP_TABS}).")
+        if floor_seat_count < _MIN_FLOOR_SEAT_PLATES:
+            warn.append(f"Only {floor_seat_count} floor/seat plates (expected ≥ {_MIN_FLOOR_SEAT_PLATES}).")
+        if roof_member_count < _MIN_ROOF_MEMBERS:
+            warn.append(f"Only {roof_member_count} roof members (expected ≥ {_MIN_ROOF_MEMBERS}).")
+        if not has_nose:
+            warn.append("No tapered front nose section.")
+        if not has_rear_hoop:
+            warn.append("No rear hoop section.")
+        if not side_impact_present:
+            warn.append("No side-impact members.")
 
     status = "critical_failure" if crit else ("warning" if warn else "pass")
     within = all(c["within"] for c in comparisons) if comparisons else None
@@ -125,14 +187,30 @@ def build_assembly_report(build: ChassisBuild, stl_bytes: bytes, step_bytes: byt
         "multi_body_expected": True,
         "min_wall_checked": False,
         "min_hole_diameter_mm": None,
-        "issues": [w for w in warn if "watertight" in w or "symmetry" in w],
+        "issues": [w for w in warn if "watertight" in w or "symmetry" in w
+                   or "outside the chassis" in w],
+    }
+
+    # Snapshot/debug metadata for frontend + tests.
+    tube_groups = collections.Counter(
+        c.group for c in build.components if c.kind == "tube" and c.group)
+    plate_groups = collections.Counter(c.type for c in build.components if c.kind == "plate")
+    snapshot = {
+        "chassis_style": spec.chassis_style,
+        "detail_level": spec.design_detail_level,
+        "zones": zones_present,
+        "systems": systems_present,
+        "tube_groups": dict(tube_groups),
+        "plate_groups": dict(plate_groups),
+        "symmetry_pairs": sum(1 for c in build.components if c.id.endswith("_left")),
     }
 
     return {
         "unit": "mm",
         "design_mode": "assembly",
         "tolerance": {"unit": "mm", "envelope_tolerance_frac": _WITHIN_FRAC},
-        "spec": build.spec.to_meta(),
+        "spec": spec.to_meta(),
+        "recommended_material": spec.to_meta()["recommended_material"],
         "requested": {
             "envelope_mm": build.envelope_mm,
             "min_tube_count": min_tubes,
@@ -148,11 +226,13 @@ def build_assembly_report(build: ChassisBuild, stl_bytes: bytes, step_bytes: byt
         "sections": {"present": zones_present, "missing": missing_zones},
         "zones": {"present": zones_present, "missing": missing_zones},
         "systems": {"present": systems_present, "missing": missing_systems},
+        "snapshot": snapshot,
         "components": [c.to_meta() for c in build.components],
         "notes": [
             "Concept assembly model — geometric first pass, NOT a certified or "
             "structurally-analyzed design (no FEA / load cases).",
             f"Tubes exported as solid cylinders; real wall thickness "
             f"Ø{build.tube_od:g}mm × {build.tube_wall:g}mm is carried as cut-list metadata.",
+            f"Recommended appearance: {spec.material_name}.",
         ],
     }

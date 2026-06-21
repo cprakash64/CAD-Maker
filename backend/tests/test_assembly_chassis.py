@@ -98,15 +98,17 @@ def test_assembly_exports_and_packages(chassis):
     assert "component_list.json" in names
     cutlist = zf.read("tube_cut_list.csv").decode()
     assert "cut_length_mm" in cutlist and "od_mm" in cutlist
+    meta = zf.read("assembly_metadata.json").decode().lower()
+    assert "chassis_style" in meta or "spec" in meta
     readme = zf.read("README.txt").decode().lower()
     assert "concept" in readme and "certified" in readme  # honest caveat
 
 
-# 5: detailed counts — many tubes and named components.
+# 5: reference-grade counts — many tubes and named components.
 def test_assembly_detail_counts(chassis):
     measured = chassis["design"]["dimension_report"]["measured"]
-    assert measured["tube_count"] >= 70
-    assert measured["component_count"] >= 90
+    assert measured["tube_count"] >= 100
+    assert measured["component_count"] >= 130
 
 
 # 6: required zones AND systems present; representative component types.
@@ -119,8 +121,33 @@ def test_assembly_zones_systems_and_components(chassis):
     types = {c["type"] for c in rep["components"]}
     for required in ("lower_rail", "upper_rail", "roll_cage_bar", "cross_member",
                      "transmission_tunnel", "side_impact_bar", "diagonal_brace",
-                     "engine_mount", "seat_mount", "gusset", "dashboard_support"):
+                     "nose_perimeter", "rear_hoop", "roof_rail", "engine_mount",
+                     "suspension_tab", "side_mount_plate", "seat_base_plate",
+                     "gusset", "dashboard_support"):
         assert required in types, f"missing component type: {required}"
+
+
+# 6b: reference-grade detail — plate/tab/roof/section counts + style + snapshot.
+def test_assembly_reference_grade(chassis):
+    rep = chassis["design"]["dimension_report"]
+    m = rep["measured"]
+    assert m["chassis_style"] == "reference_tubular_buggy_chassis"
+    assert m["side_mount_plate_count"] >= 6
+    assert m["suspension_tab_count"] >= 8
+    assert m["floor_or_seat_plate_count"] >= 2
+    assert m["roof_member_count"] >= 6
+    assert m["has_front_nose_section"] is True
+    assert m["has_rear_hoop_section"] is True
+    assert m["side_impact_present"] is True
+    # Snapshot/debug metadata + recommended dark-steel appearance.
+    snap = rep["snapshot"]
+    assert snap["chassis_style"] == "reference_tubular_buggy_chassis"
+    assert snap["tube_groups"] and snap["plate_groups"]
+    assert snap["symmetry_pairs"] > 0
+    assert rep["recommended_material"]["appearance"] == "dark_steel"
+    # Mount-system metadata present.
+    systems = set(rep["systems"]["present"])
+    assert {"radiator_mount", "fuel_tank_mount", "seat_mounts"} <= systems
 
 
 # 7: approximate envelope ~ 4200 x 1800 x 1200 mm.
