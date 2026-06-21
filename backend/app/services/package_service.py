@@ -83,20 +83,37 @@ def build_package_zip(spec: DesignSpec, design_id: str) -> bytes:
 
 
 def build_files_package(name: str, files: dict[str, bytes], metadata: dict,
-                        readme: str) -> bytes:
+                        readme: str, extra_files: dict[str, str] | None = None) -> bytes:
     """Package already-generated export bytes (STEP/STL) + metadata + README.
 
     Used for designs that have no DesignSpec (CadPlan feature-graph parts and
     concept assemblies) — we bundle the stored files rather than rebuilding from
-    a spec that doesn't exist."""
+    a spec that doesn't exist. ``extra_files`` adds named text files (e.g. a tube
+    cut-list / BOM / assembly metadata) to the archive."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for fmt, data in files.items():
             if data:
                 zf.writestr(f"{name}.{fmt}", data)
         zf.writestr("metadata.json", json.dumps(metadata, indent=2, default=str))
+        for fname, text in (extra_files or {}).items():
+            zf.writestr(fname, text)
         zf.writestr("README.txt", readme)
     return buf.getvalue()
+
+
+def assembly_cut_list_csv(components: list[dict]) -> str:
+    """CSV cut-list for the tube members (id, type, zone, OD, wall, cut length)."""
+    rows = ["id,type,zone,system,od_mm,wall_mm,cut_length_mm"]
+    for c in components:
+        if c.get("kind") != "tube":
+            continue
+        rows.append(
+            f"{c.get('id', '')},{c.get('type', '')},{c.get('zone', '')},"
+            f"{c.get('system', '')},{c.get('od', '')},{c.get('wall', '')},"
+            f"{c.get('cut_length_mm', '')}"
+        )
+    return "\n".join(rows) + "\n"
 
 
 _PACKAGE_README = """SourceCAD AI Part Studio — CAD Package

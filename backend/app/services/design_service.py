@@ -634,18 +634,20 @@ def _store_assembly(db: Session, design: Design, build, stl_bytes: bytes,
     design.spec_json = None
     design.spec_hash = digest
     design.route = "assembly"
-    design.route_reason = "Simplified concept assembly (tubular chassis / space frame)."
+    design.route_reason = "Detailed concept assembly (tubular chassis / space frame)."
     design.bounding_box = report["measured"]["bbox_mm"]
     design.provider = settings.cad_llm_provider or settings.llm_provider
     design.explanation = (
-        f"Simplified concept assembly — tubular chassis / space frame, "
+        f"Detailed concept chassis — welded tubular space frame, "
         f"~{env['x']:g}×{env['y']:g}×{env['z']:g} mm, {build.tube_count} tubes, "
-        f"{len(build.components)} named components. Concept CAD — not structurally certified."
+        f"{len(build.components)} named components across front / engine bay / cabin / "
+        f"roll cage / rear zones. Concept CAD — not structurally certified."
     )
     design.assumptions = [
         f"Target envelope {env['x']:g}×{env['y']:g}×{env['z']:g} mm",
-        f"Round tubes Ø{build.tube_od:g}mm, {build.tube_wall:g}mm wall (metadata)",
-        "Concept assembly — not a certified or FEA-analyzed structural design",
+        f"Round tubes Ø{build.tube_od:g}mm, {build.tube_wall:g}mm wall "
+        "(exported as solid cylinders; wall carried as cut-list metadata)",
+        "Detailed concept assembly — not a certified or FEA-analyzed structural design",
     ]
     design.missing_required = []
     design.clarification_question = None
