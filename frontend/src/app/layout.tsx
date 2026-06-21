@@ -4,7 +4,7 @@ import { AuthProvider } from "@/lib/auth";
 import { Header } from "@/components/Header";
 
 export const metadata: Metadata = {
-  title: "SourceCAD — Parametric CAD from plain English",
+  title: "CAD Maker — Parametric CAD workspace",
   description:
     "Generate validated, manufacturable parametric CAD parts from a description. Inspect, edit, validate, and export STEP/STL.",
 };
@@ -19,7 +19,9 @@ export default function RootLayout({
       <body>
         <AuthProvider>
           <Header />
-          <main className="mx-auto max-w-7xl px-5 py-6">{children}</main>
+          {/* Pages add their own container (.page); the Studio workspace is
+              full-bleed. */}
+          <main>{children}</main>
         </AuthProvider>
       </body>
     </html>

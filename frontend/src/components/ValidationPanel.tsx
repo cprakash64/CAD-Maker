@@ -35,7 +35,7 @@ function StatusRow({ ok, label: text }: { ok: boolean | undefined; label: string
   const known = typeof ok === "boolean";
   return (
     <div className="flex items-center gap-2">
-      <span className={!known ? "text-slate-500" : ok ? "text-emerald-400" : "text-amber-400"}>
+      <span className={!known ? "text-slate-500" : ok ? "text-accent" : "text-amber-400"}>
         {!known ? "–" : ok ? "✓" : "⚠"}
       </span>
       <span className="text-slate-300">{text}</span>
@@ -146,7 +146,7 @@ export default function ValidationPanel({
               const dec = unit ? 1 : 0;
               return (
                 <div key={`${c.name}-${i}`} className="flex items-center gap-2">
-                  <span className={c.within === false ? "text-amber-400" : "text-emerald-400"}>
+                  <span className={c.within === false ? "text-amber-400" : "text-accent"}>
                     {c.within === false ? "⚠" : "✓"}
                   </span>
                   <span className="w-24 shrink-0 text-slate-300">{label(c.name)}</span>

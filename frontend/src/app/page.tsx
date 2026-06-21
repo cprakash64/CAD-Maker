@@ -3,7 +3,7 @@ import { ONBOARDING_EXAMPLES } from "@/lib/examples";
 
 export default function LandingPage() {
   return (
-    <div className="space-y-16 py-6">
+    <div className="page space-y-16">
       {/* Hero */}
       <section className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">

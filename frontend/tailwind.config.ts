@@ -5,13 +5,15 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Neutral graphite surfaces — engineering tool, not navy "AI SaaS".
-        ink: "#0c0d10", // page background
-        panel: "#15171c", // cards / surfaces
-        raised: "#1c1f26", // inputs / secondary surfaces / hover
-        edge: "#2b2f38", // hairline borders
-        accent: "#3f7fe0", // restrained steel blue (used sparingly)
-        viewport: "#0a0b0e", // 3D viewport background
+        // Carbon/graphite engineering workspace — no bright blue/green/purple.
+        ink: "#0b0c0e", // carbon page background
+        panel: "#131519", // graphite panels / cards
+        raised: "#1a1d22", // steel/zinc raised surfaces, inputs, hover
+        edge: "#2a2e36", // zinc hairline borders
+        accent: "#c2974a", // brass — primary actions / highlights (used sparingly)
+        brass: "#c2974a",
+        danger: "#c25c52", // muted red — critical failure
+        viewport: "#0a0b0d", // 3D viewport background
       },
       fontFamily: {
         mono: [

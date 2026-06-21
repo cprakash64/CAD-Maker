@@ -32,11 +32,11 @@ export default function DashboardPage() {
   }, [user]);
 
   if (loading || !user) {
-    return <div className="py-10 text-slate-400">Loading…</div>;
+    return <div className="page text-slate-400">Loading…</div>;
   }
 
   return (
-    <div className="space-y-5">
+    <div className="page space-y-5">
       <div className="flex items-end justify-between">
         <div>
           <span className="label">Workspace</span>

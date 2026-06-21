@@ -19,9 +19,11 @@ interface Props {
   mesh: PreviewMesh | null;
   features: FeatureInfo[];
   onSelect: (f: SelectedFeature | null) => void;
+  materialColor?: string;
+  viewerClassName?: string;
 }
 
-export default function Studio3D({ mesh, features, onSelect }: Props) {
+export default function Studio3D({ mesh, features, onSelect, materialColor, viewerClassName }: Props) {
   const viewerRef = useRef<ViewerHandle>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [activeView, setActiveView] = useState<ViewName>("iso");
@@ -137,6 +139,8 @@ export default function Studio3D({ mesh, features, onSelect }: Props) {
         <Viewer3D
           ref={viewerRef}
           mesh={mesh}
+          materialColor={materialColor}
+          className={viewerClassName}
           onPick={(p: PickedEntity) => onSelect({ entity_type: p.type, entity_id: p.id, label: p.label })}
         />
         {/* Overlay captures circle gestures only in circle mode. */}

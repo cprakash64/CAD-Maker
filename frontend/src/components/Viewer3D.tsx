@@ -49,11 +49,17 @@ function PartMesh({
   centerRef,
   radiusRef,
   onPick,
+  color = "#9aa3ad",
+  metalness = 0.45,
+  roughness = 0.5,
 }: {
   mesh: PreviewMesh;
   centerRef: React.MutableRefObject<THREE.Vector3>;
   radiusRef: React.MutableRefObject<number>;
   onPick?: (e: PickedEntity) => void;
+  color?: string;
+  metalness?: number;
+  roughness?: number;
 }) {
   const geometry = useMemo(() => {
     const geom = new THREE.BufferGeometry();
@@ -82,7 +88,7 @@ function PartMesh({
 
   return (
     <mesh geometry={geometry} castShadow receiveShadow onClick={handleClick}>
-      <meshStandardMaterial color="#9fb4e0" metalness={0.15} roughness={0.55} />
+      <meshStandardMaterial color={color} metalness={metalness} roughness={roughness} />
     </mesh>
   );
 }
@@ -150,31 +156,46 @@ function Rig({
 interface Props {
   mesh: PreviewMesh | null;
   onPick?: (e: PickedEntity) => void;
+  materialColor?: string;
+  className?: string;
 }
 
-const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D({ mesh, onPick }, ref) {
+const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D(
+  { mesh, onPick, materialColor, className }, ref
+) {
   const centerRef = useRef(new THREE.Vector3());
   const radiusRef = useRef(100);
 
   return (
-    <div className="relative h-[520px] w-full overflow-hidden rounded-lg border border-edge bg-viewport lg:h-[640px]">
+    <div
+      className={
+        className ??
+        "relative h-[520px] w-full overflow-hidden rounded-lg border border-edge bg-viewport lg:h-[640px]"
+      }
+    >
       {!mesh ? (
         <div className="flex h-full items-center justify-center text-sm text-slate-500">
           No preview yet
         </div>
       ) : (
         <Canvas camera={{ position: [120, 90, 120], fov: 45 }} shadows gl={{ preserveDrawingBuffer: true }}>
-          <ambientLight intensity={0.6} />
-          <directionalLight position={[80, 120, 60]} intensity={1.1} castShadow />
-          <directionalLight position={[-60, 40, -80]} intensity={0.4} />
-          <PartMesh mesh={mesh} centerRef={centerRef} radiusRef={radiusRef} onPick={onPick} />
+          <ambientLight intensity={0.55} />
+          <directionalLight position={[80, 120, 60]} intensity={1.05} castShadow />
+          <directionalLight position={[-60, 40, -80]} intensity={0.35} />
+          <PartMesh
+            mesh={mesh}
+            centerRef={centerRef}
+            radiusRef={radiusRef}
+            onPick={onPick}
+            color={materialColor}
+          />
           <Grid
             args={[800, 800]}
             cellSize={10}
             cellThickness={0.5}
             sectionSize={50}
-            sectionColor="#3a4150"
-            cellColor="#23272f"
+            sectionColor="#363a42"
+            cellColor="#202329"
             position={[0, -0.01, 0]}
             infiniteGrid
             fadeDistance={900}

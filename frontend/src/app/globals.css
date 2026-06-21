@@ -16,6 +16,11 @@ body {
 }
 
 @layer components {
+  /* Centered content container for non-workspace pages. */
+  .page {
+    @apply mx-auto max-w-7xl px-5 py-6;
+  }
+
   /* --- surfaces --- */
   .card {
     @apply rounded-lg border border-edge bg-panel;
@@ -30,8 +35,9 @@ body {
       text-sm font-medium transition-colors disabled:cursor-not-allowed
       disabled:opacity-50;
   }
+  /* Brass primary action with dark carbon text — premium, not neon. */
   .btn-primary {
-    @apply btn bg-accent text-white hover:bg-accent/90;
+    @apply btn bg-accent font-semibold text-ink hover:bg-accent/90;
   }
   .btn-ghost {
     @apply btn border border-edge bg-transparent text-slate-200 hover:bg-raised;
@@ -52,19 +58,26 @@ body {
     @apply text-[11px] font-semibold uppercase tracking-wider text-slate-400;
   }
 
-  /* --- status badges (bordered + muted fill, not glowing) --- */
+  /* Example / selectable chips. */
+  .chip {
+    @apply rounded-md border border-edge bg-raised px-2.5 py-1 text-xs text-slate-300
+      transition-colors hover:border-accent/60 hover:text-slate-100;
+  }
+
+  /* --- status badges (icon + label, muted fills — never neon) --- */
   .badge {
     @apply inline-flex items-center gap-1 rounded-md border px-2 py-0.5
       text-[11px] font-semibold uppercase tracking-wide;
   }
+  /* Validated = neutral graphite with off-white text (brass check added by caller). */
   .badge-pass {
-    @apply badge border-emerald-500/40 bg-emerald-500/10 text-emerald-300;
+    @apply badge border-edge bg-raised text-slate-100;
   }
   .badge-review {
     @apply badge border-amber-500/40 bg-amber-500/10 text-amber-300;
   }
   .badge-fail {
-    @apply badge border-red-500/50 bg-red-500/15 text-red-300;
+    @apply badge border-danger/60 bg-danger/15 text-[#e6a39b];
   }
   .badge-neutral {
     @apply badge border-edge bg-raised text-slate-400;
@@ -81,9 +94,9 @@ body {
     @apply banner border-amber-500/40 bg-amber-500/10 text-amber-100;
   }
   .banner-danger {
-    @apply banner border-red-500/50 bg-red-500/10 text-red-200;
+    @apply banner border-danger/60 bg-danger/10 text-[#e6a39b];
   }
   .banner-success {
-    @apply banner border-emerald-500/40 bg-emerald-500/10 text-emerald-100;
+    @apply banner border-edge bg-raised text-slate-200;
   }
 }
