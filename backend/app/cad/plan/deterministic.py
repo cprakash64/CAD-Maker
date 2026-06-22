@@ -486,6 +486,102 @@ def _plan_clamp_block(t: str) -> CadPlan:
     )
 
 
+def _plan_robotic_arm_base_bracket(t: str) -> CadPlan:
+    """Robotic-arm base mount: a circular OR rectangular base plate, a vertical
+    support tower (rectangular wall), two side gussets bracing the tower to the
+    base, base mounting holes on a bolt circle/grid, and an optional bearing
+    pocket (counterbored recess) on top of the tower. Never collapses to a flat
+    plate when a tower / gussets / bearing pocket are requested."""
+    circular = bool(re.search(r"\bcircular\b|\bround\b", t))
+    base_dia = _near(t, "base diameter", "diameter", "od") or 120.0
+    base_w = _near(t, "base width", "wide", "width") or base_dia
+    base_d = _near(t, "base depth", "deep", "depth") or base_dia
+    base_t = _near(t, "base thick", "base thickness", "thick") or 10.0
+    tower_h = _near(t, "tower", "tall", "high", "vertical support") or 90.0
+    tower_w = _near(t, "tower width") or max(40.0, (base_dia if circular else min(base_w, base_d)) * 0.5)
+    tower_thk = 12.0
+    sc = _screws(t)
+    bolt_d, bolt_label = (sc[0], sc[1]) if sc else (6.6, "M6")
+    n_base_holes = _count(t, "holes", "mounting holes", "bolt holes") or 4
+    bearing = bool(re.search(r"\bbearing\b", t))
+    bearing_dia = _near(t, "bearing pocket", "bearing bore", "bearing") or 52.0
+
+    features: list[Feature] = []
+    if circular:
+        features.append(Feature(
+            id="base_plate", kind="cylinder", description="circular base plate",
+            params={"diameter": base_dia, "height": base_t}))
+        envelope_x = envelope_y = base_dia
+    else:
+        features.append(Feature(
+            id="base_plate", kind="plate", description="rectangular base plate",
+            params={"width": base_w, "depth": base_d, "thickness": base_t}))
+        envelope_x, envelope_y = base_w, base_d
+
+    # Vertical support tower standing on the base, centered.
+    features.append(Feature(
+        id="support_tower", kind="rectangular_wall", description="vertical support tower",
+        params={"width": tower_w, "depth": tower_thk, "height": tower_h},
+        at=[0, 0, base_t]))
+    # Two triangular gussets bracing the tower front/back to the base.
+    gus_len = min(tower_h * 0.5, (base_d if not circular else base_dia) * 0.35)
+    gus_h = min(tower_h * 0.6, gus_len * 1.4)
+    features.append(Feature(
+        id="gusset_front", kind="gusset", description="front bracing gusset",
+        params={"length": gus_len, "height": gus_h, "thickness": 8.0},
+        at=[0, tower_thk / 2, base_t]))
+    features.append(Feature(
+        id="gusset_back", kind="gusset", description="back bracing gusset",
+        params={"length": gus_len, "height": gus_h, "thickness": 8.0},
+        at=[0, -tower_thk / 2 - 8.0, base_t]))
+
+    # Base mounting holes on a bolt circle (circular) or corner grid (rectangular).
+    import math as _math
+    if circular:
+        r = base_dia / 2 - max(10.0, bolt_d * 1.5)
+        for i in range(n_base_holes):
+            ang = 2 * _math.pi * i / max(1, n_base_holes)
+            features.append(Feature(
+                id=f"base_hole_{i}", kind="hole", description="base mounting hole",
+                params={"diameter": bolt_d},
+                at=[round(r * _math.cos(ang), 2), round(r * _math.sin(ang), 2), 0]))
+    else:
+        hx, hy = base_w / 2 - 12, base_d / 2 - 12
+        corners = [(-hx, -hy), (hx, -hy), (-hx, hy), (hx, hy)]
+        for i, (x, y) in enumerate(corners[:n_base_holes]):
+            features.append(Feature(
+                id=f"base_hole_{i}", kind="hole", description="base mounting hole",
+                params={"diameter": bolt_d}, at=[x, y, 0]))
+
+    n_holes = n_base_holes
+    if bearing:
+        # Counterbored bearing pocket recessed into the top of the tower.
+        features.append(Feature(
+            id="bearing_pocket", kind="counterbore", axis="y",
+            description="bearing pocket recess on the support tower",
+            params={"diameter": max(8.0, bearing_dia * 0.5),
+                    "counterbore_diameter": bearing_dia,
+                    "counterbore_depth": min(10.0, tower_thk * 0.6)},
+            at=[0, tower_thk / 2, base_t + tower_h * 0.7]))
+        n_holes += 1
+
+    assumptions = [
+        ("Circular" if circular else "Rectangular")
+        + f" base, vertical support tower {tower_w:g}×{tower_h:g}mm, two side gussets",
+        f"{n_base_holes}× {bolt_label} ({bolt_d:g}mm) base mounting holes",
+    ]
+    if bearing:
+        assumptions.append(f"Ø{bearing_dia:g}mm bearing pocket recessed into the tower")
+    env_z = base_t + tower_h
+    return CadPlan(
+        object_type="robotic_arm_base_bracket", name="robotic arm base bracket",
+        assumptions=assumptions, features=features,
+        expected=Expected(bbox_mm={"x": envelope_x, "y": max(envelope_y, tower_thk + 8),
+                                   "z": env_z},
+                          hole_count=n_holes, through_hole_count=n_base_holes),
+    )
+
+
 def _plan_motor_plate(t: str) -> CadPlan:
     sq = _near(t, "square") or _near(t, "mm square")
     width = depth = sq or 70
@@ -622,6 +718,9 @@ _FAMILIES = [
     (lambda t: "flange" in t and "pipe" not in t, _plan_flange),
     (lambda t: "vise" in t or "v groove" in t or "v-groove" in t, _plan_vise_jaw),
     (lambda t: "clamp" in t and bool(re.search(r"\btube\b|\bpipe\b|\brod\b|\bbar\b|\bshaft\b", t)), _plan_clamp_block),
+    (lambda t: bool(re.search(r"\brobot(?:ic)?\b", t)) and "arm" in t
+               and bool(re.search(r"\bbase\b|\bbracket\b|\btower\b|\bgusset\b|\bbearing\b", t)),
+     _plan_robotic_arm_base_bracket),
     (lambda t: bool(re.search(r"\bu[- ]?(shaped|bracket)\b", t)), _plan_u_bracket),
     (lambda t: bool(re.search(r"\bhinge\b|\bears?\b", t)), _plan_hinge_bracket),
     (lambda t: "bearing" in t and ("block" in t or "housing" in t), _plan_bearing_block),

@@ -38,12 +38,39 @@ approximate gear blank says its teeth are not a true involute profile.
 | `pipe_fitting` | single part | beta | Spool/tee/clamp; geometry only, no pressure rating or NPT threads. |
 | `drill_jig` | single part | beta | Guide-hole plate; plain bores (no hardened bushings). |
 | `handle_knob` | single part | beta | Simple revolved/extruded grips. |
+| `u_bracket` | single part | beta | True U channel (base + two side walls), not a flat plate. |
+| `hinge_bracket` | single part | beta | Base + two ears + coaxial pin hole. |
+| `clamp_block` | single part | beta | Split tube/pipe clamp with bore + tightening bolts. |
+| `robotic_arm_base_bracket` | single part | beta | Circular/rectangular base + vertical tower + gussets (+ optional bearing pocket). |
 | `gear_blank` | single part | concept | **Approximate** teeth — not a true involute; use as a blank. |
 | `crankshaft` | single part | beta | Inline-4 geometric model; not balance/stress validated. |
 | `generic_feature_graph_part` | single part | beta | Anything composed from safe primitives (box/cylinder/tube/boss/rib/hole + booleans). No threads/splines/free-form. |
+| `machine_frame` | assembly | concept | Welded square-tube frame: legs, top/bottom frames, braces, foot/motor plates, panel. |
+| `engine_test_stand` | assembly | concept | Square-tube stand: engine plates, crossbar, radiator/fuel mounts, caster plates. |
+| `drone_frame` | assembly | concept | Quadcopter X-frame: arms, motor hole patterns, central/battery plates, landing feet. |
+| `motorcycle_subframe` | assembly | concept | Tapered tube rails, seat rails, shock/tail/side tabs, battery tray, bracing. |
+| `skateboard_motor_mount` | single part | concept | Primary motor mount bracket of a larger deck assembly (decomposed). |
 | `tube_chassis` | assembly | concept | Tubular space frame — concept CAD; tubes export as solid cylinders. |
 | `reference_buggy_tubular_chassis` | assembly | concept | Hand-authored reference buggy/sports-car layout; concept only. |
 | `generic_assembly_decomposition` | assembly | unsupported | Whole machines → decomposition plan, no geometry. |
+
+### Structural-frame & concept-assembly generators
+
+The frame families above are produced by reusable deterministic generators in
+[`backend/app/cad/assembly/frames.py`](../backend/app/cad/assembly/frames.py)
+(square/round tube frames built from beams, tubes and plates) and validated by
+profile in [`backend/app/cad/assembly/frame_report.py`](../backend/app/cad/assembly/frame_report.py).
+They are routed **before** the complexity gate and built with CadQuery and **no
+LLM call**, so hard structural prompts that used to time out or decompose now
+return a validated concept model fast. Square tubing is exported as solid beams
+and round tubing as solid cylinders; real wall thickness is carried as cut-list
+metadata. Validation profiles: `structural_frame_assembly`, `drone_frame`,
+`motorcycle_subframe`, `motor_mount_component`.
+
+The `skateboard_motor_mount` family honours an explicit "if too complex, build
+the main bracket first" request: it generates the **primary motor mount bracket**
+(a single fused part) and records a decomposition note for the rest of the deck
+assembly, instead of returning generic decomposition.
 
 The live, machine-readable version (with required/optional dimensions, default
 assumptions, example prompts and per-family limitations) is always available at
@@ -88,6 +115,23 @@ no LLM/CadQuery):
   the system returns a decomposition plan: build one component at a time.
 - **Clarification** — a prompt that is decorative/organic or too vague to map to
   safe mechanical geometry asks for a clearer description rather than guessing.
+
+`needs_decomposition` is now used only when the prompt is an **unsupported**
+family, has too many unrelated systems, is missing essential dimensions with no
+feasible fallback component, or otherwise has no buildable deterministic family.
+Supported hard prompts (machine/equipment frames, engine test stands, drone
+frames, motorcycle subframes, e-skateboard mounts, and the medium parts above)
+route to a deterministic generator instead.
+
+## Timeout robustness
+
+Hard structural prompts that match a supported deterministic family are
+intercepted and built **before** any LLM call, so they cannot end with
+"Generation took too long and was stopped". If an LLM-backed path does exhaust
+its time budget, the request still surfaces a clean 503 rather than a hang, and
+deterministic families remain available offline. The hard-prompt regression set
+lives in [`backend/tests/data/hard_prompts.json`](../backend/tests/data/hard_prompts.json)
+(see [`test_hard_prompts.py`](../backend/tests/test_hard_prompts.py)).
 
 Every design now carries a structured `classification` block
 (`family_id`, `confidence`, `design_mode`, `complexity`,

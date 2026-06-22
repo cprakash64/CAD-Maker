@@ -702,6 +702,109 @@ def _store_assembly(db: Session, design: Design, build, stl_bytes: bytes,
             passed=False, message=msg))
 
 
+def _try_frame_family(db: Session, design: Design, prompt: str, family_id: str) -> Design:
+    """Generate a supported deterministic frame / concept assembly (or the
+    primary component of one). Deterministic CadQuery — no LLM."""
+    from app.cad.assembly.frame_report import build_frame_report
+    from app.cad.assembly.frames import build_frame_family
+    from app.cad.plan.compiler import export_solid
+
+    build = build_frame_family(prompt, family_id)
+    stl_bytes, step_bytes, preview = export_solid(build.solid)
+    report = build_frame_report(build, stl_bytes, step_bytes)
+    _store_frame_build(db, design, build, stl_bytes, step_bytes, preview, report)
+    log_event("assembly_generated", design_id=design.id, family=family_id,
+              components=build.member_count, design_mode=build.design_mode,
+              status=report["validation"]["status"])
+    db.commit()
+    db.refresh(design)
+    return design
+
+
+def _store_frame_build(db: Session, design: Design, build, stl_bytes: bytes,
+                       step_bytes: bytes, preview, report: dict) -> None:
+    """Persist a frame / concept-assembly build: exports, preview, validation,
+    components. Mirrors _store_assembly but driven by the generic frame report."""
+    import hashlib
+    import json as _json
+
+    storage = get_storage()
+    digest = hashlib.sha256(
+        _json.dumps(report.get("components"), sort_keys=True, default=str).encode()
+    ).hexdigest()[:16]
+    env = build.envelope_mm
+    val = report["validation"]
+
+    design.object_type = build.family_id
+    design.spec_json = None
+    design.spec_hash = digest
+    design.route = "assembly"
+    design.route_reason = f"Deterministic concept assembly ({build.display_name})."
+    design.bounding_box = report["measured"]["bbox_mm"]
+    design.provider = settings.cad_llm_provider or settings.llm_provider
+    env_txt = (f"~{env.get('x', 0):g}×{env.get('y', 0):g}×{env.get('z', 0):g} mm "
+               if env else "")
+    design.explanation = (
+        f"{build.display_name} — concept assembly, {env_txt}"
+        f"{build.member_count} components. Concept CAD — not structurally certified."
+    )
+    assumptions = list(build.notes)
+    if build.decomposition_note:
+        assumptions.append(build.decomposition_note)
+    design.assumptions = assumptions
+    design.missing_required = []
+    design.clarification_question = None
+    design.auto_repaired = False
+    design.repair_attempts = 0
+    design.export_formats = ["step", "stl"]
+    design.features_json = []  # an assembly is not single-feature editable
+    design.semantic_json = {
+        "design_mode": build.design_mode,
+        "dimension_report": report,
+        "checks": [],  # detail lives in dimension_report + ManufacturingCheck rows
+        "passed": val["status"] != "critical_failure",
+    }
+    design.preview_json = {
+        "positions": preview.positions,
+        "indices": preview.indices,
+        "vertex_count": preview.vertex_count,
+        "triangle_count": preview.triangle_count,
+    }
+
+    for old in list(design.exports):
+        db.delete(old)
+    db.flush()
+    for fmt, data in (("stl", stl_bytes), ("step", step_bytes)):
+        if not data:
+            continue
+        key = f"{design.id}/{digest}.{fmt}"
+        try:
+            storage.save(key, data)
+        except StorageError:
+            log_event("export_failed", design_id=design.id, fmt=fmt)
+            raise
+        db.add(ExportFile(
+            design_id=design.id, fmt=fmt, storage_key=key,
+            url=f"{settings.public_base_url}/api/designs/{design.id}/files/{fmt}",
+            size_bytes=len(data),
+        ))
+
+    for old in list(design.checks):
+        db.delete(old)
+    db.flush()
+    db.add(ManufacturingCheck(
+        design_id=design.id, check="validation_profile", severity="info", passed=True,
+        message=f"Validation profile: {report.get('profile_label', build.profile)}."))
+    for msg in val["critical_failures"]:
+        db.add(ManufacturingCheck(
+            design_id=design.id, check="assembly_critical", severity="critical",
+            passed=False, message=msg))
+    for msg in val["warnings"]:
+        db.add(ManufacturingCheck(
+            design_id=design.id, check="assembly_warning", severity="warning",
+            passed=False, message=msg))
+
+
 def _store_decomposition(db: Session, design: Design, assessment) -> None:
     """Persist a 'this is a large assembly — decompose it' result (no geometry)."""
     design.object_type = "assembly"
@@ -759,6 +862,23 @@ def create_design(
 
 
 def _dispatch_generation(db: Session, design: Design, prompt: str) -> Design:
+    # SUPPORTED DETERMINISTIC FRAME / CONCEPT-ASSEMBLY FAMILIES (machine frame,
+    # engine test stand, drone frame, motorcycle subframe, skateboard motor
+    # mount). These are built deterministically with CadQuery — NO LLM call — so
+    # hard structural prompts that used to time out or decompose now produce a
+    # validated concept model fast. On any build failure we fall through to the
+    # existing complexity gate / generation, so behavior degrades gracefully.
+    from app.cad.assembly.frames import detect_frame_family
+
+    frame_family = detect_frame_family(prompt)
+    if frame_family:
+        try:
+            return _try_frame_family(db, design, prompt, frame_family)
+        except CadGenerationError as exc:
+            log_event("frame_generation_failed", design_id=design.id,
+                      family=frame_family, detail=str(exc)[:200])
+            # fall through to the complexity gate / generation below.
+
     # COMPLEXITY GATE (cheap, no LLM/CAD): whole machines / large multi-subsystem
     # assemblies (car chassis, airframe, ...) are guided to decomposition fast
     # instead of being attempted as one synchronous part (which would burn minutes

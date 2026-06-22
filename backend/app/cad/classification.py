@@ -13,6 +13,7 @@ and surfaced via the API so the frontend can set honest expectations.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from app.cad.complexity import assess_complexity, detect_assembly_family
@@ -117,13 +118,44 @@ def classify_prompt(prompt: str) -> PromptClassification:
             reason="Empty prompt.",
         )
 
-    # 1) Large-assembly gate first — mirrors create_design's complexity gate so
+    low = text.lower()
+
+    # 1) Supported deterministic frame / concept-assembly families (machine
+    #    frame, drone, motorcycle subframe, skateboard mount, ...). Detected the
+    #    same way the generator routes them, so classification == what is built,
+    #    and these never fall through to decomposition/timeout.
+    from app.cad.assembly.frames import detect_frame_family
+
+    frame_fam_id = detect_frame_family(low)
+    if frame_fam_id:
+        fam = get_family(frame_fam_id)
+        complexity = (COMPLEXITY_COMPLEX if fam.design_mode == DesignMode.single_part
+                      else COMPLEXITY_HUGE)
+        return _from_family(
+            fam, confidence=0.85, complexity=complexity, can_generate_now=True,
+            strategy=GenerationStrategy.assembly_generator,
+            reason=f"Supported deterministic {fam.display_name}.",
+        )
+
+    # 2) Large-assembly gate — mirrors create_design's complexity gate so
     #    classification and routing agree on whole-machine prompts.
     assessment = assess_complexity(text)
     if assessment.is_complex:
         return _classify_assembly(text, assessment)
 
-    # 2) Single-part routing — reuse the deterministic router so the classifier's
+    # 3) Dedicated medium single-part families that the keyword router would
+    #    otherwise mislabel (U bracket -> flat plate, robotic arm base -> plate).
+    #    Detected the same way the deterministic planner dispatches them.
+    part_fam_id = _detect_dedicated_part_family(low)
+    if part_fam_id:
+        fam = get_family(part_fam_id)
+        return _from_family(
+            fam, confidence=0.8, complexity=_part_complexity(text),
+            can_generate_now=True, strategy=GenerationStrategy.cadplan,
+            reason=f"Classified as {fam.display_name}.",
+        )
+
+    # 4) Single-part routing — reuse the deterministic router so the classifier's
     #    strategy matches what the generator will actually do.
     from app.generation.router import route_prompt
 
@@ -152,6 +184,22 @@ def classify_prompt(prompt: str) -> PromptClassification:
         can_generate_now=can_generate, required_missing=required_missing,
         strategy=strategy, reason=reason,
     )
+
+
+# Dedicated medium-part detection — mirrors the deterministic planner's dispatch
+# (app.cad.plan.deterministic._FAMILIES), most-specific-first, so the classifier
+# names the same family the generator will build.
+def _detect_dedicated_part_family(low: str) -> str | None:
+    if re.search(r"\brobot(?:ic)?\b", low) and "arm" in low \
+            and re.search(r"\bbase\b|\bbracket\b|\btower\b|\bgusset\b|\bbearing\b", low):
+        return "robotic_arm_base_bracket"
+    if "clamp" in low and re.search(r"\btube\b|\bpipe\b|\brod\b|\bbar\b|\bshaft\b", low):
+        return "clamp_block"
+    if re.search(r"\bu[- ]?(shaped|bracket)\b", low):
+        return "u_bracket"
+    if re.search(r"\bhinge\b", low):
+        return "hinge_bracket"
+    return None
 
 
 def _classify_assembly(text: str, assessment) -> PromptClassification:

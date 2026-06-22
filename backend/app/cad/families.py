@@ -355,6 +355,105 @@ _FAMILIES: tuple[CADFamily, ...] = (
             "An inline-4 crankshaft, 50mm main journal, 80mm stroke, 400mm long",
         ),
     ),
+    # ---- Dedicated medium single-part families (feature graph) ----------
+    CADFamily(
+        family_id="u_bracket",
+        display_name="U bracket / channel bracket",
+        design_mode=DesignMode.single_part,
+        maturity=Maturity.beta,
+        keywords=("u bracket", "u-bracket", "u shaped bracket", "u-shaped bracket",
+                  "channel bracket"),
+        object_types=("u_bracket",),
+        required_dimensions=("width", "height", "thickness"),
+        optional_dimensions=("depth", "base holes", "pivot hole"),
+        default_assumptions=("Base plate + two upright side walls (a true U channel)",
+                             "Pivot hole through each side wall"),
+        generator="u_bracket feature graph (deterministic plan)",
+        generation_strategy=GenerationStrategy.cadplan,
+        validation_profile="single_part_strict",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "Right-angle U channel (base + two walls); not multi-bend sheet metal.",
+        ),
+        example_prompts=(
+            "A U bracket 80mm wide, 60mm tall, 6mm thick with two M6 base holes and "
+            "an 8mm pivot hole through each side wall",
+        ),
+        supports_drawing_input=True,
+    ),
+    CADFamily(
+        family_id="hinge_bracket",
+        display_name="Hinge bracket",
+        design_mode=DesignMode.single_part,
+        maturity=Maturity.beta,
+        keywords=("hinge bracket", "hinge", "knuckle bracket"),
+        object_types=("hinge_bracket",),
+        required_dimensions=("base width", "base depth", "base thickness"),
+        optional_dimensions=("ear height", "ear thickness", "pin hole diameter"),
+        default_assumptions=("Base plate + two side ears on top",
+                             "One coaxial pin hole through both ears"),
+        generator="hinge_bracket feature graph (deterministic plan)",
+        generation_strategy=GenerationStrategy.cadplan,
+        validation_profile="single_part_strict",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "Two-ear knuckle with a single pin axis; no leaf/barrel hinge detail.",
+        ),
+        example_prompts=(
+            "A hinge bracket with a 70x40x6mm base and two side ears 30mm tall, 6mm "
+            "thick, with an 8mm pin hole through both ears",
+        ),
+    ),
+    CADFamily(
+        family_id="clamp_block",
+        display_name="Tube / pipe clamp block",
+        design_mode=DesignMode.single_part,
+        maturity=Maturity.beta,
+        keywords=("clamp block", "split clamp", "tube clamp block", "pipe clamp block",
+                  "shaft clamp"),
+        object_types=("tube_clamp_block",),
+        required_dimensions=("tube/bore diameter",),
+        optional_dimensions=("bolt count", "bolt size", "base mounting holes"),
+        default_assumptions=("Clamp body sized from the tube bore + flat mounting base",
+                             "Vertical split with tightening bolts crossing the gap"),
+        generator="tube_clamp_block feature graph (deterministic plan)",
+        generation_strategy=GenerationStrategy.cadplan,
+        validation_profile="single_part_strict",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "Single horizontal bore split clamp; no threaded bore or V-block.",
+        ),
+        example_prompts=(
+            "A clamp block for a 25mm round tube with two M6 tightening bolts and "
+            "four base mounting holes",
+        ),
+    ),
+    CADFamily(
+        family_id="robotic_arm_base_bracket",
+        display_name="Robotic arm base bracket",
+        design_mode=DesignMode.single_part,
+        maturity=Maturity.beta,
+        keywords=("robotic arm base", "robot arm base", "arm base bracket",
+                  "robotic arm bracket", "robot base bracket"),
+        object_types=("robotic_arm_base_bracket",),
+        required_dimensions=("base size/diameter", "tower height"),
+        optional_dimensions=("base holes", "bearing pocket", "tower width"),
+        default_assumptions=("Circular or rectangular base + vertical support tower",
+                             "Two side gussets bracing the tower to the base"),
+        generator="robotic_arm_base_bracket feature graph (deterministic plan)",
+        generation_strategy=GenerationStrategy.cadplan,
+        validation_profile="single_part_strict",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "Base + tower + gussets (+ optional bearing pocket); not a full "
+            "articulated joint or gearbox housing.",
+            "Bearing pocket is a plain counterbored recess, not a toleranced seat.",
+        ),
+        example_prompts=(
+            "A robotic arm base bracket with a 140mm circular base, a 100mm vertical "
+            "support tower, two side gussets, six M6 base holes and a 52mm bearing pocket",
+        ),
+    ),
     # ---- Generic single-part fallback (feature graph) -------------------
     CADFamily(
         family_id=GENERIC_PART_FAMILY,
@@ -382,7 +481,142 @@ _FAMILIES: tuple[CADFamily, ...] = (
             "A shaft collar 30mm OD, 12mm bore, 10mm wide with an M4 set screw hole",
         ),
     ),
-    # ---- Concept assemblies ---------------------------------------------
+    # ---- Concept structural-frame & vehicle assemblies ------------------
+    CADFamily(
+        family_id="machine_frame",
+        display_name="Welded machine frame (concept)",
+        design_mode=DesignMode.assembly,
+        maturity=Maturity.concept,
+        keywords=("machine frame", "equipment frame", "workbench frame",
+                  "welded steel frame"),
+        object_types=("machine_frame",),
+        required_dimensions=("length", "width", "height"),
+        optional_dimensions=("square tube size", "mounting plates", "panels",
+                             "diagonal braces"),
+        default_assumptions=("Four vertical legs + top & bottom rectangular frames",
+                             "Square tubing exported as solid beams; wall is metadata"),
+        generator="cad.assembly.frames.build_machine_frame",
+        generation_strategy=GenerationStrategy.assembly_generator,
+        validation_profile="structural_frame_assembly",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "CONCEPT CAD — not FEA analyzed, not structurally certified; requires "
+            "engineering review before fabrication.",
+            "Square tubing exported as solid beams; wall thickness is cut-list metadata.",
+            "Joints are idealized — no weld prep or load-driven sizing.",
+        ),
+        example_prompts=(
+            "A welded steel machine frame 1200mm long, 800mm wide, 900mm tall using "
+            "40mm square tubing with four legs, top and bottom frames, diagonal "
+            "braces, leveling foot plates, a motor mounting plate and an electronics panel",
+        ),
+    ),
+    CADFamily(
+        family_id="engine_test_stand",
+        display_name="Engine test stand (concept)",
+        design_mode=DesignMode.assembly,
+        maturity=Maturity.concept,
+        keywords=("engine test stand", "test stand", "engine stand"),
+        object_types=("engine_test_stand",),
+        required_dimensions=("length", "width", "height"),
+        optional_dimensions=("square tube size", "engine plates", "crossbar",
+                             "radiator mount", "caster plates", "fuel tank tray"),
+        default_assumptions=("Square-tube frame with engine mount plates + caster plates",
+                             "Adjustable crossbar position is a concept placeholder"),
+        generator="cad.assembly.frames.build_engine_test_stand",
+        generation_strategy=GenerationStrategy.assembly_generator,
+        validation_profile="structural_frame_assembly",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "CONCEPT CAD — not FEA analyzed or load-rated; requires engineering "
+            "review before fabrication.",
+            "Square tubing exported as solid beams; wall thickness is cut-list metadata.",
+        ),
+        example_prompts=(
+            "A compact engine test stand 1000mm long, 700mm wide, 800mm tall using "
+            "40mm square steel tubing with engine mounting plates, an adjustable "
+            "crossbar, radiator mount, caster wheel plates, fuel tank tray and braces",
+        ),
+    ),
+    CADFamily(
+        family_id="drone_frame",
+        display_name="Quadcopter drone frame (concept)",
+        design_mode=DesignMode.assembly,
+        maturity=Maturity.concept,
+        keywords=("drone frame", "quadcopter", "quadrotor", "quad copter", "drone"),
+        object_types=("drone_frame",),
+        required_dimensions=("motor-to-motor diagonal",),
+        optional_dimensions=("arm section", "central plate size", "battery plate"),
+        default_assumptions=("Four arms in an X layout with a central plate",
+                             "Motor hole pattern at each arm end"),
+        generator="cad.assembly.frames.build_drone_frame",
+        generation_strategy=GenerationStrategy.assembly_generator,
+        validation_profile="drone_frame",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "CONCEPT CAD — not flight-tested, stress-analyzed, or certified.",
+            "Carbon-fiber arms represented as solid beams (no layup/section detail).",
+        ),
+        example_prompts=(
+            "A quadcopter drone frame with 450mm motor-to-motor diagonal, four "
+            "carbon-fiber arms, a central electronics plate, battery plate, landing "
+            "feet and motor mounting holes on each arm",
+        ),
+    ),
+    CADFamily(
+        family_id="motorcycle_subframe",
+        display_name="Motorcycle rear subframe (concept)",
+        design_mode=DesignMode.assembly,
+        maturity=Maturity.concept,
+        keywords=("motorcycle rear subframe", "motorcycle subframe", "rear subframe"),
+        object_types=("motorcycle_subframe",),
+        required_dimensions=("length", "width", "height"),
+        optional_dimensions=("tube OD", "seat rails", "shock tabs", "battery tray",
+                             "side-panel tabs"),
+        default_assumptions=("Two tapered tube rails + seat rails + triangulated bracing",
+                             "Round tube exported as solid cylinders; wall is metadata"),
+        generator="cad.assembly.frames.build_motorcycle_subframe",
+        generation_strategy=GenerationStrategy.assembly_generator,
+        validation_profile="motorcycle_subframe",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "CONCEPT CAD — not FEA analyzed or homologated; requires engineering "
+            "review before fabrication.",
+            "Round tube exported as solid cylinders; wall thickness is cut-list metadata.",
+        ),
+        example_prompts=(
+            "A motorcycle rear subframe concept 850mm long, 350mm wide, 450mm high "
+            "using 25mm steel tubes with seat rails, rear shock mount tabs, a "
+            "tail-light bracket, battery tray, side-panel tabs and triangulated bracing",
+        ),
+    ),
+    CADFamily(
+        family_id="skateboard_motor_mount",
+        display_name="E-skateboard motor mount bracket (concept)",
+        design_mode=DesignMode.single_part,
+        maturity=Maturity.concept,
+        keywords=("electric skateboard", "skateboard motor mount", "skateboard",
+                  "longboard"),
+        object_types=("skateboard_motor_mount",),
+        required_dimensions=("hanger diameter",),
+        optional_dimensions=("motor bolt pattern", "base mounting holes"),
+        default_assumptions=("Primary component (motor mount bracket) of a larger "
+                             "deck assembly request",),
+        generator="cad.assembly.frames.build_skateboard_motor_mount",
+        generation_strategy=GenerationStrategy.assembly_generator,
+        validation_profile="motor_mount_component",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "Generates the PRIMARY motor mount bracket only — the full deck/truck "
+            "assembly is decomposed into separate components.",
+            "CONCEPT CAD — not load-tested or certified.",
+        ),
+        example_prompts=(
+            "An electric skateboard motor mount bracket for a 12mm truck hanger with "
+            "a 4-hole motor pattern (generated as the primary component of a deck assembly)",
+        ),
+    ),
+    # ---- Concept tubular-chassis assemblies -----------------------------
     CADFamily(
         family_id="tube_chassis",
         display_name="Tubular chassis / space frame (concept)",
