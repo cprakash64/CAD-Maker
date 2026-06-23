@@ -311,25 +311,35 @@ _FAMILIES: tuple[CADFamily, ...] = (
     # ---- Concept / approximate single parts -----------------------------
     CADFamily(
         family_id="gear_blank",
-        display_name="Gear blank / pulley (approximate)",
+        display_name="Spur gear / pulley (approximate)",
         design_mode=DesignMode.single_part,
         maturity=Maturity.concept,
         keywords=("gear", "pulley", "sprocket", "cog", "timing pulley"),
         object_types=("simple_gear_or_pulley",),
-        required_dimensions=("outer/pitch diameter", "thickness"),
-        optional_dimensions=("tooth count", "bore", "hub"),
-        default_assumptions=("Center bore",),
-        generator="simple_gear_or_pulley template (via CadPlan)",
+        required_dimensions=(),  # defaults: module 2, 24 teeth, 12mm thick, 8mm bore
+        optional_dimensions=("tooth count", "module", "outer/pitch diameter",
+                             "thickness", "bore", "hub"),
+        default_assumptions=("Module 2.0mm, 24 teeth, 12mm thick, 8mm center bore",
+                             "Visible trapezoidal spur teeth (always toothed, never a disc)"),
+        generator="simple_gear_or_pulley template (module-based spur gear)",
         generation_strategy=GenerationStrategy.deterministic_template,
         validation_profile="single_part_relaxed",
         export_policy=EXPORT_PART,
         known_limitations=(
-            "Tooth geometry is APPROXIMATE — not a true involute profile. Use as a "
-            "blank/visual concept, not a meshing power-transmission gear.",
-            "No module/pressure-angle standard is enforced.",
+            "Supported: an APPROXIMATE module-based SPUR gear with a trapezoidal "
+            "(involute-like) tooth profile, sized as OD=m(z+2). Use as a "
+            "blank/visual concept, not a certified AGMA/ISO meshing gear.",
+            "Teeth are a CAD-planning approximation — no true involute, "
+            "pressure-angle, profile-shift, backlash or root-fillet design.",
+            "Helical, bevel, worm, herringbone and internal/ring gears are NOT "
+            "supported — they are approximated as a spur blank and flagged, not "
+            "modelled to type.",
         ),
         example_prompts=(
-            "A spur gear blank 40mm pitch diameter, 8mm thick, 20 teeth, 6mm bore",
+            "Make a gear",
+            "Make a 24 tooth gear",
+            "Create a 40 tooth spur gear, module 2, 8mm bore, 10mm thick",
+            "A spur gear 120mm outside diameter, 60 teeth, 10mm thick, 12mm bore",
         ),
     ),
     CADFamily(

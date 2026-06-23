@@ -84,6 +84,24 @@ def _editable_parameters(spec: DesignSpec) -> dict[str, float]:
     return params
 
 
+def _gear_subtype(prompt: str | None) -> str | None:
+    """An unsupported gear subtype named in the prompt (helical/bevel/worm/…),
+    so the build flags 'approximated as a spur gear' instead of a silent PASS."""
+    from app.cad.semantic_audits import detect_gear_subtype
+    return detect_gear_subtype(prompt)
+
+
+def _is_gear_intent(object_type: str | None, prompt: str | None) -> bool:
+    """True when a GEAR (not pulley) was asked for on a gear-capable template —
+    forces the tooth audit even if the generator omitted tooth_count, while never
+    auditing a non-gear part (e.g. a 'gearbox plate') as a gear."""
+    from app.cad.semantic_audits import GEAR_OBJECT_TYPES
+
+    if (object_type or "").lower() not in GEAR_OBJECT_TYPES:
+        return False
+    return bool(re.search(r"\bgears?\b|\bsprocket\b|\bcog\b", (prompt or "").lower()))
+
+
 def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
     """Build geometry, refresh preview/exports/checks on the design row."""
     start = time.perf_counter()
@@ -119,6 +137,15 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
     from app.cad.plan.dimension_report import build_spec_report
 
     smallest_hole = min((spec.to_mm(h.diameter) for h in spec.holes), default=None)
+    # Gear context for the semantic tooth audit (tooth_count lives in the spec's
+    # dimensions for the gear/pulley template).
+    tooth_count = None
+    tc = spec.dimensions.get("tooth_count")
+    if tc is not None:
+        try:
+            tooth_count = int(round(float(tc)))
+        except (TypeError, ValueError):
+            tooth_count = None
     design.semantic_json = {
         "dimension_report": build_spec_report(
             requested_dimensions_mm={k: spec.to_mm(v) for k, v in spec.dimensions.items()},
@@ -128,6 +155,10 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
             hole_count=len(spec.holes),
             smallest_hole_mm=smallest_hole,
             stl_bytes=result.stl_bytes,
+            object_type=spec.object_type,
+            requested_tooth_count=tooth_count,
+            requested_gear_type=_gear_subtype(design.prompt),
+            gear_intent=_is_gear_intent(spec.object_type, design.prompt),
         )
     }
 
@@ -565,6 +596,12 @@ def _try_compiler(db: Session, design: Design, prompt: str, parse_start: float) 
     from app.generation.cad_programs import generate_program
     from app.generation.compiler import compile_prompt
     from app.llm.factory import get_provider
+
+    # Gears / pulleys go through the dedicated module-based template (consistent
+    # tooth geometry, prompt-dimension fidelity, and the semantic tooth audit) —
+    # never the program path, which hard-coded thickness and skipped the audit.
+    if re.search(r"\b(gear|pulley|sprocket|cog)\b", prompt.lower()):
+        return None
 
     if generate_program(prompt) is None:
         return None  # no compiler family -> fall back to templates/feature-graph

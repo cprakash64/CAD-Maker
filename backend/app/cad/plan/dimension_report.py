@@ -99,13 +99,15 @@ def _compensation_notes() -> list[str]:
 
 
 def _validation_summary(measured: dict, requested: dict,
-                        within_tolerance: bool | None, pr: dict) -> dict:
+                        within_tolerance: bool | None, pr: dict,
+                        semantic_issues: list | None = None) -> dict:
     """Classify the build into pass / warning / critical_failure.
 
     CRITICAL (production-blocking trust failures): disconnected bodies, out-of-
     tolerance dimensions, hole-count / through-hole mismatch, non-watertight or
-    non-manifold mesh, zero/negative volume. WARNINGS: non-blocking printability
-    advisories (e.g. a hole below the printable minimum). Everything else passes.
+    non-manifold mesh, zero/negative volume, and SEMANTIC mismatches (e.g. a gear
+    with no teeth). WARNINGS: non-blocking advisories (e.g. a hole below the
+    printable minimum, too few teeth). Everything else passes.
     """
     crit: list[str] = []
     if measured.get("components", 1) != 1:
@@ -137,6 +139,12 @@ def _validation_summary(measured: dict, requested: dict,
     # criticals above, so only keep the "printable" floor warnings here).
     warn = [i for i in (pr.get("issues") or []) if "printable" in i]
 
+    # Semantic feature audits (e.g. gear teeth): a critical mismatch blocks PASS.
+    for issue in (semantic_issues or []):
+        sev = getattr(issue, "severity", None) or (issue.get("severity") if isinstance(issue, dict) else None)
+        msg = getattr(issue, "message", None) or (issue.get("message") if isinstance(issue, dict) else str(issue))
+        (crit if sev == "critical" else warn).append(msg)
+
     status = "critical_failure" if crit else ("warning" if warn else "pass")
     return {"status": status, "critical_failures": crit, "warnings": warn}
 
@@ -144,19 +152,53 @@ def _validation_summary(measured: dict, requested: dict,
 def build_spec_report(
     *, requested_dimensions_mm: dict, bbox_mm: dict, volume_mm3: float,
     surface_area_mm2: float, hole_count: int, smallest_hole_mm: float | None,
-    stl_bytes: bytes,
+    stl_bytes: bytes, object_type: str | None = None,
+    requested_tooth_count: int | None = None,
+    requested_gear_type: str | None = None,
+    gear_intent: bool = False,
 ) -> dict:
     """Dimension report for a template / DesignSpec-built part.
 
     Template parameters don't map 1:1 to bounding-box axes, so this echoes the
     requested dimensions (in mm) alongside measured BRep + mesh facts and the
-    print-readiness summary, without a bbox tolerance verdict (None)."""
+    print-readiness summary, without a bbox tolerance verdict (None).
+
+    For semantic families (currently gears) it also runs a feature-level audit on
+    the GENERATED mesh so a shape mismatch (a gear with no teeth) can never PASS.
+    """
     mesh = mesh_facts(stl_bytes)
     measured = {
         "bbox_mm": bbox_mm, "volume_mm3": volume_mm3,
         "surface_area_mm2": surface_area_mm2, "hole_count": hole_count, **mesh,
     }
     pr = _print_readiness(measured, smallest_hole_mm)
+
+    # Semantic gear audit: measure the rim's radial variation from the mesh and
+    # confirm visible teeth (never trust gear metadata over the actual geometry).
+    semantic_issues = []
+    semantic_meta: dict = {}
+    from app.cad.semantic_audits import (
+        audit_gear,
+        is_gear_request,
+        measure_radial_teeth,
+    )
+
+    if gear_intent or is_gear_request(object_type, requested_tooth_count):
+        teeth = measure_radial_teeth(stl_bytes)
+        semantic_issues = audit_gear(
+            object_type=object_type, tooth_count=requested_tooth_count,
+            tooth_depth_ratio=teeth["depth_ratio"], measured_peaks=teeth["peaks"],
+            requested_gear_type=requested_gear_type, gear_intent=gear_intent)
+        semantic_meta = {
+            "gear": {
+                "tooth_count": int(requested_tooth_count) if requested_tooth_count else None,
+                "tooth_depth_ratio": teeth["depth_ratio"],
+                "measured_peaks": teeth["peaks"],
+                "teeth_visible": not any(i.check == "gear_has_no_teeth" for i in semantic_issues),
+                "requested_gear_type": requested_gear_type,
+            }
+        }
+
     # No requested hole/bbox targets in the template path, so only geometry-health
     # criticals (disconnected / non-watertight / non-manifold / zero volume) apply.
     requested: dict = {}
@@ -168,7 +210,8 @@ def build_spec_report(
         "comparisons": [],
         "within_tolerance": None,
         "print_readiness": pr,
-        "validation": _validation_summary(measured, requested, None, pr),
+        "semantic_audit": semantic_meta,
+        "validation": _validation_summary(measured, requested, None, pr, semantic_issues),
         "notes": _compensation_notes(),
     }
 

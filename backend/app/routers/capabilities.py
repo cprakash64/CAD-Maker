@@ -69,6 +69,13 @@ _UNSUPPORTED_CATEGORIES = [
         "handling": "Built as geometry only and clearly labelled concept — not "
                     "standards-certified.",
     },
+    {
+        "category": "Non-spur gears (helical / bevel / worm / internal)",
+        "examples": ["a helical gear", "a bevel gear", "a worm gear"],
+        "handling": "Only an approximate SPUR gear is modelled; other gear types "
+                    "are built as a spur blank and flagged (warning), never passed "
+                    "off as the requested type.",
+    },
 ]
 
 # Vague category prompts that trigger a clarification with ready-to-run options.

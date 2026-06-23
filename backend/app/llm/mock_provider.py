@@ -269,26 +269,56 @@ class MockLLMProvider(LLMProvider):
             )
         elif object_type == "simple_gear_or_pulley":
             teeth = _num_before(text, "teeth", "tooth", "-tooth")
-            # Shaft / bore diameter (e.g. "10mm shaft", "8mm bore", "shaft hole").
-            shaft = _num_before(text, "shaft hole", "shaft", "bore") or _num_after(
-                text, "shaft", "bore"
-            )
-            outer = diameter or _num_before(text, "outer diameter", "od", "outside diameter")
+            # Shaft / bore diameter (e.g. "10mm shaft", "8mm bore", "12mm center bore").
+            shaft = _num_before(
+                text, "center bore", "centre bore", "shaft hole", "shaft", "bore"
+            ) or _num_after(text, "center bore", "shaft", "bore")
+            outer = diameter or _num_before(
+                text, "outer diameter", "outside diameter", "od", "tip diameter")
+            module = _num_before(text, "module", "mod ") or _num_after(text, "module", "mod")
+            pitch = _num_before(text, "pitch diameter", "pitch dia", "pitch")
             is_gear = "gear" in text or "sprocket" in text or bool(teeth)
             is_hex = "hex" in text or "hexagon" in text
-            dims = {
-                "outer_diameter_mm": outer or 60.0,   # default 60mm
-                "thickness_mm": thickness or height or 12.0,  # default 12mm
-                "bore_diameter_mm": shaft or 10.0,    # default 10mm shaft
-            }
             if is_hex:
-                dims["hex"] = 1.0
+                dims = {
+                    "outer_diameter_mm": outer or 60.0,
+                    "thickness_mm": thickness or height or 12.0,
+                    "bore_diameter_mm": shaft or 10.0,
+                    "hex": 1.0,
+                }
                 assumptions.append("Interpreted as a hexagonal outer profile (gear blank)")
             elif is_gear:
-                dims["tooth_count"] = teeth or 24.0   # default 24 teeth for a gear
+                # Resolve a coherent module-based spur gear (default module 2, 24
+                # teeth) so the OD, module and tooth count always agree.
+                from app.cad.templates.gear_pulley import (
+                    DEFAULT_TOOTH_COUNT,
+                    resolve_gear_geometry,
+                )
+
+                z = int(teeth) if teeth else DEFAULT_TOOTH_COUNT
+                g = resolve_gear_geometry(
+                    tooth_count=z, module_mm=module or 0.0,
+                    outer_diameter_mm=outer or 0.0, pitch_diameter_mm=pitch or 0.0)
+                dims = {
+                    "outer_diameter_mm": g["outer_diameter_mm"],
+                    "thickness_mm": thickness or height or 12.0,
+                    "bore_diameter_mm": shaft or 8.0,   # default 8mm bore
+                    "tooth_count": float(z),
+                    "module_mm": g["module_mm"],
+                    "pitch_diameter_mm": g["pitch_diameter_mm"],
+                }
                 if not teeth:
                     assumptions.append("Assumed 24 teeth (none specified)")
+                assumptions.append(
+                    f"Spur gear: module {g['module_mm']:g}mm, {z} teeth, "
+                    f"Ø{g['outer_diameter_mm']:g}mm tip, Ø{g['pitch_diameter_mm']:g}mm pitch "
+                    "(approximate trapezoidal teeth — concept, not certified AGMA/ISO).")
             else:
+                dims = {
+                    "outer_diameter_mm": outer or 60.0,
+                    "thickness_mm": thickness or height or 12.0,
+                    "bore_diameter_mm": shaft or 10.0,
+                }
                 assumptions.append("Made a grooved pulley (no teeth requested)")
         elif object_type == "adapter_plate":
             dims = {
