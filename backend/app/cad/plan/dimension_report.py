@@ -187,14 +187,18 @@ def build_spec_report(
         teeth = measure_radial_teeth(stl_bytes)
         semantic_issues = audit_gear(
             object_type=object_type, tooth_count=requested_tooth_count,
-            tooth_depth_ratio=teeth["depth_ratio"], measured_peaks=teeth["peaks"],
+            tooth_depth_ratio=teeth["depth_ratio"],
+            measured_tooth_count=teeth["tooth_count"], measured_peaks=teeth["peaks"],
             requested_gear_type=requested_gear_type, gear_intent=gear_intent)
+        visible = not any(i.check == "gear_has_no_visible_teeth" for i in semantic_issues)
         semantic_meta = {
             "gear": {
                 "tooth_count": int(requested_tooth_count) if requested_tooth_count else None,
+                "measured_tooth_count": teeth["tooth_count"],
                 "tooth_depth_ratio": teeth["depth_ratio"],
                 "measured_peaks": teeth["peaks"],
-                "teeth_visible": not any(i.check == "gear_has_no_teeth" for i in semantic_issues),
+                "gear_visible_teeth": visible,
+                "teeth_visible": visible,  # back-compat alias
                 "requested_gear_type": requested_gear_type,
             }
         }

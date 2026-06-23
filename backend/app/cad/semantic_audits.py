@@ -46,53 +46,83 @@ def _stl_xy(stl_bytes: bytes) -> list[tuple[float, float]]:
     return pts
 
 
-def measure_radial_teeth(stl_bytes: bytes, bins: int = 360) -> dict:
-    """Measure the rim's radial silhouette about the Z axis to detect teeth.
+def measure_radial_teeth(stl_bytes: bytes, bins: int = 720) -> dict:
+    """Measure the OUTER silhouette about the Z axis to detect and count teeth.
 
-    For each angular bin we keep the MAX vertex radius (the outer boundary at that
-    angle); on a gear the tooth bins sit at the tip radius and the gap bins at the
-    (smaller) root radius, so ``depth_ratio = (tip - root) / tip`` is clearly
-    positive, while a smooth disc/cylinder gives ~0. ``peaks`` counts the local
-    maxima around the circle (≈ tooth count). Robust to shallow teeth (unlike a
-    fixed near-tip radius cutoff).
+    Builds the external silhouette ``R(angle)`` = the MAX vertex radius in each
+    angular bin (so the center bore and any internal holes — always at smaller
+    radius — are ignored; only the outer boundary matters). On a gear this
+    oscillates between the tooth tip and the root once per tooth; on a smooth
+    disc/cylinder it is flat.
+
+    Returns:
+      * ``depth_ratio``  = (tip - root) / tip  — ~0 for a disc, positive for teeth.
+      * ``tooth_count``  = upward mid-line crossings of the silhouette (≈ teeth),
+                           counted with hysteresis so tessellation noise on a disc
+                           yields 0.
+      * ``peaks``        = silhouette local maxima above the mid-line (secondary).
     """
+    none = {"depth_ratio": None, "tooth_count": None, "peaks": None}
     pts = _stl_xy(stl_bytes)
     if len(pts) < 16:
-        return {"depth_ratio": None, "peaks": None}
+        return none
     cx = sum(p[0] for p in pts) / len(pts)
     cy = sum(p[1] for p in pts) / len(pts)
     radii = [math.hypot(x - cx, y - cy) for x, y in pts]
     rmax = max(radii) if radii else 0.0
     if rmax <= 0:
-        return {"depth_ratio": None, "peaks": None}
+        return none
 
-    # RIM vertices only: keep the outer band and drop the much smaller center-bore
-    # cluster (so an empty angular sector can't be "filled" by a bore vertex and
-    # fake a tooth). The tip sits at rmax; tooth roots sit just below it.
-    rim = [(x, y, r) for (x, y), r in zip(pts, radii) if r >= 0.5 * rmax]
-    rim_radii = [r for _, _, r in rim]
-    if len(rim_radii) < 8:
-        return {"depth_ratio": None, "peaks": None}
-    rmin = min(rim_radii)
-    depth_ratio = (rmax - rmin) / rmax
-
-    # Per-angle outer silhouette over the rim, to count tooth peaks (~tooth count).
+    # Outer silhouette: max radius per angular bin, from OUTER-rim vertices only
+    # (r >= half the max radius). This excludes the center bore and any internal
+    # holes — only the external boundary contributes — so a bin that happens to
+    # contain only a bore vertex stays empty and is filled from its rim neighbours
+    # rather than faking a deep "valley".
+    rim_floor = 0.5 * rmax
     bin_max = [0.0] * bins
-    for x, y, r in rim:
+    for (x, y), r in zip(pts, radii):
+        if r < rim_floor:
+            continue
         b = int((math.atan2(y - cy, x - cx) + math.pi) / (2 * math.pi) * bins) % bins
         if r > bin_max[b]:
             bin_max[b] = r
-    mid = (rmax + rmin) / 2.0
-    peaks = 0
-    for i in range(bins):
-        r = bin_max[i]
-        if r <= mid or r <= 0:
-            continue
-        prev = bin_max[(i - 1) % bins]
-        nxt = bin_max[(i + 1) % bins]
-        if r >= prev and r >= nxt:
-            peaks += 1
-    return {"depth_ratio": round(depth_ratio, 4), "peaks": peaks}
+    # Fill empty bins (no rim vertex at that angle) by carrying the nearest
+    # neighbour, so the silhouette is continuous around the full circle.
+    if not all(bin_max):
+        last = next((r for r in bin_max if r > 0), rmax)
+        for i in range(bins):
+            if bin_max[i] <= 0:
+                bin_max[i] = last
+            else:
+                last = bin_max[i]
+        for i in range(bins):  # second pass to fix the leading gap
+            if bin_max[i] <= 0:
+                bin_max[i] = last
+
+    sil_max = max(bin_max)
+    sil_min = min(bin_max)
+    depth_ratio = (sil_max - sil_min) / sil_max if sil_max > 0 else 0.0
+
+    # Count teeth by clustering the TIP region of the silhouette: a bin is "near
+    # tip" when its radius is in the upper part of the tip/root band. Each tooth
+    # forms one contiguous near-tip arc separated by root gaps, so the number of
+    # arcs (False->True transitions around the circle) is the tooth count. The
+    # threshold is relative to the measured depth, so it scales from coarse to
+    # fine-pitch gears. A near-flat disc has no depth, so we report 0 (and the
+    # depth gate fails it regardless).
+    if depth_ratio < 0.01:
+        tooth_count = 0
+        peaks = 0
+    else:
+        thresh = sil_max - 0.4 * (sil_max - sil_min)
+        near_tip = [r >= thresh for r in bin_max]
+        runs = sum(1 for i in range(bins)
+                   if near_tip[i] and not near_tip[(i - 1) % bins])
+        # All-near-tip (a disc/continuous rim) => one run; treat as not toothed.
+        tooth_count = runs if runs > 1 else 0
+        peaks = tooth_count
+    return {"depth_ratio": round(depth_ratio, 4), "tooth_count": tooth_count,
+            "peaks": peaks}
 
 
 # --- gear ------------------------------------------------------------------
@@ -106,6 +136,9 @@ GEAR_OBJECT_TYPES = {"simple_gear_or_pulley", "spur_gear", "gear", "sprocket"}
 # never pass and a real gear never false-fails.
 MIN_TOOTH_DEPTH_RATIO = 0.015
 MIN_REASONABLE_TEETH = 8
+# Minimum teeth that must be COUNTED on the outer silhouette for it to read as a
+# gear (below this it is effectively a disc / too few to be meaningful).
+MIN_VISIBLE_TEETH = 5
 
 
 def is_gear_request(object_type: str | None, tooth_count) -> bool:
@@ -133,20 +166,19 @@ def detect_gear_subtype(text: str | None) -> str | None:
 
 
 def audit_gear(*, object_type: str | None, tooth_count, tooth_depth_ratio: float | None,
-               measured_peaks: int | None = None,
+               measured_tooth_count: int | None = None, measured_peaks: int | None = None,
                requested_gear_type: str | None = None,
                gear_intent: bool = False) -> list[AuditIssue]:
-    """Audit a gear's GENERATED rim against its gear claim.
+    """Audit a gear's GENERATED OUTER silhouette against its gear claim.
 
     ``tooth_depth_ratio`` is the measured tip-to-root radial depth ratio of the
-    rim (see :func:`measure_radial_teeth`): ~0 for a smooth disc, clearly positive
-    for real teeth. A gear whose rim is effectively circular is a CRITICAL
-    mismatch — the exact "smooth cylinder reported as a gear" failure this guards
-    against. ``measured_peaks`` (≈ tooth count) is a secondary signal.
+    outer silhouette (see :func:`measure_radial_teeth`): ~0 for a smooth disc,
+    clearly positive for real teeth. ``measured_tooth_count`` is the number of
+    teeth counted on the silhouette. A gear whose outer profile is effectively
+    circular (no teeth) is a CRITICAL mismatch — the "smooth disc reported as a
+    gear" failure this guards against.
 
-    ``gear_intent`` forces the audit even when tooth_count metadata is absent (a
-    gear prompt whose generator forgot the tooth count must still be checked — and
-    flagged for the missing count — rather than silently passing as a disc).
+    ``gear_intent`` forces the audit even when tooth_count metadata is absent.
     """
     has_count = is_gear_request(object_type, tooth_count)
     if not has_count and not gear_intent:
@@ -160,18 +192,22 @@ def audit_gear(*, object_type: str | None, tooth_count, tooth_depth_ratio: float
             "gear_tooth_count_missing", "warning",
             "Gear requested but no tooth_count is present in the metadata."))
 
-    # The tip-to-root radial depth is the reliable gate. (Peak counting is a noisy
-    # secondary signal — a finely tessellated disc shows many phantom local maxima
-    # — so it is metadata only and never rescues a no-depth rim.)
-    if tooth_depth_ratio is None:
+    # Visible teeth require BOTH measurable radial depth AND counted teeth on the
+    # outer silhouette. Either signal absent on a part claiming to be a gear is a
+    # critical mismatch (the exact smooth-disc-as-gear failure).
+    enough_depth = tooth_depth_ratio is not None and tooth_depth_ratio >= MIN_TOOTH_DEPTH_RATIO
+    enough_teeth = measured_tooth_count is not None and measured_tooth_count >= MIN_VISIBLE_TEETH
+
+    if tooth_depth_ratio is None and measured_tooth_count is None:
         issues.append(AuditIssue(
             "gear_teeth_unverified", "warning",
-            "Could not measure the gear rim to confirm teeth are present."))
-    elif tooth_depth_ratio < MIN_TOOTH_DEPTH_RATIO:
+            "Could not measure the gear silhouette to confirm teeth are present."))
+    elif not enough_depth or not enough_teeth:
         issues.append(AuditIssue(
-            "gear_has_no_teeth", "critical",
-            "Gear rim is effectively circular (no radial tooth variation) — a "
-            "smooth disc/cylinder, not a gear. Visible teeth are required."))
+            "gear_has_no_visible_teeth", "critical",
+            "Gear outer profile is effectively circular — a smooth disc/cylinder, "
+            f"not a gear (measured depth {tooth_depth_ratio}, "
+            f"{measured_tooth_count} teeth). Visible teeth are required."))
 
     if has_count and z < MIN_REASONABLE_TEETH:
         issues.append(AuditIssue(

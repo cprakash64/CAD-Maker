@@ -169,6 +169,10 @@ class DesignDTO(BaseModel):
     clarification_options: list[dict] = []
     # Flat beta-testing telemetry (route/family/confidence/outcome/validation/…).
     telemetry: Optional[dict] = None
+    # Deterministic spur-gear debug block (family/route/tooth_count/module/
+    # outside_diameter/root_diameter/bore_diameter/measured_tooth_count/
+    # gear_visible_teeth). Present only for gear designs.
+    gear_debug: Optional[dict] = None
 
 
 class DesignSummaryDTO(BaseModel):

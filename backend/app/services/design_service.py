@@ -209,6 +209,75 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
         )
 
 
+def _try_gear(db: Session, design: Design, prompt: str, parse_start: float) -> Design:
+    """DETERMINISTIC SPUR-GEAR route. Any gear prompt is built here, BEFORE the
+    LLM/CadPlan, feature-graph, pulley or generic-part paths, so a gear can never
+    be routed to a smooth disc. Tagged route='deterministic_spur_gear'.
+
+    Geometry is the module-based toothed profile (GearPulleyTemplate); the
+    semantic tooth audit runs inside _regenerate_geometry (gear_intent), so a
+    smooth-disc request fails validation instead of passing."""
+    from app.cad.gear import (
+        ROUTE_DETERMINISTIC_SPUR_GEAR,
+        gear_dimensions,
+        parse_gear_params,
+    )
+
+    params = parse_gear_params(prompt)
+    spec = DesignSpec(
+        object_type="simple_gear_or_pulley",
+        dimensions=gear_dimensions(params),
+        manufacturing_method="fdm_3d_print",
+        material="PLA",
+    )
+    _regenerate_geometry(db, design, spec)  # geometry + exports + dimension report
+
+    design.route = ROUTE_DETERMINISTIC_SPUR_GEAR
+    design.route_reason = "Gear prompt → deterministic module-based spur gear."
+    design.clarification_question = None
+    assumptions = [
+        f"Spur gear: module {params['module_mm']:g}mm, {params['tooth_count']} teeth, "
+        f"Ø{params['outside_diameter_mm']:g}mm outside, "
+        f"Ø{params['root_diameter_mm']:g}mm root, {params['thickness_mm']:g}mm thick, "
+        f"Ø{params['bore_diameter_mm']:g}mm {'keyed' if params['square_bore'] else 'circular'} bore.",
+        "Approximate trapezoidal spur teeth — concept CAD, not certified AGMA/ISO.",
+    ]
+    if params["smooth_disc"]:
+        assumptions.append(
+            "Request asked for a SMOOTH disc labelled as a gear — built without "
+            "teeth, which fails the gear audit (a smooth disc is not a gear).")
+    design.assumptions = assumptions
+
+    # Debug metadata for the UI / dev verification (family, route, gear sizes,
+    # and the geometry-measured visible-teeth verdict).
+    semantic = dict(design.semantic_json or {})
+    gear_audit = ((semantic.get("dimension_report") or {}).get("semantic_audit") or {}).get("gear") or {}
+    semantic["gear_debug"] = {
+        "family": "gear",
+        "route": ROUTE_DETERMINISTIC_SPUR_GEAR,
+        "tooth_count": params["tooth_count"] if not params["smooth_disc"] else 0,
+        "module": params["module_mm"],
+        "outside_diameter": params["outside_diameter_mm"],
+        "pitch_diameter": params["pitch_diameter_mm"],
+        "root_diameter": params["root_diameter_mm"],
+        "bore_diameter": params["bore_diameter_mm"],
+        "bore_shape": "keyed" if params["square_bore"] else "circular",
+        "measured_tooth_count": gear_audit.get("measured_tooth_count"),
+        "gear_visible_teeth": gear_audit.get("gear_visible_teeth"),
+    }
+    design.semantic_json = semantic
+
+    db.commit()
+    db.refresh(design)
+    log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+              routed=ROUTE_DETERMINISTIC_SPUR_GEAR, produced_spec=True,
+              tooth_count=params["tooth_count"],
+              visible_teeth=semantic["gear_debug"]["gear_visible_teeth"],
+              validation_status=reconciled_validation_status(design),
+              latency_ms=elapsed_ms(parse_start))
+    return design
+
+
 def _plan_long_prompt(prompt: str) -> "ParseResult":
     """Route a long/complex prompt through ComplexCADPlan -> ParseResult."""
     from app.parsing.complex_plan import build_complex_plan
@@ -1085,6 +1154,23 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
         log_event("prompt_decomposition_required", design_id=design.id,
                   subsystems=len(assessment.subsystems))
         return design
+
+    # 2c) DETERMINISTIC SPUR-GEAR GATE: a genuine gear part is built by the
+    #     dedicated module-based toothed-profile builder BEFORE the LLM/CadPlan,
+    #     feature-graph, pulley or generic-part paths — the production bug was a
+    #     gear routed to one of those and rendered as a smooth disc. Runs AFTER the
+    #     complexity gate so whole machines that merely mention a gear (e.g. an
+    #     aircraft with 'landing gear') still decompose. A bare "pulley" is not a
+    #     gear and is unaffected.
+    from app.cad.gear import is_gear_prompt
+
+    if is_gear_prompt(prompt):
+        try:
+            return _try_gear(db, design, prompt, parse_start)
+        except CadGenerationError as exc:
+            log_event("gear_generation_failed", design_id=design.id,
+                      detail=str(exc)[:200])
+            # fall through to the normal pipeline only if the gear build failed.
 
     # 3) DETERMINISTIC-FIRST for any specific supported single-part family. The
     #    offline planner is fast and reliable, so these families build without an
