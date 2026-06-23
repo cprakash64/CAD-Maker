@@ -241,6 +241,14 @@ _CONCEPT_NOTES = [
     "engineering review before fabrication.",
 ]
 
+# Stated on every frame so the small, expected bbox vs requested difference is
+# never an unexplained surprise.
+_ENVELOPE_NOTE = (
+    "Requested dimensions are treated as the outside envelope; the measured "
+    "bounding box may exceed them by up to one tube/extrusion width (~{s:g}mm "
+    "per axis) because members are solid."
+)
+
 
 # --- helpers to lay out a rectangular tube frame ----------------------------
 def _rect_frame_beams(prefix: str, system: str, z: float, L: float, W: float,
@@ -267,7 +275,13 @@ def _legs(L: float, W: float, H: float, s: float) -> list[Member]:
 def _foot_plates(L: float, W: float, s: float, bolt_d: float) -> list[Member]:
     hx, hy = L / 2, W / 2
     fp = max(2.5 * s, 70.0)
-    corners = [("fl", -hx, hy), ("fr", -hx, -hy), ("rl", hx, hy), ("rr", hx, -hy)]
+    # Inset each foot pad so its OUTER edge aligns with the leg's outer face
+    # (leg outer = hx + s/2). This keeps the leveling feet under the legs instead
+    # of overhanging by ~fp/2, so the measured outside envelope ≈ requested + one
+    # tube width (not requested + a whole foot-plate width).
+    off = (fp - s) / 2
+    cx, cy = hx - off, hy - off
+    corners = [("fl", -cx, cy), ("fr", -cx, -cy), ("rl", cx, cy), ("rr", cx, -cy)]
     return [Member(f"foot_plate_{name}", "foot_plate", "feet", "plate",
                    center=(x, y, 4.0), size=(fp, fp, 8.0), bolt_holes=4, hole_dia=bolt_d)
             for name, x, y in corners]
@@ -309,9 +323,10 @@ def build_machine_frame(prompt: str) -> AssemblyBuild:
         "envelope": {"x": L, "y": W, "z": H},
     }
     meta = {"tube_profile": "square", "tube_size_mm": s, "tube_wall_thickness_mm": 3.0,
-            "material": "Welded steel (concept)"}
+            "dimension_basis": "outside_envelope", "material": "Welded steel (concept)"}
     notes = [f"Square steel tubing {s:g}×{s:g}mm; wall thickness carried as cut-list "
-             "metadata (members exported as solid beams).", *_CONCEPT_NOTES]
+             "metadata (members exported as solid beams).",
+             _ENVELOPE_NOTE.format(s=s), *_CONCEPT_NOTES]
     return assemble(members, family_id="machine_frame",
                     display_name="Welded machine frame", design_mode="assembly",
                     profile="structural_frame_assembly",
@@ -365,7 +380,7 @@ def build_engine_test_stand(prompt: str) -> AssemblyBuild:
             "material": "Welded steel (concept)"}
     notes = [f"Square steel tubing {s:g}×{s:g}mm; wall thickness carried as cut-list "
              "metadata.", "Adjustable crossbar position is a concept placeholder.",
-             *_CONCEPT_NOTES]
+             _ENVELOPE_NOTE.format(s=s), *_CONCEPT_NOTES]
     return assemble(members, family_id="engine_test_stand",
                     display_name="Engine test stand", design_mode="assembly",
                     profile="structural_frame_assembly",
@@ -431,44 +446,49 @@ def build_motorcycle_subframe(prompt: str) -> AssemblyBuild:
     od = parse_tube_size(prompt, 25.0)
     wall = 2.0
     hx, hy = L / 2, W / 2
-    # Two main rails running front->rear, tapering up and inward at the rear.
-    z_front, z_rear = H * 0.25, H * 0.65
+    # Z layout actually USES the requested height: low front mount, rising main
+    # rails, and seat/grab rails reaching near the top so the measured envelope
+    # height is close to H (not ~0.6H).
+    z_low = H * 0.10            # front mount (bolts to the main frame)
+    z_rear = H * 0.55          # main-rail rear height
+    z_top = H * 0.95           # seat / grab rail top
     y_front, y_rear = hy, hy * 0.6
     members: list[Member] = []
 
     def tube(cid, role, system, a, b, side="c", o=od):
         members.append(Member(cid, role, system, "tube", a, b, od=o, wall=wall, side=side))
 
-    # Main rails (left/right).
-    tube("main_rail_left", "main_rail", "rails", (-hx, y_front, z_front), (hx, y_rear, z_rear), "l")
-    tube("main_rail_right", "main_rail", "rails", (-hx, -y_front, z_front), (hx, -y_rear, z_rear), "r")
-    # Seat rails on top.
-    tube("seat_rail_left", "seat_rail", "rails", (-hx * 0.6, y_front * 0.9, z_front + 60),
-         (hx, y_rear * 0.9, z_rear + 40), "l")
-    tube("seat_rail_right", "seat_rail", "rails", (-hx * 0.6, -y_front * 0.9, z_front + 60),
-         (hx, -y_rear * 0.9, z_rear + 40), "r")
-    # Cross members (front, mid, rear) tie the rails together (rear taper).
-    tube("cross_front", "crossmember", "rails", (-hx, y_front, z_front), (-hx, -y_front, z_front))
-    tube("cross_mid", "crossmember", "rails", (0, hy * 0.8, (z_front + z_rear) / 2),
-         (0, -hy * 0.8, (z_front + z_rear) / 2))
-    tube("cross_rear", "crossmember", "rails", (hx, y_rear, z_rear), (hx, -y_rear, z_rear))
+    # Main rails (left/right), rising and tapering inward toward the rear.
+    tube("main_rail_left", "main_rail", "rails", (-hx, y_front, z_low), (hx, y_rear, z_rear), "l")
+    tube("main_rail_right", "main_rail", "rails", (-hx, -y_front, z_low), (hx, -y_rear, z_rear), "r")
+    # Seat rails climb to the top of the subframe.
+    tube("seat_rail_left", "seat_rail", "rails", (-hx * 0.5, y_front * 0.9, z_rear),
+         (hx, y_rear * 0.9, z_top), "l")
+    tube("seat_rail_right", "seat_rail", "rails", (-hx * 0.5, -y_front * 0.9, z_rear),
+         (hx, -y_rear * 0.9, z_top), "r")
+    # Rear uprights (grab-rail loop) connect main rails to the seat-rail top.
+    tube("rear_upright_left", "brace", "bracing", (hx, y_rear, z_rear), (hx, y_rear * 0.9, z_top), "l")
+    tube("rear_upright_right", "brace", "bracing", (hx, -y_rear, z_rear), (hx, -y_rear * 0.9, z_top), "r")
+    # Cross members (front, mid, top-rear) tie the rails together.
+    tube("cross_front", "crossmember", "rails", (-hx, y_front, z_low), (-hx, -y_front, z_low))
+    tube("cross_mid", "crossmember", "rails", (0, hy * 0.8, (z_low + z_rear) / 2),
+         (0, -hy * 0.8, (z_low + z_rear) / 2))
+    tube("cross_top", "crossmember", "rails", (hx, y_rear * 0.9, z_top), (hx, -y_rear * 0.9, z_top))
     # Triangulated bracing (diagonals each side).
-    tube("brace_left", "brace", "bracing", (-hx, y_front, z_front), (0, y_front * 0.7, z_rear), "l")
-    tube("brace_right", "brace", "bracing", (-hx, -y_front, z_front), (0, -y_front * 0.7, z_rear), "r")
-    tube("brace_rear_left", "brace", "bracing", (0, y_front * 0.7, z_rear), (hx, y_rear, z_rear), "l")
-    tube("brace_rear_right", "brace", "bracing", (0, -y_front * 0.7, z_rear), (hx, -y_rear, z_rear), "r")
-    # Plates / tabs.
+    tube("brace_left", "brace", "bracing", (-hx, y_front, z_low), (0, y_front * 0.7, z_rear), "l")
+    tube("brace_right", "brace", "bracing", (-hx, -y_front, z_low), (0, -y_front * 0.7, z_rear), "r")
+    # Plates / tabs (shock tabs at the main-rail rear height).
     members.append(Member("shock_mount_tab_left", "shock_mount_tab", "mounts", "plate",
-                          center=(hx * 0.4, y_rear, z_front), size=(50, 6, 60),
+                          center=(hx * 0.4, y_rear, z_rear), size=(50, 6, 60),
                           bolt_holes=2, hole_dia=10.0, side="l"))
     members.append(Member("shock_mount_tab_right", "shock_mount_tab", "mounts", "plate",
-                          center=(hx * 0.4, -y_rear, z_front), size=(50, 6, 60),
+                          center=(hx * 0.4, -y_rear, z_rear), size=(50, 6, 60),
                           bolt_holes=2, hole_dia=10.0, side="r"))
     members.append(Member("tail_light_bracket", "tail_light_bracket", "mounts", "plate",
-                          center=(hx, 0, z_rear), size=(6, W * 0.5, 60),
+                          center=(hx, 0, z_top), size=(6, W * 0.5, 60),
                           bolt_holes=2, hole_dia=5.0))
     members.append(Member("battery_tray", "battery_tray", "trays", "plate",
-                          center=(0, 0, z_front), size=(L * 0.3, W * 0.6, 6.0),
+                          center=(0, 0, z_low), size=(L * 0.3, W * 0.6, 6.0),
                           bolt_holes=4, hole_dia=5.0))
     members.append(Member("side_panel_tab_left", "side_panel_tab", "mounts", "plate",
                           center=(hx * 0.2, y_rear, z_rear), size=(40, 6, 30),
@@ -482,14 +502,15 @@ def build_motorcycle_subframe(prompt: str) -> AssemblyBuild:
                            "shock_mount_tab", "tail_light_bracket", "battery_tray",
                            "side_panel_tab"],
         "min_holes": 8,
-        # A rear subframe sits elevated on the bike, so its overall height is a
-        # positional dimension, not a filled envelope — compare length/width only.
-        "envelope": {"x": L, "y": W},
+        # Height is now genuinely used, so validate all three axes honestly.
+        "envelope": {"x": L, "y": W, "z": H},
     }
     meta = {"tube_profile": "round", "tube_od_mm": od, "tube_wall_thickness_mm": wall,
             "material": "Steel tube (concept)"}
     notes = [f"Round steel tube Ø{od:g}mm × {wall:g}mm wall (exported as solid "
              "cylinders; wall carried as cut-list metadata).",
+             "Requested dimensions are treated as the outside envelope; seat/grab "
+             "rails rise to ~95% of the requested height.",
              "Rear taper + triangulated bracing are concept geometry.", *_CONCEPT_NOTES]
     return assemble(members, family_id="motorcycle_subframe",
                     display_name="Motorcycle rear subframe", design_mode="assembly",
@@ -578,9 +599,9 @@ def build_square_tube_frame(prompt: str, *, family_id: str = "square_tube_frame"
         "envelope": {"x": L, "y": W, "z": H},
     }
     meta = {"tube_profile": "square", "tube_size_mm": s, "tube_wall_thickness_mm": 3.0,
-            "material": "Welded steel (concept)"}
+            "dimension_basis": "outside_envelope", "material": "Welded steel (concept)"}
     notes = [f"Square steel tubing {s:g}×{s:g}mm; wall thickness carried as cut-list "
-             "metadata.", *_CONCEPT_NOTES]
+             "metadata.", _ENVELOPE_NOTE.format(s=s), *_CONCEPT_NOTES]
     return assemble(members, family_id=family_id, display_name=display_name,
                     design_mode="assembly", profile="structural_frame_assembly",
                     envelope_mm={"x": L, "y": W, "z": H}, meta=meta,
@@ -618,9 +639,10 @@ def build_round_tube_frame(prompt: str, *, family_id: str = "round_tube_frame",
         "envelope": {"x": L, "y": W, "z": H},
     }
     meta = {"tube_profile": "round", "tube_od_mm": od, "tube_wall_thickness_mm": wall,
-            "material": "Steel tube (concept)"}
+            "dimension_basis": "outside_envelope", "material": "Steel tube (concept)"}
     notes = [f"Round steel tube Ø{od:g}mm × {wall:g}mm wall (exported as solid "
-             "cylinders; wall carried as cut-list metadata).", *_CONCEPT_NOTES]
+             "cylinders; wall carried as cut-list metadata).",
+             _ENVELOPE_NOTE.format(s=od), *_CONCEPT_NOTES]
     return assemble(members, family_id=family_id, display_name=display_name,
                     design_mode="assembly", profile="structural_frame_assembly",
                     envelope_mm={"x": L, "y": W, "z": H}, meta=meta,
@@ -690,11 +712,12 @@ def build_cnc_router_frame(prompt: str) -> AssemblyBuild:
         "required_groups": ["base", "bed", "gantry"],
     }
     meta = {"tube_profile": "aluminium_extrusion", "extrusion_size_mm": ext,
+            "dimension_basis": "outside_envelope",
             "groups": ["base", "bed", "gantry"], "material": "Aluminium extrusion (concept)"}
     notes = [f"Aluminium-extrusion-style members {ext:g}×{ext:g}mm exported as solid "
              "beams; clearly separated base / bed / gantry metadata groups.",
              "Linear-rail mounting holes are plain bores (no rail profile modelled).",
-             *_CONCEPT_NOTES]
+             _ENVELOPE_NOTE.format(s=ext), *_CONCEPT_NOTES]
     return assemble(members, family_id="cnc_router_frame",
                     display_name="Desktop CNC router frame", design_mode="assembly",
                     profile="structural_frame_assembly",

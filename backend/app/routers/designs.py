@@ -145,7 +145,7 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         dimension_report=(design.semantic_json or {}).get("dimension_report"),
         print_readiness=((design.semantic_json or {}).get("dimension_report") or {}).get("print_readiness"),
         dimensions_within_tolerance=((design.semantic_json or {}).get("dimension_report") or {}).get("within_tolerance"),
-        validation_status=_dim_validation(design).get("status"),
+        validation_status=design_service.reconciled_validation_status(design),
         validation_critical_failures=_dim_validation(design).get("critical_failures", []),
         validation_warnings=_dim_validation(design).get("warnings", []),
         recovery_attempted=bool(design_service.recovery_info(design).get("attempted")),

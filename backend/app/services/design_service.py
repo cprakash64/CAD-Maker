@@ -6,6 +6,7 @@ every export is verified non-empty by the storage layer.
 """
 from __future__ import annotations
 
+import re
 import time
 
 from sqlalchemy.orm import Session
@@ -897,21 +898,14 @@ def create_design(
     return design
 
 
-# Dedicated single-part families that have a robust DETERMINISTIC builder. For
-# these we route to the offline planner directly — even when an LLM provider is
-# configured — so hard parts never wait on (or time out behind) an OpenAI call.
-HARD_DETERMINISTIC_PARTS = frozenset({
-    "robotic_arm_base_bracket", "u_bracket", "hinge_bracket", "clamp_block",
-})
-
-
 def _dispatch_generation(db: Session, design: Design, prompt: str,
                          classification=None) -> Design:
-    # DETERMINISTIC-FIRST HARD-PROMPT ROUTER. Supported hard families are built
+    # DETERMINISTIC-FIRST HARD-PROMPT ROUTER. Supported families are built
     # offline (no OpenAI call, so they can't time out). Order: structural-frame /
-    # concept assemblies, then chassis, then dedicated deterministic single
-    # parts. Anything else falls through to the complexity gate / LLM pipeline.
-    from app.cad.assembly.frames import detect_frame_family
+    # concept assemblies, then a vague-prompt clarification gate, then the
+    # large-assembly decomposition gate, then deterministic single parts.
+    # Anything left falls through to the LLM/CadPlan pipeline.
+    from app.cad.assembly.frames import detect_fallback_directive, detect_frame_family
 
     # 1) Frame / concept-assembly families (machine frame, CNC router, engine
     #    test stand, drone, motorcycle subframe, skateboard motor mount).
@@ -926,19 +920,16 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
 
     parse_start = time.perf_counter()
 
-    # 2) Dedicated deterministic single parts (robotic arm base, U bracket,
-    #    hinge, clamp block) — bypass OpenAI when classification is confident.
-    fam_id = getattr(classification, "family_id", None)
-    if fam_id in HARD_DETERMINISTIC_PARTS:
-        built = _try_deterministic_part(db, design, prompt, parse_start)
-        if built is not None:
-            return built
-        # else: deterministic builder declined -> normal pipeline below.
+    # 2) VAGUE PROMPT GATE: a part named with no type and no dimensions ("make a
+    #    bracket") should ask for clarification rather than emit a failed/guessed
+    #    model. Cheap string check; never blocks a prompt that has real detail.
+    vague = _vague_clarification(prompt)
+    if vague is not None:
+        return _store_clarification(db, design, vague, parse_start)
 
     # COMPLEXITY GATE (cheap, no LLM/CAD): whole machines / large multi-subsystem
-    # assemblies (car chassis, airframe, ...) are guided to decomposition fast
-    # instead of being attempted as one synchronous part (which would burn minutes
-    # of LLM fallback and produce nothing usable).
+    # assemblies (car chassis, airframe, jet engine, EV platform, ...) decompose
+    # fast instead of being attempted as one synchronous part (or misrouted).
     assessment = assess_complexity(prompt)
     if assessment.is_complex:
         # Supported assembly families get a simplified CONCEPT model instead of
@@ -953,8 +944,6 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
         # EXPLICIT FALLBACK COMPONENT: when the prompt grants permission ("if too
         # complex, generate the <X> first"), build that primary component instead
         # of returning generic decomposition.
-        from app.cad.assembly.frames import detect_fallback_directive
-
         fallback = detect_fallback_directive(prompt)
         if fallback:
             try:
@@ -967,11 +956,105 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
                   subsystems=len(assessment.subsystems))
         return design
 
+    # 3) DETERMINISTIC-FIRST for any specific supported single-part family. The
+    #    offline planner is fast and reliable, so these families build without an
+    #    OpenAI call and can never time out. Scoped to a curated allowlist (and
+    #    only the feature-graph engine) so families with dedicated drawing-mode /
+    #    edit / rescue flows keep using the normal pipeline.
+    fam_id = getattr(classification, "family_id", None)
+    if settings.cad_engine == "feature_graph" and fam_id in DETERMINISTIC_FIRST_FAMILIES:
+        built = _try_deterministic_part(db, design, prompt, parse_start)
+        if built is not None:
+            return built
+        # else: deterministic planner declined -> LLM pipeline below.
+
     # Bound the TOTAL generation time (all model fallbacks + repair passes) so a
     # request can never hang for minutes; exceeding it raises LLMUnavailableError
     # which the API surfaces as a clean 503.
     with generation_budget(settings.cad_generation_timeout_seconds):
         return _run_generation(db, design, prompt, parse_start)
+
+
+# Single-part families with a robust deterministic builder that we route OFFLINE
+# first (no OpenAI call → can't time out). Deliberately curated: families with
+# dedicated drawing-mode/edit/rescue behaviour (pipe fittings, enclosures, NEMA
+# plates, flanges, …) are NOT here so those flows are preserved.
+DETERMINISTIC_FIRST_FAMILIES = frozenset({
+    "l_bracket", "u_bracket", "hinge_bracket", "clamp_block",
+    "robotic_arm_base_bracket",
+})
+
+
+# Vague-prompt detection: a generic part word with no type and no dimension.
+_VAGUE_BRACKET_RE = re.compile(r"\bbracket\b", re.I)
+_BRACKET_TYPE_RE = re.compile(
+    r"\b(l|u|hinge|angle|flat|corner|gusset|shelf|mounting)[- ]?bracket\b", re.I)
+
+
+def _vague_clarification(prompt: str) -> dict | None:
+    """Return clarification questions for a too-vague structural prompt, else
+    None. Conservative: only fires when there is NO dimension/number AND no
+    specific bracket type — so 'make a bracket' clarifies but 'an L bracket with
+    60mm legs' generates with defaults as before."""
+    t = (prompt or "").strip().lower()
+    if not t or re.search(r"\d", t):  # any number -> has real detail
+        return None
+    if _VAGUE_BRACKET_RE.search(t) and not _BRACKET_TYPE_RE.search(t) \
+            and "hinge" not in t and "gusset" not in t:
+        return {
+            "question": (
+                "I can build that, but I need a bit more detail so I don't guess "
+                "wrong: (1) Bracket type — L, U, flat, hinge, or angle? "
+                "(2) Overall size — length × width × thickness in mm? "
+                "(3) How many mounting holes, and what diameter?"
+            ),
+            "questions": [
+                "Bracket type: L, U, flat, hinge, or angle?",
+                "Overall dimensions (length × width × thickness in mm)?",
+                "How many mounting holes, and what diameter?",
+            ],
+        }
+    return None
+
+
+def _store_clarification(db: Session, design: Design, clar: dict,
+                         parse_start: float) -> Design:
+    """Persist a clarification result (no geometry) for a vague prompt."""
+    design.route = "clarification"
+    design.route_reason = "Prompt too vague to generate a safe part."
+    design.clarification_question = clar["question"]
+    design.missing_required = clar.get("questions", [])
+    design.can_generate_with_defaults = False
+    design.spec_json = None
+    design.semantic_json = None
+    design.object_type = None
+    log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+              routed="clarification", produced_spec=False,
+              latency_ms=elapsed_ms(parse_start))
+    db.commit()
+    db.refresh(design)
+    return design
+
+
+def reconciled_validation_status(design: Design) -> str | None:
+    """Effective validation status, reconciled with the evidence so the UI can
+    never show a PASS that contradicts the checks:
+
+    * critical failures stay critical_failure (export blocked elsewhere);
+    * a dimension report that is NOT within tolerance, or a feature audit with
+      missing required features, downgrades a PASS to 'warning' (REVIEW);
+    * otherwise the dimension report's own status stands.
+    """
+    sem = design.semantic_json or {}
+    dim = sem.get("dimension_report") or {}
+    status = (dim.get("validation") or {}).get("status")
+    if not status or status == "critical_failure":
+        return status
+    within = dim.get("within_tolerance")
+    audit_passed = (sem.get("feature_audit") or {}).get("passed")
+    if within is False or audit_passed is False:
+        return "warning"
+    return status
 
 
 def _run_generation(db: Session, design: Design, prompt: str, parse_start: float) -> Design:

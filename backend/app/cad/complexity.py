@@ -23,6 +23,20 @@ _MACHINE_PATTERNS = [
     r"\bfuselage\b", r"\bdrone\b", r"\bquadcopter\b", r"\bspaceship\b",
     r"\brocket\b", r"\bgo[- ]?kart\b", r"\btractor\b",
     "sports car", "roll cage", "rollcage", "engine bay", "transmission tunnel",
+    # Turbomachinery / powerplants — whole machines far beyond single-part CAD.
+    r"\bjet engine\b", r"\bturbofan\b", r"\bturbojet\b", r"\bturboprop\b",
+    r"\bgas turbine\b", r"\bturbine engine\b", r"\bcommercial jet\b",
+    r"\bcombustion chamber\b",
+]
+
+# Full electric / multi-system vehicle platforms — NOT tubular space frames.
+# When several of these appear the prompt is a whole vehicle (decompose), even if
+# it also says "chassis"/"skateboard"/"platform".
+_EV_PLATFORM_INDICATORS = [
+    "battery enclosure", "battery pack", "battery tray", "steering rack",
+    "thermal management", "crash structure", "body mounting", "drive unit",
+    "powertrain", "brake caliper", "brakes", "motors", "wiring harness",
+    "skateboard platform",
 ]
 
 # STRONG subsystem signals — these, in numbers, reliably indicate a whole
@@ -47,6 +61,12 @@ _GUIDANCE_SUBSYSTEMS = _SUBSYSTEMS + [
     "electronics", "control panel", "controller", "battery tray", "battery",
     "bracket", "brackets", "gusset", "bearing", "axle", "actuator", "tray",
     "panel", "leg", "base frame", "side plate", "bridge", "spindle",
+    # Turbomachinery components (jet-engine decomposition guidance).
+    "compressor", "turbine", "turbine blade", "combustion chamber", "combustor",
+    "fuel injector", "gearbox", "casing", "cooling channel", "nozzle",
+    # EV / vehicle-platform components.
+    "battery enclosure", "steering rack", "thermal management", "crash structure",
+    "body mounting", "chassis rail", "motors", "brakes", "powertrain",
 ]
 
 _ASSEMBLY_WORDS = [
@@ -65,12 +85,26 @@ _TUBULAR_CHASSIS_PATTERNS = [
 ]
 
 
+def _is_full_vehicle_platform(t: str) -> bool:
+    """True when the prompt describes a full multi-system (often electric)
+    vehicle platform rather than a tubular space frame — these must decompose,
+    not route to the tubular-chassis generator just because they say 'chassis'."""
+    if "skateboard" in t and ("car" in t or "battery" in t or "platform" in t):
+        return True
+    hits = sum(1 for kw in _EV_PLATFORM_INDICATORS if kw in t)
+    return hits >= 2
+
+
 def detect_assembly_family(prompt: str) -> str | None:
     """Return a supported assembly family key, or None.
 
     Currently only the tubular vehicle chassis / roll cage / welded space-frame
-    family is supported for concept-assembly generation."""
+    family is supported for concept-assembly generation. A full multi-system
+    vehicle platform (battery, motors, steering, brakes, thermal, ...) is NOT a
+    tubular space frame, so it returns None and decomposes instead."""
     t = (prompt or "").lower()
+    if _is_full_vehicle_platform(t):
+        return None
     if any(re.search(p, t) for p in _TUBULAR_CHASSIS_PATTERNS):
         return "tubular_chassis"
     return None

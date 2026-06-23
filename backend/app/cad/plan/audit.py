@@ -52,6 +52,13 @@ def resolve_role(f: Feature) -> str | None:
         return "hinge_ears" if "ear" in t else "side_walls"
     if k == FeatureKind.plate:
         return "base_plate"
+    if k == FeatureKind.cylinder:
+        # A circular base disc counts as the base; a tall cylinder is a tower/boss.
+        if "base" in t:
+            return "base_plate"
+        if "tower" in t or "boss" in t or "column" in t:
+            return "bearing_boss"
+        return "body"
     if k in (FeatureKind.box, FeatureKind.rectangular_cut, FeatureKind.slot):
         if f.op == "cut" or k != FeatureKind.box:
             if re.search(r"\bgap\b|\bsplit\b|\bslit\b|\bsaddle\b", t):
@@ -263,6 +270,17 @@ def derive_requirements(prompt: str) -> list[Requirement]:
     if re.search(r"\bl[- ]?bracket\b", t):
         reqs.append(Requirement("base_plate", "base plate"))
         reqs.append(Requirement("side_walls", "vertical wall"))
+        return reqs
+
+    if re.search(r"\brobot(?:ic)?\b", t) and "arm" in t \
+            and re.search(r"\bbase\b|\bbracket\b|\btower\b|\bgusset\b|\bbearing\b", t):
+        # Robotic arm base: a base (CIRCULAR or rectangular), a vertical support
+        # tower, and base mounting holes. Do NOT require a rectangular plate — a
+        # circular base disc is valid here.
+        n = _count(t, "holes", "mounting holes") or 4
+        reqs.append(Requirement("base_plate", "base plate (circular or rectangular)"))
+        reqs.append(Requirement("side_walls", "vertical support tower"))
+        reqs.append(Requirement("mounting_holes", f"{n} base mounting holes", count=n))
         return reqs
 
     if "plate" in t:
