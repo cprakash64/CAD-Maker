@@ -42,6 +42,7 @@ approximate gear blank says its teeth are not a true involute profile.
 | `hinge_bracket` | single part | beta | Base + two ears + coaxial pin hole. |
 | `clamp_block` | single part | beta | Split tube/pipe clamp with bore + tightening bolts. |
 | `robotic_arm_base_bracket` | single part | beta | Circular/rectangular base + vertical tower + gussets (+ optional bearing pocket). |
+| `screwdriver` | single part | concept | One fused hand tool along X: handle + coaxial shaft + tip. Phillips tip approximate; not manufacturing-certified. |
 | `gear_blank` | single part | concept | **Approximate** teeth — not a true involute; use as a blank. |
 | `crankshaft` | single part | beta | Inline-4 geometric model; not balance/stress validated. |
 | `generic_feature_graph_part` | single part | beta | Anything composed from safe primitives (box/cylinder/tube/boss/rib/hole + booleans). No threads/splines/free-form. |
@@ -122,6 +123,19 @@ feasible fallback component, or otherwise has no buildable deterministic family.
 Supported hard prompts (machine/equipment frames, engine test stands, drone
 frames, motorcycle subframes, e-skateboard mounts, and the medium parts above)
 route to a deterministic generator instead.
+
+## Single-part fuse safeguard
+
+A single-part model must be **one connected solid**. The CadPlan compiler
+([`backend/app/cad/plan/compiler.py`](../backend/app/cad/plan/compiler.py)) has a
+bounded safeguard: if a build ends up as several near-collinear sub-bodies with
+small gaps (handle + shaft + tip, pin + head, shaft + collar), it bridges them so
+the part fuses, and records an "auto-fused …" assumption. Clearly-separate bodies
+(large gaps) are **not** bridged — they still fail single-body validation and
+their export stays blocked. Deterministic families (e.g. the screwdriver) are
+built already-fused, so the safeguard is only a backstop. Common everyday objects
+without a deterministic family (hammer, wrench, …) are routed to clarification
+instead of free-form generation that tends to produce disconnected geometry.
 
 ## Timeout robustness
 

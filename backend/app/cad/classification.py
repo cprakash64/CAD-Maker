@@ -190,6 +190,8 @@ def classify_prompt(prompt: str) -> PromptClassification:
 # (app.cad.plan.deterministic._FAMILIES), most-specific-first, so the classifier
 # names the same family the generator will build.
 def _detect_dedicated_part_family(low: str) -> str | None:
+    if "screwdriver" in low or "screw driver" in low:
+        return "screwdriver"
     if re.search(r"\brobot(?:ic)?\b", low) and "arm" in low \
             and re.search(r"\bbase\b|\bbracket\b|\btower\b|\bgusset\b|\bbearing\b", low):
         return "robotic_arm_base_bracket"

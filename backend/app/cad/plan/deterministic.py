@@ -582,6 +582,96 @@ def _plan_robotic_arm_base_bracket(t: str) -> CadPlan:
     )
 
 
+def _plan_screwdriver(t: str) -> CadPlan:
+    """A single FUSED screwdriver along +X: cylindrical handle -> coaxial metal
+    shaft -> tip (flat blade box, or an approximate point for Phillips/unspecified).
+    Adjacent parts overlap so the union is one connected body. Built with the
+    `at=[0, 0, x_start]` convention so an axis='x' cylinder spans X exactly."""
+    phillips = bool(re.search(r"phillip|philips|pozidriv|cross[- ]?head|\bcross\b", t))
+    flat = bool(re.search(r"flat|slotted|flathead|flat[- ]?blade|flat[- ]?head", t))
+
+    handle_dia = _near(t, "handle diameter", "handle dia", "mm handle") or 30.0
+    shaft_dia = _near(t, "shaft diameter", "shaft dia")
+    shaft_len = _near(t, "shaft length", "metal shaft", "blade length")
+    bare_shaft = _near(t, "shaft")
+    if bare_shaft is not None:
+        if bare_shaft <= 20 and shaft_dia is None:
+            shaft_dia = bare_shaft
+        elif bare_shaft > 20 and shaft_len is None:
+            shaft_len = bare_shaft
+    shaft_dia = shaft_dia or 6.0
+    handle_len = _near(t, "handle length", "long handle", "handle long")
+    tip_len = _near(t, "tip length") or 12.0
+    tip_w = (_near(t, "tip width", "wide flat tip", "wide tip", "flat tip", "mm tip")
+             or (max(shaft_dia, 8.0) if flat else shaft_dia))
+    total = _near(t, "long", "length", "overall")
+    # Don't mistake "100mm long handle" for the overall length.
+    if total is not None and handle_len is not None and abs(total - handle_len) < 1e-6:
+        total = None
+
+    if total:
+        if shaft_len and not handle_len:
+            handle_len = total - shaft_len - tip_len
+        elif handle_len and not shaft_len:
+            shaft_len = total - handle_len - tip_len
+        elif not handle_len and not shaft_len:
+            handle_len = round(total * 0.5, 1)
+            shaft_len = total - handle_len - tip_len
+    handle_len = max(20.0, handle_len or 100.0)
+    shaft_len = max(10.0, shaft_len or 90.0)
+
+    emb = min(handle_len * 0.2, 20.0)        # shaft embeds into the handle
+    s0, s1 = handle_len - emb, handle_len + shaft_len   # shaft X interval
+    t0 = s1 - 2.0                            # tip overlaps the shaft by 2mm
+    total_len = handle_len + shaft_len + tip_len
+
+    features = [
+        Feature(id="handle", kind="cylinder", axis="x", description="cylindrical handle",
+                params={"diameter": handle_dia, "height": handle_len}, at=[0, 0, 0.0]),
+        Feature(id="shaft", kind="cylinder", axis="x", description="metal shaft",
+                params={"diameter": shaft_dia, "height": s1 - s0}, at=[0, 0, s0]),
+    ]
+    if flat:
+        blade_thk = max(2.0, round(shaft_dia * 0.5, 1))
+        features.append(Feature(
+            id="tip", kind="box", description="flat blade tip",
+            params={"width": tip_len + 2.0, "depth": tip_w, "height": blade_thk},
+            at=[(t0 + s1 + tip_len) / 2, 0, -blade_thk / 2]))
+        z_env = max(handle_dia, blade_thk, shaft_dia)
+        tip_label = "flat blade"
+    else:
+        features.append(Feature(
+            id="tip", kind="cylinder", axis="x", description="screwdriver tip",
+            params={"diameter": max(2.0, round(shaft_dia * 0.9, 1)), "height": tip_len + 2.0},
+            at=[0, 0, t0]))
+        z_env = max(handle_dia, shaft_dia)
+        tip_label = "Phillips" if phillips else "tip"
+
+    assumptions = [
+        f"Single fused tool along X: handle Ø{handle_dia:g}×{handle_len:g}mm, "
+        f"shaft Ø{shaft_dia:g}×{shaft_len:g}mm, {tip_label} tip {tip_len:g}mm "
+        f"(overall ~{total_len:g}mm).",
+        "Concept tool — not a manufacturing-certified screwdriver.",
+    ]
+    if phillips:
+        assumptions.append(
+            "Phillips/cross tip is approximate (modeled as a tapered point, not a "
+            "true cruciform).")
+    elif not flat:
+        assumptions.append(
+            "Tip style unspecified; modeled as a simple point — say 'flat blade' or "
+            "'Phillips' to refine.")
+
+    return CadPlan(
+        object_type="screwdriver", name="screwdriver",
+        assumptions=assumptions, features=features,
+        expected=Expected(
+            bbox_mm={"x": round(total_len, 1), "y": round(max(handle_dia, tip_w), 1),
+                     "z": round(z_env, 1)},
+            hole_count=0, through_hole_count=0),
+    )
+
+
 def _plan_motor_plate(t: str) -> CadPlan:
     sq = _near(t, "square") or _near(t, "mm square")
     width = depth = sq or 70
@@ -713,6 +803,7 @@ def _plan_plate(t: str) -> CadPlan:
 # NB: use word boundaries — naive substrings misfire ("ear" in "clEARance"/
 # "bEARing"; "t pipe" in "straighT PIPE").
 _FAMILIES = [
+    (lambda t: "screwdriver" in t or "screw driver" in t, _plan_screwdriver),
     (lambda t: bool(re.search(r"\btee\b|\bt[- ]?pipe\b", t)) or ("branch" in t and "pipe" in t), _plan_pipe_tee),
     (lambda t: "spool" in t or ("pipe" in t and "flange" in t and "both ends" in t), _plan_pipe_spool),
     (lambda t: "flange" in t and "pipe" not in t, _plan_flange),

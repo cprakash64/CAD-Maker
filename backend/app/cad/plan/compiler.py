@@ -498,12 +498,99 @@ def compile_cad_plan(plan: CadPlan) -> CadPlanResult:
     if base is None:
         raise CadGenerationError("CadPlan produced no solid body")
 
+    # SINGLE-PART FUSE SAFEGUARD: a single-part plan should be ONE connected body.
+    # If primitives ended up as several near-collinear sub-bodies with small gaps
+    # (handle+shaft+tip, pin+head, shaft+collar), bridge them so the part fuses
+    # instead of exporting a disconnected, validation-failing model. Bounded +
+    # safe: only small collinear gaps are bridged; clearly-separate bodies are
+    # left alone (and still fail single-body validation -> export blocked).
+    try:
+        n_solids = len(base.val().Solids())
+    except Exception:  # noqa: BLE001 - never let the safeguard break a build
+        n_solids = 1
+    if n_solids > 1:
+        base, fused = _fuse_disconnected(base)
+        if fused:
+            warnings.append(
+                f"Auto-fused {n_solids} disconnected collinear sub-bodies into one "
+                "solid (small gaps bridged).")
+        else:
+            warnings.append(
+                f"Auto-fuse attempted but failed: {n_solids} disconnected sub-bodies "
+                "remain (gaps too large to bridge safely).")
+
     bb = base.val().BoundingBox()
     bbox = {"x": round(bb.xlen, 3), "y": round(bb.ylen, 3), "z": round(bb.zlen, 3)}
     return CadPlanResult(
         solid=base, bbox_mm=bbox, hole_count=hole_count, through_hole_count=through_count,
         feature_count=len(plan.features), warnings=warnings, feature_meta=feature_meta,
     )
+
+
+def _fuse_disconnected(base: cq.Workplane) -> tuple[cq.Workplane, bool]:
+    """Bridge small collinear gaps between disconnected sub-bodies so a
+    single-part model fuses into one solid. Returns (solid, repaired). Bounded
+    and conservative: only bridges when the gap is small AND the bodies are
+    nearly collinear along the dominant axis; otherwise returns the input
+    unchanged so genuinely-separate bodies still fail validation."""
+    try:
+        solids = base.val().Solids()
+        if len(solids) <= 1:
+            return base, False
+        bbs = [s.BoundingBox() for s in solids]
+        overall = base.val().BoundingBox()
+        ext = {"x": overall.xlen, "y": overall.ylen, "z": overall.zlen}
+        axis = max(ext, key=ext.get)
+        ai = {"x": 0, "y": 1, "z": 2}[axis]
+        perp = [i for i in (0, 1, 2) if i != ai]
+
+        def lo(bb):
+            return (bb.xmin, bb.ymin, bb.zmin)[ai]
+
+        def hi(bb):
+            return (bb.xmax, bb.ymax, bb.zmax)[ai]
+
+        def center(bb):
+            return ((bb.xmin + bb.xmax) / 2, (bb.ymin + bb.ymax) / 2,
+                    (bb.zmin + bb.zmax) / 2)
+
+        def perp_size(bb):
+            sizes = (bb.xlen, bb.ylen, bb.zlen)
+            return min(sizes[i] for i in perp)
+
+        order = sorted(range(len(solids)), key=lambda i: lo(bbs[i]))
+        bridges: list[cq.Workplane] = []
+        for a, b in zip(order, order[1:]):
+            ba, bb2 = bbs[a], bbs[b]
+            gap = lo(bb2) - hi(ba)
+            if gap <= 0.05:
+                continue  # already touching / overlapping
+            r = max(1.0, 0.45 * min(perp_size(ba), perp_size(bb2)))
+            # Only bridge SMALL collinear gaps; bail on clearly-separate bodies.
+            if gap > max(20.0, 3.0 * r):
+                return base, False
+            ca, cb = center(ba), center(bb2)
+            off = math.dist([ca[i] for i in perp], [cb[i] for i in perp])
+            if off > r:
+                return base, False  # not collinear enough
+            mc = [(ca[i] + cb[i]) / 2 for i in range(3)]
+            start = [mc[0], mc[1], mc[2]]
+            start[ai] = hi(ba) - 0.5
+            normal = [0.0, 0.0, 0.0]
+            normal[ai] = 1.0
+            bridge = (cq.Workplane(cq.Plane(origin=tuple(start), normal=tuple(normal)))
+                      .circle(r).extrude(gap + 1.0))
+            bridges.append(bridge)
+        if not bridges:
+            return base, False
+        fused = base
+        for br in bridges:
+            fused = fused.union(br)
+        if len(fused.val().Solids()) == 1:
+            return fused, True
+        return base, False
+    except Exception:  # noqa: BLE001 - safeguard must never break a build
+        return base, False
 
 
 def _need(base, f) -> cq.Workplane:

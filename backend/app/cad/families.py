@@ -454,6 +454,37 @@ _FAMILIES: tuple[CADFamily, ...] = (
             "support tower, two side gussets, six M6 base holes and a 52mm bearing pocket",
         ),
     ),
+    CADFamily(
+        family_id="screwdriver",
+        display_name="Screwdriver (hand tool concept)",
+        design_mode=DesignMode.single_part,
+        maturity=Maturity.concept,
+        keywords=("screwdriver", "screw driver", "flat blade screwdriver",
+                  "phillips screwdriver"),
+        object_types=("screwdriver",),
+        required_dimensions=(),
+        optional_dimensions=("total length", "handle length", "handle diameter",
+                             "shaft length", "shaft diameter", "tip width", "tip type"),
+        default_assumptions=("Single fused body along X: handle + coaxial shaft + tip",
+                             "Defaults ~200mm long, Ø30mm handle, Ø6mm shaft, ~12mm tip"),
+        generator="screwdriver feature graph (deterministic plan)",
+        generation_strategy=GenerationStrategy.cadplan,
+        validation_profile="single_part_strict",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "Concept hand tool — not certified for manufacturing.",
+            "Phillips / cross tip is approximate (modeled as a tapered point, not a "
+            "true cruciform).",
+            "Grip texture / ergonomic flutes not modeled unless specified.",
+        ),
+        example_prompts=(
+            "Make a screwdriver",
+            "Make a flat blade screwdriver, 200mm long, 30mm handle diameter, with a "
+            "6mm shaft and 10mm wide flat tip",
+            "Create a Phillips screwdriver, 180mm long, 28mm handle diameter, with a "
+            "90mm metal shaft",
+        ),
+    ),
     # ---- Generic single-part fallback (feature graph) -------------------
     CADFamily(
         family_id=GENERIC_PART_FAMILY,

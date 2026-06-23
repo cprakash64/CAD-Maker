@@ -927,6 +927,14 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
     if vague is not None:
         return _store_clarification(db, design, vague, parse_start)
 
+    # 2b) UNSUPPORTED EVERYDAY OBJECT: common objects we don't have a deterministic
+    #     family for (hammer, wrench, pliers, ...) commonly produce disconnected /
+    #     garbage geometry via freeform CAD. When the classifier didn't map the
+    #     prompt to a specific family, ask for clarification instead of failing.
+    everyday = _everyday_object_clarification(prompt, classification)
+    if everyday is not None:
+        return _store_clarification(db, design, everyday, parse_start)
+
     # COMPLEXITY GATE (cheap, no LLM/CAD): whole machines / large multi-subsystem
     # assemblies (car chassis, airframe, jet engine, EV platform, ...) decompose
     # fast instead of being attempted as one synchronous part (or misrouted).
@@ -981,7 +989,7 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
 # plates, flanges, …) are NOT here so those flows are preserved.
 DETERMINISTIC_FIRST_FAMILIES = frozenset({
     "l_bracket", "u_bracket", "hinge_bracket", "clamp_block",
-    "robotic_arm_base_bracket",
+    "robotic_arm_base_bracket", "screwdriver",
 })
 
 
@@ -1015,6 +1023,46 @@ def _vague_clarification(prompt: str) -> dict | None:
             ],
         }
     return None
+
+
+# Common everyday objects we do NOT have a deterministic family for. Freeform CAD
+# for these frequently yields disconnected/garbage geometry, so we clarify rather
+# than emit a failed model. (Supported everyday objects — screwdriver, knob — map
+# to a specific family and never reach this gate.)
+_UNSUPPORTED_EVERYDAY = (
+    "hammer", "mallet", "wrench", "spanner", "pliers", "plier", "saw",
+    "axe", "hatchet", "chisel", "crowbar", "shovel", "rake", "scissors",
+    "drill", "screw gun", "ratchet", "socket wrench",
+)
+
+
+def _everyday_object_clarification(prompt: str, classification) -> dict | None:
+    """Clarification for an unsupported everyday object, else None. Only fires
+    when the classifier did NOT map the prompt to a specific family (so supported
+    objects and detailed mechanical parts are unaffected)."""
+    from app.cad.families import GENERIC_PART_FAMILY
+
+    fam_id = getattr(classification, "family_id", None)
+    if fam_id and fam_id != GENERIC_PART_FAMILY:
+        return None  # mapped to a real family -> generate normally
+    t = (prompt or "").lower()
+    obj = next((w for w in _UNSUPPORTED_EVERYDAY if re.search(rf"\b{re.escape(w)}\b", t)), None)
+    if obj is None:
+        return None
+    return {
+        "question": (
+            f"A {obj} isn't a supported deterministic family yet, and free-form "
+            "generation often produces a broken model. Tell me a bit more and I'll "
+            f"build a simplified concept: (1) overall size (length × width/height in "
+            "mm)? (2) which main parts/features matter most? (3) any handle/head "
+            "dimensions?"
+        ),
+        "questions": [
+            f"Overall {obj} dimensions (length × width/height in mm)?",
+            "Which main parts or features matter most?",
+            "Any specific handle / head dimensions?",
+        ],
+    }
 
 
 def _store_clarification(db: Session, design: Design, clar: dict,
