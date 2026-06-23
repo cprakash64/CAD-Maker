@@ -157,6 +157,18 @@ class DesignDTO(BaseModel):
     # Structured, offline prompt classification (family/strategy/maturity/
     # limitations) computed before generation. Advisory metadata for the UI.
     classification: Optional[dict] = None
+    # Prompt understanding (object_type/family/dimensions/features/missing_fields/
+    # complexity/recommended_route) read from the prompt before generation.
+    understanding: Optional[dict] = None
+    # Universal contract terminal state: one of generated_single_part /
+    # generated_assembly / needs_clarification / needs_decomposition / unsupported
+    # / failed_safe. Every design always carries exactly one.
+    generation_outcome: Optional[str] = None
+    # Ready-to-run family suggestions for a vague category prompt; each item is
+    # {label, prompt} and the prompt can be submitted directly.
+    clarification_options: list[dict] = []
+    # Flat beta-testing telemetry (route/family/confidence/outcome/validation/…).
+    telemetry: Optional[dict] = None
 
 
 class DesignSummaryDTO(BaseModel):

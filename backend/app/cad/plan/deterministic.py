@@ -799,6 +799,257 @@ def _plan_plate(t: str) -> CadPlan:
     )
 
 
+# --- everyday concept-fallback families ------------------------------------
+# These produce a SINGLE connected concept solid (overlapping primitives) for
+# common objects, so a casual prompt yields safe, valid, clearly-labelled concept
+# CAD instead of broken free-form geometry. Default dimensions are documented in
+# app.cad.standards.defaults.CONCEPT_DEFAULTS; each builder records the assumed
+# dimensions and a "concept, not manufacturing-certified" note. Holes/bbox intent
+# is reconciled from the features by normalize_cad_plan, so we don't hand-set them.
+
+_CONCEPT_NOTE = "Concept CAD — simplified model, not manufacturing-certified."
+
+
+def _concept_defaults(key: str) -> dict:
+    from app.cad.standards.defaults import CONCEPT_DEFAULTS
+    return CONCEPT_DEFAULTS[key]
+
+
+def _concept_plan(object_type: str, name: str, features: list[Feature],
+                  assumptions: list[str]) -> CadPlan:
+    return CadPlan(
+        object_type=object_type, name=name,
+        assumptions=[*assumptions, _CONCEPT_NOTE], features=features,
+        expected=Expected(),  # bbox/holes filled from features by normalize
+    )
+
+
+def _plan_hammer(t: str) -> CadPlan:
+    d = _concept_defaults("hammer")
+    hd = _near(t, "handle diameter", "handle dia") or d["handle_diameter"]
+    hl = _near(t, "handle length", "long handle") or _near(t, "long", "length") or d["handle_length"]
+    head_l, head_w, head_h = d["head_length"], d["head_width"], d["head_height"]
+    features = [
+        Feature(id="handle", kind="cylinder", axis="z", description="hammer handle",
+                params={"diameter": hd, "height": hl}, at=[0, 0, 0]),
+        Feature(id="head", kind="box", description="hammer head (overlaps handle top)",
+                params={"width": head_l, "depth": head_w, "height": head_h},
+                at=[0, 0, hl - head_h / 2]),
+    ]
+    return _concept_plan(
+        "hammer", "hammer", features,
+        [f"Concept hammer: Ø{hd:g}×{hl:g}mm handle with a {head_l:g}×{head_w:g}×"
+         f"{head_h:g}mm head fused on top (single connected body)."])
+
+
+def _plan_wrench(t: str) -> CadPlan:
+    d = _concept_defaults("wrench")
+    length = _near(t, "long", "length") or d["handle_length"]
+    width, thk = d["handle_width"], d["thickness"]
+    head_d, jaw = d["head_diameter"], d["jaw_opening"]
+    features = [
+        Feature(id="handle", kind="box", description="wrench handle bar",
+                params={"width": length, "depth": width, "height": thk}, at=[0, 0, 0]),
+        Feature(id="head", kind="boss", description="ring head (overlaps handle end)",
+                params={"diameter": head_d, "height": thk}, at=[length / 2, 0, 0]),
+        Feature(id="jaw", kind="hole", description="jaw opening",
+                params={"diameter": jaw}, at=[length / 2, 0, 0]),
+    ]
+    return _concept_plan(
+        "wrench", "wrench", features,
+        [f"Concept ring-end wrench: {length:g}mm handle, Ø{head_d:g}mm head with a "
+         f"Ø{jaw:g}mm opening (single connected body)."])
+
+
+def _plan_pliers(t: str) -> CadPlan:
+    d = _concept_defaults("pliers")
+    piv, thk = d["pivot_diameter"], d["thickness"]
+    jl, hl, aw = d["jaw_length"], d["handle_length"], d["arm_width"]
+    off = aw / 2 + 0.5
+    features = [
+        Feature(id="pivot", kind="boss", description="pivot boss",
+                params={"diameter": piv, "height": thk}, at=[0, 0, 0]),
+        Feature(id="jaw_upper", kind="box", description="upper jaw",
+                params={"width": jl, "depth": aw, "height": thk - 2}, at=[jl / 2 - 4, off, 1]),
+        Feature(id="jaw_lower", kind="box", description="lower jaw",
+                params={"width": jl, "depth": aw, "height": thk - 2}, at=[jl / 2 - 4, -off, 1]),
+        Feature(id="handle_upper", kind="box", description="upper handle",
+                params={"width": hl, "depth": aw, "height": thk - 2}, at=[-hl / 2 + 4, off, 1]),
+        Feature(id="handle_lower", kind="box", description="lower handle",
+                params={"width": hl, "depth": aw, "height": thk - 2}, at=[-hl / 2 + 4, -off, 1]),
+        Feature(id="pin_hole", kind="hole", description="pivot pin hole",
+                params={"diameter": d["pivot_hole"]}, at=[0, 0, 0]),
+    ]
+    return _concept_plan(
+        "pliers", "pliers", features,
+        [f"Concept pliers: two jaws + two handles fused at a Ø{piv:g}mm pivot "
+         "(single connected body; modeled in the open position)."])
+
+
+def _plan_wheel(t: str) -> CadPlan:
+    d = _concept_defaults("wheel")
+    od = _near(t, "diameter", "dia", "wide") or d["diameter"]
+    thk = _near(t, "thick", "wide") or d["thickness"]
+    bore = _near(t, "bore", "hub bore") or d["bore"]
+    features = [
+        Feature(id="rim", kind="cylinder", axis="z", description="wheel disc / rim",
+                params={"diameter": od, "height": thk}, at=[0, 0, 0]),
+        Feature(id="hub", kind="boss", description="raised hub",
+                params={"diameter": d["hub_diameter"], "height": d["hub_height"]}, at=[0, 0, 0]),
+        Feature(id="bore", kind="hole", description="axle bore",
+                params={"diameter": bore}, at=[0, 0, 0]),
+        Feature(id="lightening_holes", kind="hole_pattern_circle",
+                description="lightening / spoke holes",
+                params={"count": d["spoke_holes"], "diameter": d["spoke_hole_diameter"],
+                        "pcd": (od + d["hub_diameter"]) / 2}, at=[0, 0, 0]),
+    ]
+    return _concept_plan(
+        "wheel", "wheel", features,
+        [f"Concept wheel: Ø{od:g}×{thk:g}mm disc, raised hub, Ø{bore:g}mm axle bore "
+         f"and {int(d['spoke_holes'])} lightening holes (single connected body)."])
+
+
+def _plan_fan_blade(t: str) -> CadPlan:
+    d = _concept_defaults("fan_blade")
+    bl, bw, bt = d["blade_length"], d["blade_width"], d["blade_thickness"]
+    hub_d, hub_h = d["hub_diameter"], d["hub_height"]
+    off = bl / 2 + hub_d / 4
+    z = (hub_h - bt) / 2
+    features = [
+        Feature(id="hub", kind="boss", description="fan hub",
+                params={"diameter": hub_d, "height": hub_h}, at=[0, 0, 0]),
+        Feature(id="blade_px", kind="box", description="blade +X",
+                params={"width": bl, "depth": bw, "height": bt}, at=[off, 0, z]),
+        Feature(id="blade_nx", kind="box", description="blade -X",
+                params={"width": bl, "depth": bw, "height": bt}, at=[-off, 0, z]),
+        Feature(id="blade_py", kind="box", description="blade +Y",
+                params={"width": bw, "depth": bl, "height": bt}, at=[0, off, z]),
+        Feature(id="blade_ny", kind="box", description="blade -Y",
+                params={"width": bw, "depth": bl, "height": bt}, at=[0, -off, z]),
+        Feature(id="bore", kind="hole", description="shaft bore",
+                params={"diameter": d["bore"]}, at=[0, 0, 0]),
+    ]
+    return _concept_plan(
+        "fan_blade", "fan blade", features,
+        [f"Concept 4-blade fan: Ø{hub_d:g}mm hub with four {bl:g}×{bw:g}mm flat "
+         "blades fused around it (single connected body).",
+         "Blades are flat (no aerodynamic twist) — concept geometry only."])
+
+
+def _plan_hook(t: str) -> CadPlan:
+    d = _concept_defaults("hook")
+    pw, pt, ph = d["plate_width"], d["plate_thickness"], d["plate_height"]
+    arm, sz, tip = d["arm_length"], d["arm_size"], d["tip_height"]
+    mh = d["mount_hole"]
+    arm_z = ph - sz - 6
+    features = [
+        Feature(id="back_plate", kind="box", description="wall mounting plate",
+                params={"width": pw, "depth": pt, "height": ph}, at=[0, 0, 0]),
+        Feature(id="mount_top", kind="hole", axis="y", description="upper mounting hole",
+                params={"diameter": mh}, at=[0, 0, ph - 15]),
+        Feature(id="mount_bot", kind="hole", axis="y", description="lower mounting hole",
+                params={"diameter": mh}, at=[0, 0, 15]),
+        Feature(id="arm", kind="box", description="hook arm (out from plate)",
+                params={"width": sz, "depth": arm, "height": sz},
+                at=[0, pt / 2 + arm / 2 - 3, arm_z]),
+        Feature(id="tip", kind="box", description="upturned hook tip",
+                params={"width": sz, "depth": sz, "height": tip},
+                at=[0, pt / 2 + arm - sz / 2 - 3, arm_z]),
+    ]
+    return _concept_plan(
+        "hook", "hook", features,
+        [f"Concept wall hook: {pw:g}×{ph:g}mm back plate with two Ø{mh:g}mm mounting "
+         f"holes and an {arm:g}mm arm with an upturned tip (single connected body)."])
+
+
+def _plan_handle_grip(t: str) -> CadPlan:
+    d = _concept_defaults("handle")
+    gl, gw, gh = d["grip_length"], d["grip_width"], d["grip_height"]
+    leg, stand = d["leg_diameter"], d["standoff"]
+    mh = d["mount_hole"]
+    legx = gl / 2 - leg
+    grip_z = stand
+    features = [
+        Feature(id="grip", kind="box", description="grip bar",
+                params={"width": gl, "depth": gw, "height": gh}, at=[0, 0, grip_z]),
+        Feature(id="leg_left", kind="cylinder", axis="z", description="left standoff",
+                params={"diameter": leg, "height": stand + 4}, at=[-legx, 0, 0]),
+        Feature(id="leg_right", kind="cylinder", axis="z", description="right standoff",
+                params={"diameter": leg, "height": stand + 4}, at=[legx, 0, 0]),
+        Feature(id="mount_left", kind="hole", description="left mounting hole",
+                params={"diameter": mh}, at=[-legx, 0, 0]),
+        Feature(id="mount_right", kind="hole", description="right mounting hole",
+                params={"diameter": mh}, at=[legx, 0, 0]),
+    ]
+    return _concept_plan(
+        "handle_grip", "handle / pull grip", features,
+        [f"Concept pull handle: {gl:g}mm grip bar on two Ø{leg:g}mm standoffs with "
+         f"Ø{mh:g}mm mounting holes (single connected body)."])
+
+
+def _plan_tool_holder(t: str) -> CadPlan:
+    d = _concept_defaults("tool_holder")
+    w, depth, thk = d["width"], d["depth"], d["thickness"]
+    bh, bt = d["back_height"], d["back_thickness"]
+    n = int(d["tool_holes"])
+    hd = d["tool_hole_diameter"]
+    features = [
+        Feature(id="base", kind="plate", description="tool holder base",
+                params={"width": w, "depth": depth, "thickness": thk}, at=[0, 0, 0]),
+        Feature(id="back_wall", kind="box", description="back wall (L profile)",
+                params={"width": w, "depth": bt, "height": bh}, at=[0, -depth / 2 + bt / 2, 0]),
+    ]
+    span = w - 60
+    for i in range(n):
+        x = -span / 2 + (span * i / (n - 1) if n > 1 else 0)
+        features.append(Feature(id=f"tool_hole_{i}", kind="hole",
+                                description="tool slot", params={"diameter": hd},
+                                at=[x, depth * 0.15, 0]))
+    return _concept_plan(
+        "tool_holder", "tool holder", features,
+        [f"Concept tool holder: {w:g}×{depth:g}mm base with a {bh:g}mm back wall and "
+         f"{n}× Ø{hd:g}mm tool slots (single connected body)."])
+
+
+def _plan_stand(t: str) -> CadPlan:
+    d = _concept_defaults("stand")
+    tw, td, tt = d["top_width"], d["top_depth"], d["top_thickness"]
+    h, leg = d["height"], d["leg_diameter"]
+    lx, ly = tw / 2 - leg, td / 2 - leg
+    features = [
+        Feature(id="top", kind="plate", description="stand top platform",
+                params={"width": tw, "depth": td, "thickness": tt}, at=[0, 0, h]),
+    ]
+    for i, (sx, sy) in enumerate([(-lx, -ly), (lx, -ly), (-lx, ly), (lx, ly)]):
+        features.append(Feature(id=f"leg_{i}", kind="cylinder", axis="z",
+                                description="leg",
+                                params={"diameter": leg, "height": h + 4}, at=[sx, sy, 0]))
+    return _concept_plan(
+        "stand", "stand", features,
+        [f"Concept stand: {tw:g}×{td:g}mm top on four Ø{leg:g}mm legs, {h:g}mm tall "
+         "(single connected body)."])
+
+
+def _plan_casing(t: str) -> CadPlan:
+    d = _concept_defaults("casing")
+    w = _near(t, "wide", "width") or d["width"]
+    depth = _near(t, "deep", "depth") or d["depth"]
+    h = _near(t, "tall", "high", "height") or d["height"]
+    wall = _near(t, "wall thickness", "wall", "walls") or d["wall"]
+    if 2 * wall >= min(w, depth, h):
+        wall = d["wall"]
+    features = [
+        Feature(id="casing_body", kind="box", description="casing body",
+                params={"width": w, "depth": depth, "height": h}, at=[0, 0, 0]),
+        Feature(id="casing_shell", kind="shell", description="hollowed cavity (open top)",
+                params={"thickness": wall}),
+    ]
+    return _concept_plan(
+        "casing", "simple casing", features,
+        [f"Concept casing: {w:g}×{depth:g}×{h:g}mm box shelled to {wall:g}mm walls "
+         "with an open top (single connected body)."])
+
+
 # Ordered most-specific-first: the first matcher whose predicate fires wins.
 # NB: use word boundaries — naive substrings misfire ("ear" in "clEARance"/
 # "bEARing"; "t pipe" in "straighT PIPE").
@@ -818,6 +1069,20 @@ _FAMILIES = [
     (lambda t: "enclosure" in t or ("case" in t and "sensor" in t), _plan_enclosure),
     (lambda t: bool(re.search(r"\bl[- ]?bracket\b", t)) or ("vertical" in t and "wall" in t and "bracket" in t), _plan_l_bracket),
     (lambda t: ("nema" in t or "stepper" in t or "motor mount" in t or "motor mounting" in t), _plan_motor_plate),
+    # Everyday concept-fallback families (single connected concept solids). Placed
+    # after the precision families so a specific mechanical part is never stolen by
+    # a loose everyday word.
+    (lambda t: bool(re.search(r"\bhammer\b|\bmallet\b", t)), _plan_hammer),
+    (lambda t: bool(re.search(r"\bwrench(?:es)?\b|\bspanner\b", t)), _plan_wrench),
+    (lambda t: bool(re.search(r"\bpliers?\b", t)), _plan_pliers),
+    (lambda t: bool(re.search(r"\bfan\b|\bimpeller\b", t)), _plan_fan_blade),
+    (lambda t: bool(re.search(r"\bwheel\b", t)), _plan_wheel),
+    (lambda t: bool(re.search(r"\bhook\b", t)), _plan_hook),
+    (lambda t: bool(re.search(r"\btool[- ]?(holder|rack|organi[sz]er)\b", t)), _plan_tool_holder),
+    (lambda t: bool(re.search(r"\bcasing\b", t)) or "simple case" in t, _plan_casing),
+    (lambda t: bool(re.search(r"\bstand\b", t)), _plan_stand),
+    (lambda t: (bool(re.search(r"\bhandle\b|\bgrip\b", t)) or "drawer pull" in t
+                or "door pull" in t) and "screwdriver" not in t, _plan_handle_grip),
     (lambda t: "plate" in t, _plan_plate),
 ]
 

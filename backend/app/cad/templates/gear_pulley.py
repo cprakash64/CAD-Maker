@@ -53,11 +53,15 @@ class GearPulleyTemplate(BaseTemplate):
             root_r = od / 2.0 - th
             if root_r <= bore / 2.0:
                 raise CadGenerationError("teeth too tall for this diameter/bore")
-            part = cq.Workplane("XY").circle(root_r).extrude(thk)
-            tw = max(1.0, 2 * math.pi * root_r / (teeth * 2.2))
-            for k in range(teeth):
-                ang = 2 * math.pi * k / teeth
-                part = part.union(_tooth_solid(root_r, th, tw, thk, ang))
+            # Build the cog as a SINGLE closed profile (one wire -> one manifold
+            # prism). Unioning N separate tooth boxes onto a disc produced tangent
+            # / coincident faces and a non-manifold, non-watertight mesh that
+            # failed validation; an extruded gear outline is watertight by
+            # construction. Tooth profile = trapezoidal castellation alternating
+            # between tip radius (tooth) and root radius (gap).
+            part = cq.Workplane("XY").polyline(
+                _gear_profile_points(od / 2.0, root_r, teeth)
+            ).close().extrude(thk)
         else:
             # Pulley: disc with a central rim groove.
             part = cq.Workplane("XY").circle(od / 2.0).extrude(thk)
@@ -96,13 +100,22 @@ class GearPulleyTemplate(BaseTemplate):
         return part
 
 
-def _tooth_solid(root_r, th, tw, thk, ang):
-    cx = (root_r + th / 2) * math.cos(ang)
-    cy = (root_r + th / 2) * math.sin(ang)
-    return (
-        cq.Workplane("XY")
-        .center(cx, cy)
-        .rect(th, tw)
-        .extrude(thk)
-        .rotate((cx, cy, 0), (cx, cy, 1), math.degrees(ang))
-    )
+def _gear_profile_points(tip_r: float, root_r: float, teeth: int,
+                         tooth_fraction: float = 0.5) -> list[tuple[float, float]]:
+    """Vertices of a single closed cog outline, traversed once anticlockwise.
+
+    Each pitch contributes a tooth (at ``tip_r``) followed by a gap (at
+    ``root_r``); the resulting polygon is simple (non self-intersecting) and
+    extrudes to one watertight, manifold solid with ``teeth`` outer corners.
+    """
+    pts: list[tuple[float, float]] = []
+    pitch = 2 * math.pi / teeth
+    half = max(0.1, min(0.9, tooth_fraction)) * pitch
+    for k in range(teeth):
+        a0 = k * pitch
+        # Tooth flank up to the tip, across the tip, and back down to the root.
+        pts.append((root_r * math.cos(a0), root_r * math.sin(a0)))
+        pts.append((tip_r * math.cos(a0), tip_r * math.sin(a0)))
+        pts.append((tip_r * math.cos(a0 + half), tip_r * math.sin(a0 + half)))
+        pts.append((root_r * math.cos(a0 + half), root_r * math.sin(a0 + half)))
+    return pts

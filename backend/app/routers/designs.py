@@ -159,6 +159,10 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         decomposition=(design.semantic_json or {}).get("decomposition"),
         design_mode=(design.semantic_json or {}).get("design_mode"),
         classification=(design.semantic_json or {}).get("classification"),
+        understanding=(design.semantic_json or {}).get("understanding"),
+        generation_outcome=((design.semantic_json or {}).get("contract") or {}).get("outcome"),
+        clarification_options=(design.semantic_json or {}).get("clarification_options") or [],
+        telemetry=(design.semantic_json or {}).get("telemetry"),
     )
 
 

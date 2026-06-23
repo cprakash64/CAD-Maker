@@ -201,6 +201,38 @@ def _detect_dedicated_part_family(low: str) -> str | None:
         return "u_bracket"
     if re.search(r"\bhinge\b", low):
         return "hinge_bracket"
+    # Everyday concept-fallback families — mirror the deterministic planner's
+    # dispatch order so the classifier names the same family the generator builds.
+    concept = _detect_concept_family(low)
+    if concept:
+        return concept
+    return None
+
+
+# family_id for each everyday concept-fallback family, detected the same way the
+# deterministic planner (_FAMILIES) routes them, most-specific-first.
+def _detect_concept_family(low: str) -> str | None:
+    if re.search(r"\bhammer\b|\bmallet\b", low):
+        return "hammer"
+    if re.search(r"\bwrench(?:es)?\b|\bspanner\b", low):
+        return "wrench"
+    if re.search(r"\bpliers?\b", low):
+        return "pliers"
+    if re.search(r"\bfan\b|\bimpeller\b", low):
+        return "fan_blade"
+    if re.search(r"\bwheel\b", low):
+        return "wheel"
+    if re.search(r"\bhook\b", low):
+        return "hook"
+    if re.search(r"\btool[- ]?(holder|rack|organi[sz]er)\b", low):
+        return "tool_holder"
+    if re.search(r"\bcasing\b", low) or "simple case" in low:
+        return "simple_casing"
+    if re.search(r"\bstand\b", low):
+        return "generic_stand"
+    if (re.search(r"\bhandle\b|\bgrip\b", low) or "drawer pull" in low
+            or "door pull" in low) and "screwdriver" not in low:
+        return "generic_handle"
     return None
 
 

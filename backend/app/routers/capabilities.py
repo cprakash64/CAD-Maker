@@ -44,13 +44,59 @@ def _family_payload(fam) -> dict:
     }
 
 
+# Categories we deliberately do NOT generate as one free-form part — surfaced so
+# the UI can set honest expectations instead of letting them fail silently.
+_UNSUPPORTED_CATEGORIES = [
+    {
+        "category": "Whole machines / vehicles",
+        "examples": ["a complete car", "an aircraft", "a full drone with electronics"],
+        "handling": "Decomposed into buildable single parts (needs_decomposition).",
+    },
+    {
+        "category": "Multi-system assemblies",
+        "examples": ["a gearbox with internals", "an engine", "a robot with joints"],
+        "handling": "Asked to pick one component, or decomposed.",
+    },
+    {
+        "category": "Free-form / organic surfaces",
+        "examples": ["a sculpted ergonomic grip", "an aerodynamic body shell"],
+        "handling": "Approximated from primitives or a clarification is requested; "
+                    "no broken free-form geometry is shipped.",
+    },
+    {
+        "category": "Standards-driven / certified parts",
+        "examples": ["an ASME flange to spec", "an involute power-transmission gear"],
+        "handling": "Built as geometry only and clearly labelled concept — not "
+                    "standards-certified.",
+    },
+]
+
+# Vague category prompts that trigger a clarification with ready-to-run options.
+_NEEDS_CLARIFICATION_EXAMPLES = [
+    {"prompt": "Make a bracket", "why": "No bracket type or dimensions given."},
+    {"prompt": "Make a mount", "why": "Ambiguous — many mount types."},
+    {"prompt": "Make a holder", "why": "No object, size, or hole count given."},
+]
+
+
 @router.get("/capabilities")
 def list_capabilities() -> dict:
-    """Return the full CAD family catalog with maturity, examples and limits."""
+    """Return the full CAD family catalog with maturity, examples and limits, plus
+    grouped views (production-ready / concept-ready), clarification examples,
+    unsupported categories, and the internal defaults the engine fills in."""
+    from app.cad.standards import defaults as std_defaults
+    from app.services.design_service import VAGUE_SUGGESTIONS
+
     families = [_family_payload(f) for f in all_families()]
     by_maturity: dict[str, int] = {}
     for f in families:
         by_maturity[f["maturity"]] = by_maturity.get(f["maturity"], 0) + 1
+
+    production_ready = [f for f in families if f["maturity"] == "production_ready"]
+    concept_ready = [f for f in families
+                     if f["maturity"] in ("concept", "beta") and f["exportable"]]
+    known_limitations = sorted({lim for f in families for lim in f["known_limitations"]})
+
     return {
         "families": families,
         "maturity_levels": _MATURITY_MEANING,
@@ -58,11 +104,23 @@ def list_capabilities() -> dict:
             "total": len(families),
             "by_maturity": by_maturity,
         },
+        # Grouped views for the frontend.
+        "production_ready_families": production_ready,
+        "concept_ready_families": concept_ready,
+        "needs_clarification_examples": _NEEDS_CLARIFICATION_EXAMPLES,
+        "clarification_suggestions": VAGUE_SUGGESTIONS,
+        "unsupported_categories": _UNSUPPORTED_CATEGORIES,
+        "known_limitations": known_limitations,
+        # Internal (NOT standards-certified) defaults the engine fills in.
+        "internal_defaults": std_defaults.as_dict(),
         "notes": [
             "This catalog is generated from the backend family registry, so it "
             "reflects exactly what the engine routes to — no fake capabilities.",
             "'validated' means: STEP+STL exported, non-empty, bounding box within "
             "tolerance of the request, and expected hole counts matched.",
-            "'concept' assemblies (e.g. tubular chassis) are not FEA-certified.",
+            "'concept' parts/assemblies are geometry only — not FEA- or "
+            "standards-certified.",
+            "Default dimensions are SourceCAD internal defaults, not ASME/ISO/"
+            "Machinery's Handbook certified.",
         ],
     }

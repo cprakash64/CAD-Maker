@@ -868,6 +868,75 @@ def _attach_classification(db: Session, design: Design, classification) -> None:
     db.refresh(design)
 
 
+def _attach_contract(db: Session, design: Design, prompt: str) -> None:
+    """Record the prompt understanding + the resolved universal-contract terminal
+    state on the design. Advisory metadata: it reports what happened, it never
+    re-routes or alters geometry. Committed in place."""
+    from app.cad.contract import contract_metadata
+    from app.cad.understanding import understand_prompt
+
+    semantic = dict(design.semantic_json or {})
+    try:
+        semantic["understanding"] = understand_prompt(prompt).to_dict()
+    except Exception:  # noqa: BLE001 — understanding is best-effort metadata
+        pass
+    contract = contract_metadata(design)
+    semantic["contract"] = contract
+    semantic["telemetry"] = _build_telemetry(design, semantic, contract)
+    design.semantic_json = semantic
+    db.add(design)
+    db.commit()
+    db.refresh(design)
+
+
+def _build_telemetry(design: Design, semantic: dict, contract: dict) -> dict:
+    """Flat, beta-testing telemetry: the routing/validation decisions for this
+    design in one place (also surfaced via the DTO)."""
+    cls = semantic.get("classification") or {}
+    understanding = semantic.get("understanding") or {}
+    return {
+        "route_selected": design.route,
+        "family_selected": cls.get("family_id") or understanding.get("family"),
+        "confidence": cls.get("confidence"),
+        "missing_fields": list(design.missing_required or []),
+        "generation_outcome": contract.get("outcome"),
+        "validation_status": reconciled_validation_status(design),
+        "repair_attempted": int(design.repair_attempts or 0) > 0,
+        "export_blocked": is_critical_failure(design),
+    }
+
+
+def _store_failed_safe(db: Session, design: Design, prompt: str, exc: Exception) -> Design:
+    """Last-resort safe landing: an unexpected error during generation must not
+    surface as a broken model or a 500. Reset the row to a geometry-free
+    `failed_safe` state with an honest, actionable message."""
+    db.rollback()
+    design = db.get(Design, design.id)
+    design.route = "failed_safe"
+    design.route_reason = "Generation could not produce safe geometry."
+    design.object_type = None
+    design.spec_json = None
+    design.preview_json = None
+    design.bounding_box = None
+    design.clarification_question = (
+        "I couldn't generate a safe model for that prompt. Try describing one "
+        "single mechanical part with its key dimensions (for example: 'a "
+        "rectangular plate 80x40x5mm with four 6mm holes')."
+    )
+    design.missing_required = [
+        "A single-part description with overall dimensions in mm",
+    ]
+    design.can_generate_with_defaults = False
+    design.semantic_json = {"failed_safe": {"error": type(exc).__name__}}
+    for old in list(design.exports):
+        db.delete(old)
+    for old in list(design.checks):
+        db.delete(old)
+    db.commit()
+    db.refresh(design)
+    return design
+
+
 def create_design(
     db: Session,
     prompt: str,
@@ -893,8 +962,24 @@ def create_design(
 
     classification = classify_prompt(prompt)
 
-    design = _dispatch_generation(db, design, prompt, classification)
+    # UNIVERSAL CONTRACT GUARANTEE: every prompt must leave generation in one
+    # of six safe terminal states. Known, intentional signals (LLM unavailable /
+    # CAD generation refused) keep propagating so the API renders them as clean
+    # 503/422 responses; ONLY an unexpected error is caught here and converted
+    # into a `failed_safe` design instead of a 500 with no usable result.
+    from app.llm.base import LLMUnavailableError
+
+    try:
+        design = _dispatch_generation(db, design, prompt, classification)
+    except (LLMUnavailableError, CadGenerationError):
+        raise
+    except Exception as exc:  # noqa: BLE001 — last-resort safety net
+        log_event("generation_failed_safe", design_id=design.id,
+                  error=type(exc).__name__, detail=str(exc)[:200])
+        design = _store_failed_safe(db, design, prompt, exc)
+
     _attach_classification(db, design, classification)
+    _attach_contract(db, design, prompt)
     return design
 
 
@@ -990,63 +1075,96 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
 DETERMINISTIC_FIRST_FAMILIES = frozenset({
     "l_bracket", "u_bracket", "hinge_bracket", "clamp_block",
     "robotic_arm_base_bracket", "screwdriver",
+    # Everyday concept-fallback families — built offline (single connected concept
+    # solids) so a casual everyday prompt never times out or hits free-form CAD.
+    "hammer", "wrench", "pliers", "wheel", "fan_blade", "hook",
+    "generic_handle", "tool_holder", "generic_stand", "simple_casing",
 })
 
 
-# Vague-prompt detection: a generic part word with no type and no dimension.
-_VAGUE_BRACKET_RE = re.compile(r"\bbracket\b", re.I)
+# Vague-prompt detection: a generic part CATEGORY word with no type and no
+# dimension ("make a bracket" / "a mount" / "a holder").
 _BRACKET_TYPE_RE = re.compile(
     r"\b(l|u|hinge|angle|flat|corner|gusset|shelf|mounting)[- ]?bracket\b", re.I)
+# Mount qualifiers that make a "mount" prompt specific enough to build.
+_MOUNT_QUALIFIER_RE = re.compile(
+    r"\b(motor|nema|stepper|engine|pipe|shock|servo|camera|sensor|wall|"
+    r"vibration|gpu|fan)\b", re.I)
+
+# Ready-to-run suggestions offered when a category prompt is too vague. Each
+# `prompt` is a complete, generatable request the UI can submit on one click.
+VAGUE_SUGGESTIONS: list[dict] = [
+    {"label": "L bracket",
+     "prompt": "An L bracket with 60mm legs, 5mm thick, 20mm wide, two 6mm holes per face"},
+    {"label": "U bracket",
+     "prompt": "A U bracket 80mm wide, 60mm tall, 6mm thick with two M6 base holes "
+               "and an 8mm pivot hole through each side wall"},
+    {"label": "Flat mounting plate",
+     "prompt": "A rectangular mounting plate 80x40x5mm with four 6mm holes"},
+    {"label": "Hinge bracket",
+     "prompt": "A hinge bracket with a 70x40x6mm base and two side ears 30mm tall, "
+               "6mm thick, with an 8mm pin hole through both ears"},
+    {"label": "Pipe clamp",
+     "prompt": "A pipe clamp for 32mm OD tube, 20mm wide, with two M5 holes"},
+    {"label": "Motor mount",
+     "prompt": "A NEMA 17 motor plate 60mm square, 6mm thick, with a 22mm center bore "
+               "and four M3 holes on a 31mm square pattern"},
+    {"label": "Shelf bracket",
+     "prompt": "A shelf bracket 120mm x 80mm x 5mm with a corner gusset and four "
+               "6mm mounting holes"},
+]
 
 
-def _vague_clarification(prompt: str) -> dict | None:
-    """Return clarification questions for a too-vague structural prompt, else
-    None. Conservative: only fires when there is NO dimension/number AND no
-    specific bracket type — so 'make a bracket' clarifies but 'an L bracket with
-    60mm legs' generates with defaults as before."""
+def _vague_category(prompt: str) -> str | None:
+    """The vague part category ('bracket' | 'mount' | 'holder'), or None. Only
+    fires with NO dimension/number AND no specific type — so 'make a bracket'
+    clarifies but 'an L bracket with 60mm legs' or 'motor mount' builds."""
     t = (prompt or "").strip().lower()
     if not t or re.search(r"\d", t):  # any number -> has real detail
         return None
-    if _VAGUE_BRACKET_RE.search(t) and not _BRACKET_TYPE_RE.search(t) \
+    if re.search(r"\bbracket\b", t) and not _BRACKET_TYPE_RE.search(t) \
             and "hinge" not in t and "gusset" not in t:
-        return {
-            "question": (
-                "I can build that, but I need a bit more detail so I don't guess "
-                "wrong: (1) Bracket type — L, U, flat, hinge, or angle? "
-                "(2) Overall size — length × width × thickness in mm? "
-                "(3) How many mounting holes, and what diameter?"
-            ),
-            "questions": [
-                "Bracket type: L, U, flat, hinge, or angle?",
-                "Overall dimensions (length × width × thickness in mm)?",
-                "How many mounting holes, and what diameter?",
-            ],
-        }
+        return "bracket"
+    if re.search(r"\bmount\b", t) and not _MOUNT_QUALIFIER_RE.search(t):
+        return "mount"
+    if re.search(r"\bholder\b", t) and "tool holder" not in t and "tool-holder" not in t:
+        return "holder"
     return None
 
 
-# Common everyday objects we do NOT have a deterministic family for. Freeform CAD
-# for these frequently yields disconnected/garbage geometry, so we clarify rather
-# than emit a failed model. (Supported everyday objects — screwdriver, knob — map
-# to a specific family and never reach this gate.)
-_UNSUPPORTED_EVERYDAY = (
-    "hammer", "mallet", "wrench", "spanner", "pliers", "plier", "saw",
-    "axe", "hatchet", "chisel", "crowbar", "shovel", "rake", "scissors",
-    "drill", "screw gun", "ratchet", "socket wrench",
-)
+def _vague_clarification(prompt: str) -> dict | None:
+    """Clarification (with clickable, ready-to-run suggestions) for a too-vague
+    category prompt, else None."""
+    category = _vague_category(prompt)
+    if category is None:
+        return None
+    return {
+        "question": (
+            f"I can build that, but \"{category}\" is broad — pick one of the "
+            "suggested parts below (each is ready to generate), or add a type and "
+            "key dimensions (e.g. length × width × thickness in mm and hole count)."
+        ),
+        "questions": [
+            f"Which kind of {category}? Choose a suggestion or name the type.",
+            "Overall dimensions (length × width × thickness in mm)?",
+            "How many mounting holes, and what diameter?",
+        ],
+        "options": VAGUE_SUGGESTIONS,
+    }
 
 
 def _everyday_object_clarification(prompt: str, classification) -> dict | None:
     """Clarification for an unsupported everyday object, else None. Only fires
     when the classifier did NOT map the prompt to a specific family (so supported
-    objects and detailed mechanical parts are unaffected)."""
+    objects and detailed mechanical parts are unaffected). The everyday-object
+    list lives in app.cad.understanding (single source of truth)."""
     from app.cad.families import GENERIC_PART_FAMILY
+    from app.cad.understanding import detect_unsupported_everyday
 
     fam_id = getattr(classification, "family_id", None)
     if fam_id and fam_id != GENERIC_PART_FAMILY:
         return None  # mapped to a real family -> generate normally
-    t = (prompt or "").lower()
-    obj = next((w for w in _UNSUPPORTED_EVERYDAY if re.search(rf"\b{re.escape(w)}\b", t)), None)
+    obj = detect_unsupported_everyday(prompt)
     if obj is None:
         return None
     return {
@@ -1074,7 +1192,11 @@ def _store_clarification(db: Session, design: Design, clar: dict,
     design.missing_required = clar.get("questions", [])
     design.can_generate_with_defaults = False
     design.spec_json = None
-    design.semantic_json = None
+    # Ready-to-run family suggestions (clickable in the UI) live in semantic_json
+    # so the DTO can surface them; classification/contract metadata is merged in
+    # afterwards by _attach_classification / _attach_contract.
+    options = clar.get("options")
+    design.semantic_json = {"clarification_options": options} if options else None
     design.object_type = None
     log_event("prompt_parsed", design_id=design.id, provider="deterministic",
               routed="clarification", produced_spec=False,

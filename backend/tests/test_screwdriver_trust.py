@@ -83,15 +83,17 @@ def test_phillips_screwdriver_fused_and_noted():
                for a in plan.assumptions)
 
 
-# --- D) unsupported everyday object clarifies (never a failed model) -------
-def test_hammer_clarifies_instead_of_failing(client, auth):
+# --- D) everyday object generates a connected concept (never a failed model) -
+def test_hammer_generates_connected_concept(client, auth):
+    """A hammer now has a concept-fallback family: it builds one connected,
+    labelled concept solid instead of clarifying or failing."""
     r = _create(client, auth, "Make a hammer")
     assert r.status_code == 200, r.text
     d = r.json()
-    assert d["needs_clarification"] is True
-    assert d["clarification_question"]
+    assert d["needs_clarification"] is False
     assert d["validation_status"] != "critical_failure"
-    assert d["exports"] == []
+    assert {e["fmt"] for e in d["exports"]} == {"stl", "step"}
+    assert any("concept" in a.lower() for a in d["assumptions"])
 
 
 # --- E) single-part disconnected repair guard -----------------------------
