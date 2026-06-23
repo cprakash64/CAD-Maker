@@ -284,6 +284,42 @@ def _attempt_recovery(prompt: str, plan, outcome, provider):
     return plan, outcome, (candidates[0][0] if candidates else None), False
 
 
+def _try_deterministic_part(db: Session, design: Design, prompt: str,
+                            parse_start: float) -> Design | None:
+    """Build a dedicated hard single part (robotic arm base, U bracket, hinge,
+    clamp block) straight from the OFFLINE deterministic planner — no LLM call,
+    so it can never time out behind a provider. Returns the finished design, or
+    None to fall back to the normal pipeline if the deterministic plan declines
+    or the build doesn't validate cleanly."""
+    from app.cad.base import CadGenerationError
+    from app.cad.plan import deterministic
+    from app.cad.plan.audit import audit_plan
+    from app.cad.plan.normalize import normalize_cad_plan
+    from app.cad.plan.planner import build_and_validate
+
+    plan = deterministic.plan(prompt)
+    if plan is None or plan.clarification_required or not plan.features:
+        return None
+    plan = normalize_cad_plan(plan, prompt)
+    try:
+        outcome = build_and_validate(plan)
+    except CadGenerationError:
+        return None
+    if outcome is None or not outcome.report.passed:
+        return None
+    audit = audit_plan(prompt, plan, outcome.result)
+    recovery = {"attempted": False, "strategy": None, "succeeded": False}
+    _store_plan(db, design, plan, outcome, repair_attempts=0, audit=audit, recovery=recovery)
+    log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+              routed="deterministic_part", produced_spec=True,
+              validated=outcome.report.passed,
+              validation_status=_outcome_status(outcome),
+              latency_ms=elapsed_ms(parse_start))
+    db.commit()
+    db.refresh(design)
+    return design
+
+
 def _try_cad_plan(db: Session, design: Design, prompt: str, parse_start: float) -> Design | None:
     """Primary route: plain English -> CadPlan -> deterministic CadQuery compile
     -> validate -> (one repair pass). Returns the finished/clarification design,
@@ -856,20 +892,29 @@ def create_design(
 
     classification = classify_prompt(prompt)
 
-    design = _dispatch_generation(db, design, prompt)
+    design = _dispatch_generation(db, design, prompt, classification)
     _attach_classification(db, design, classification)
     return design
 
 
-def _dispatch_generation(db: Session, design: Design, prompt: str) -> Design:
-    # SUPPORTED DETERMINISTIC FRAME / CONCEPT-ASSEMBLY FAMILIES (machine frame,
-    # engine test stand, drone frame, motorcycle subframe, skateboard motor
-    # mount). These are built deterministically with CadQuery — NO LLM call — so
-    # hard structural prompts that used to time out or decompose now produce a
-    # validated concept model fast. On any build failure we fall through to the
-    # existing complexity gate / generation, so behavior degrades gracefully.
+# Dedicated single-part families that have a robust DETERMINISTIC builder. For
+# these we route to the offline planner directly — even when an LLM provider is
+# configured — so hard parts never wait on (or time out behind) an OpenAI call.
+HARD_DETERMINISTIC_PARTS = frozenset({
+    "robotic_arm_base_bracket", "u_bracket", "hinge_bracket", "clamp_block",
+})
+
+
+def _dispatch_generation(db: Session, design: Design, prompt: str,
+                         classification=None) -> Design:
+    # DETERMINISTIC-FIRST HARD-PROMPT ROUTER. Supported hard families are built
+    # offline (no OpenAI call, so they can't time out). Order: structural-frame /
+    # concept assemblies, then chassis, then dedicated deterministic single
+    # parts. Anything else falls through to the complexity gate / LLM pipeline.
     from app.cad.assembly.frames import detect_frame_family
 
+    # 1) Frame / concept-assembly families (machine frame, CNC router, engine
+    #    test stand, drone, motorcycle subframe, skateboard motor mount).
     frame_family = detect_frame_family(prompt)
     if frame_family:
         try:
@@ -878,6 +923,17 @@ def _dispatch_generation(db: Session, design: Design, prompt: str) -> Design:
             log_event("frame_generation_failed", design_id=design.id,
                       family=frame_family, detail=str(exc)[:200])
             # fall through to the complexity gate / generation below.
+
+    parse_start = time.perf_counter()
+
+    # 2) Dedicated deterministic single parts (robotic arm base, U bracket,
+    #    hinge, clamp block) — bypass OpenAI when classification is confident.
+    fam_id = getattr(classification, "family_id", None)
+    if fam_id in HARD_DETERMINISTIC_PARTS:
+        built = _try_deterministic_part(db, design, prompt, parse_start)
+        if built is not None:
+            return built
+        # else: deterministic builder declined -> normal pipeline below.
 
     # COMPLEXITY GATE (cheap, no LLM/CAD): whole machines / large multi-subsystem
     # assemblies (car chassis, airframe, ...) are guided to decomposition fast
@@ -894,12 +950,23 @@ def _dispatch_generation(db: Session, design: Design, prompt: str) -> Design:
             except CadGenerationError as exc:
                 log_event("assembly_generation_failed", design_id=design.id,
                           detail=str(exc)[:200])
+        # EXPLICIT FALLBACK COMPONENT: when the prompt grants permission ("if too
+        # complex, generate the <X> first"), build that primary component instead
+        # of returning generic decomposition.
+        from app.cad.assembly.frames import detect_fallback_directive
+
+        fallback = detect_fallback_directive(prompt)
+        if fallback:
+            try:
+                return _try_frame_family(db, design, prompt, fallback)
+            except CadGenerationError as exc:
+                log_event("fallback_generation_failed", design_id=design.id,
+                          family=fallback, detail=str(exc)[:200])
         _store_decomposition(db, design, assessment)
         log_event("prompt_decomposition_required", design_id=design.id,
                   subsystems=len(assessment.subsystems))
         return design
 
-    parse_start = time.perf_counter()
     # Bound the TOTAL generation time (all model fallbacks + repair passes) so a
     # request can never hang for minutes; exceeding it raises LLMUnavailableError
     # which the API surfaces as a clean 503.

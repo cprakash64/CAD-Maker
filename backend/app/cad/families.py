@@ -483,6 +483,33 @@ _FAMILIES: tuple[CADFamily, ...] = (
     ),
     # ---- Concept structural-frame & vehicle assemblies ------------------
     CADFamily(
+        family_id="cnc_router_frame",
+        display_name="Desktop CNC router frame (concept)",
+        design_mode=DesignMode.assembly,
+        maturity=Maturity.concept,
+        keywords=("cnc router", "cnc mill", "router frame", "cnc frame", "cnc gantry"),
+        object_types=("cnc_router_frame",),
+        required_dimensions=("length", "width", "height"),
+        optional_dimensions=("extrusion size", "gantry", "linear rails", "motor plates"),
+        default_assumptions=("Aluminium-extrusion-style base + bed cross-members + gantry",
+                             "Separate base / bed / gantry metadata groups"),
+        generator="cad.assembly.frames.build_cnc_router_frame",
+        generation_strategy=GenerationStrategy.assembly_generator,
+        validation_profile="structural_frame_assembly",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "CONCEPT CAD — not FEA analyzed, not stiffness/accuracy validated; "
+            "requires engineering review before fabrication.",
+            "Extrusions exported as solid beams; linear-rail mounts are plain bores "
+            "(no rail/bearing profile modelled).",
+        ),
+        example_prompts=(
+            "A desktop CNC router frame 900x700x350mm with aluminium-extrusion-style "
+            "rails, gantry side plates, bed cross-members, motor mount plates and "
+            "linear rail mounting holes, separating base, gantry and bed",
+        ),
+    ),
+    CADFamily(
         family_id="machine_frame",
         display_name="Welded machine frame (concept)",
         design_mode=DesignMode.assembly,

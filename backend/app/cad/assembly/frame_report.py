@@ -79,6 +79,7 @@ def build_frame_report(build: AssemblyBuild, stl_bytes: bytes, step_bytes: bytes
     req = build.requirements
     roles = collections.Counter(m.role for m in build.members)
     roles_present = set(roles)
+    groups = collections.Counter(m.system for m in build.members)
 
     measured = {
         "bbox_mm": brep["bbox_mm"],
@@ -90,6 +91,7 @@ def build_frame_report(build: AssemblyBuild, stl_bytes: bytes, step_bytes: bytes
         "plate_count": sum(1 for m in build.members if m.kind == "plate"),
         "hole_feature_count": build.total_holes(),
         "roles_present": sorted(roles_present),
+        "groups": dict(groups),
         "mesh_components": mesh["components"],
         "watertight": mesh["watertight"],
         "manifold": mesh["manifold"],
@@ -114,6 +116,12 @@ def build_frame_report(build: AssemblyBuild, stl_bytes: bytes, step_bytes: bytes
     if missing_roles:
         crit.append("Missing required components: "
                     + ", ".join(r.replace("_", " ") for r in missing_roles) + ".")
+
+    # Required metadata groups (e.g. CNC router: base / bed / gantry).
+    required_groups = req.get("required_groups", [])
+    missing_groups = [g for g in required_groups if g not in groups]
+    if missing_groups:
+        crit.append("Missing required groups: " + ", ".join(missing_groups) + ".")
 
     # Component-count floor + hole floor (advisory).
     min_components = req.get("min_components", 0)

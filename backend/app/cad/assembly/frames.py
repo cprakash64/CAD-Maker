@@ -552,13 +552,166 @@ def _find(prompt: str, pattern: str, default: float) -> float:
     return float(m.group(1)) if m else default
 
 
+def build_square_tube_frame(prompt: str, *, family_id: str = "square_tube_frame",
+                            display_name: str = "Square-tube frame",
+                            decomposition_note: str | None = None) -> AssemblyBuild:
+    """Generic reusable square-tube structural frame: four legs, top & bottom
+    rectangular frames, diagonal braces and leveling foot plates. Also used as
+    the buildable fallback 'base frame' for unsupported assembly requests."""
+    L, W, H = parse_lwh(prompt, (1000.0, 700.0, 800.0))
+    s = parse_tube_size(prompt, 40.0)
+    members: list[Member] = []
+    members += _legs(L, W, H, s)
+    members += _rect_frame_beams("top_frame", "frame", H - s / 2, L, W, s, "top_rail")
+    members += _rect_frame_beams("bottom_frame", "frame", s / 2, L, W, s, "bottom_rail")
+    hx, hy = L / 2, W / 2
+    sec = (s, s)
+    members.append(Member("brace_left", "brace", "braces", "beam",
+                          (-hx, hy, s), (hx, hy, H - s), section=sec))
+    members.append(Member("brace_right", "brace", "braces", "beam",
+                          (-hx, -hy, s), (hx, -hy, H - s), section=sec))
+    members += _foot_plates(L, W, s, 11.0)
+    requirements = {
+        "min_components": 14,
+        "required_roles": ["leg", "top_rail", "bottom_rail", "brace", "foot_plate"],
+        "min_legs": 4, "min_foot_plates": 4, "min_holes": 16,
+        "envelope": {"x": L, "y": W, "z": H},
+    }
+    meta = {"tube_profile": "square", "tube_size_mm": s, "tube_wall_thickness_mm": 3.0,
+            "material": "Welded steel (concept)"}
+    notes = [f"Square steel tubing {s:g}×{s:g}mm; wall thickness carried as cut-list "
+             "metadata.", *_CONCEPT_NOTES]
+    return assemble(members, family_id=family_id, display_name=display_name,
+                    design_mode="assembly", profile="structural_frame_assembly",
+                    envelope_mm={"x": L, "y": W, "z": H}, meta=meta,
+                    requirements=requirements, notes=notes,
+                    decomposition_note=decomposition_note)
+
+
+def build_round_tube_frame(prompt: str, *, family_id: str = "round_tube_frame",
+                           display_name: str = "Round-tube frame") -> AssemblyBuild:
+    """Generic reusable round-tube structural frame (cylindrical members)."""
+    L, W, H = parse_lwh(prompt, (1000.0, 700.0, 800.0))
+    od = parse_tube_size(prompt, 40.0)
+    wall = 2.5
+    hx, hy = L / 2, W / 2
+    members: list[Member] = []
+
+    def tube(cid, role, system, a, b):
+        members.append(Member(cid, role, system, "tube", a, b, od=od, wall=wall))
+
+    corners = [("fl", -hx, hy), ("fr", -hx, -hy), ("rl", hx, hy), ("rr", hx, -hy)]
+    for name, x, y in corners:
+        tube(f"leg_{name}", "leg", "legs", (x, y, 0), (x, y, H))
+    for z, role in ((H - od / 2, "top_rail"), (od / 2, "bottom_rail")):
+        tube(f"{role}_front", role, "frame", (-hx, -hy, z), (-hx, hy, z))
+        tube(f"{role}_rear", role, "frame", (hx, -hy, z), (hx, hy, z))
+        tube(f"{role}_left", role, "frame", (-hx, hy, z), (hx, hy, z))
+        tube(f"{role}_right", role, "frame", (-hx, -hy, z), (hx, -hy, z))
+    tube("brace_left", "brace", "braces", (-hx, hy, od), (hx, hy, H - od))
+    tube("brace_right", "brace", "braces", (-hx, -hy, od), (hx, -hy, H - od))
+    members += _foot_plates(L, W, od, 11.0)
+    requirements = {
+        "min_components": 12,
+        "required_roles": ["leg", "top_rail", "bottom_rail", "brace", "foot_plate"],
+        "min_legs": 4, "min_holes": 16,
+        "envelope": {"x": L, "y": W, "z": H},
+    }
+    meta = {"tube_profile": "round", "tube_od_mm": od, "tube_wall_thickness_mm": wall,
+            "material": "Steel tube (concept)"}
+    notes = [f"Round steel tube Ø{od:g}mm × {wall:g}mm wall (exported as solid "
+             "cylinders; wall carried as cut-list metadata).", *_CONCEPT_NOTES]
+    return assemble(members, family_id=family_id, display_name=display_name,
+                    design_mode="assembly", profile="structural_frame_assembly",
+                    envelope_mm={"x": L, "y": W, "z": H}, meta=meta,
+                    requirements=requirements, notes=notes)
+
+
+def build_cnc_router_frame(prompt: str) -> AssemblyBuild:
+    """Desktop CNC router frame concept with clearly separated BASE, BED and
+    GANTRY groups: an aluminium-extrusion-style base rectangle, bed
+    cross-members, linear-rail mounting strips, two gantry side plates, a gantry
+    bridge beam and motor mount plates."""
+    L, W, H = parse_lwh(prompt, (900.0, 700.0, 350.0))
+    ext = parse_tube_size(prompt, 40.0)   # aluminium extrusion section
+    hx, hy = L / 2, W / 2
+    sec = (ext, ext)
+    z_base = ext / 2
+    members: list[Member] = []
+
+    # --- BASE: extrusion-style perimeter rails -------------------------------
+    members.append(Member("base_rail_front", "base_rail", "base", "beam",
+                          (-hx, -hy, z_base), (-hx, hy, z_base), section=sec))
+    members.append(Member("base_rail_rear", "base_rail", "base", "beam",
+                          (hx, -hy, z_base), (hx, hy, z_base), section=sec))
+    members.append(Member("base_rail_left", "base_rail", "base", "beam",
+                          (-hx, hy, z_base), (hx, hy, z_base), section=sec))
+    members.append(Member("base_rail_right", "base_rail", "base", "beam",
+                          (-hx, -hy, z_base), (hx, -hy, z_base), section=sec))
+
+    # --- BED: cross-members spanning the width + linear-rail mounting strips --
+    n_cross = 4
+    xs = [-hx + ext + (L - 2 * ext) * i / (n_cross - 1) for i in range(n_cross)]
+    for i, x in enumerate(xs):
+        members.append(Member(f"bed_crossmember_{i}", "bed_crossmember", "bed", "beam",
+                              (x, -hy + ext, z_base), (x, hy - ext, z_base), section=sec))
+    # Linear-rail mounting strips on the two long sides, with rail bolt holes.
+    rail_holes = max(4, int((L - 2 * ext) / 80))
+    for name, y in (("left", hy - ext / 2), ("right", -hy + ext / 2)):
+        members.append(Member(f"linear_rail_mount_{name}", "linear_rail_mount", "bed", "plate",
+                              center=(0, y, ext + 3.0), size=(L - 2 * ext, ext * 0.8, 6.0),
+                              bolt_holes=rail_holes, hole_dia=5.5))
+
+    # --- GANTRY: side plates + bridge beam + motor mount plates ---------------
+    gx = 0.0                       # gantry sits mid-table
+    plate_x = min(180.0, L * 0.25)
+    gantry_h = H - ext
+    for name, y in (("left", hy - ext / 2), ("right", -hy + ext / 2)):
+        members.append(Member(f"gantry_side_plate_{name}", "gantry_side_plate", "gantry", "plate",
+                              center=(gx, y, ext + gantry_h / 2),
+                              size=(plate_x, 12.0, gantry_h), bolt_holes=4, hole_dia=6.6))
+    members.append(Member("gantry_bridge", "gantry_bridge", "gantry", "beam",
+                          (gx, hy - ext, H - ext / 2), (gx, -hy + ext, H - ext / 2),
+                          section=(ext, ext)))
+    # Motor mount plates: X/Y on the gantry, plus a Z motor plate on the bridge.
+    members.append(Member("motor_plate_x", "motor_plate", "gantry", "plate",
+                          center=(gx + plate_x / 2, hy - ext, ext + gantry_h * 0.8),
+                          size=(70, 70, 8.0), bolt_holes=4, hole_dia=4.5, bore_dia=22.0))
+    members.append(Member("motor_plate_z", "motor_plate", "gantry", "plate",
+                          center=(gx, 0, H - ext), size=(70, 70, 8.0),
+                          bolt_holes=4, hole_dia=4.5, bore_dia=22.0))
+
+    requirements = {
+        "min_components": 14,
+        "required_roles": ["base_rail", "bed_crossmember", "linear_rail_mount",
+                           "gantry_side_plate", "gantry_bridge", "motor_plate"],
+        "min_holes": 12,
+        "envelope": {"x": L, "y": W, "z": H},
+        "required_groups": ["base", "bed", "gantry"],
+    }
+    meta = {"tube_profile": "aluminium_extrusion", "extrusion_size_mm": ext,
+            "groups": ["base", "bed", "gantry"], "material": "Aluminium extrusion (concept)"}
+    notes = [f"Aluminium-extrusion-style members {ext:g}×{ext:g}mm exported as solid "
+             "beams; clearly separated base / bed / gantry metadata groups.",
+             "Linear-rail mounting holes are plain bores (no rail profile modelled).",
+             *_CONCEPT_NOTES]
+    return assemble(members, family_id="cnc_router_frame",
+                    display_name="Desktop CNC router frame", design_mode="assembly",
+                    profile="structural_frame_assembly",
+                    envelope_mm={"x": L, "y": W, "z": H}, meta=meta,
+                    requirements=requirements, notes=notes)
+
+
 # --- detection + dispatch ---------------------------------------------------
 _BUILDERS = {
+    "cnc_router_frame": build_cnc_router_frame,
     "machine_frame": build_machine_frame,
     "engine_test_stand": build_engine_test_stand,
     "drone_frame": build_drone_frame,
     "motorcycle_subframe": build_motorcycle_subframe,
     "skateboard_motor_mount": build_skateboard_motor_mount,
+    "square_tube_frame": build_square_tube_frame,
+    "round_tube_frame": build_round_tube_frame,
 }
 
 
@@ -572,6 +725,10 @@ def detect_frame_family(prompt: str) -> str | None:
     # Leave vehicle chassis / roll cage to the chassis generator.
     if re.search(r"\bchassis\b|\broll ?cage\b|\bspace ?frame\b", t):
         return None
+    if re.search(r"\bcnc\b", t) and re.search(r"router|mill|gantry|machine", t):
+        return "cnc_router_frame"
+    if "cnc router" in t or ("router frame" in t and "gantry" in t):
+        return "cnc_router_frame"
     if re.search(r"\bdrone\b|\bquad ?copter\b|\bquadrotor\b", t):
         return "drone_frame"
     if "motorcycle" in t and re.search(r"sub[- ]?frame|rear frame", t):
@@ -594,3 +751,28 @@ def build_frame_family(prompt: str, family_id: str) -> AssemblyBuild:
     if builder is None:
         raise CadGenerationError(f"no frame builder for '{family_id}'")
     return builder(prompt)
+
+
+# Phrases that grant permission to build only a primary component when the full
+# assembly is too complex, e.g. "if this is too complex, generate the base frame
+# first" or "generate the main motor mount bracket first".
+_FALLBACK_RE = re.compile(
+    r"(?:if[^.]{0,60}?too complex[^.]{0,80}?)?generate (?:the |a |an )?"
+    r"(?P<what>[a-z][a-z \-]{2,40}?) first", re.I)
+
+
+def detect_fallback_directive(prompt: str) -> str | None:
+    """If the prompt explicitly permits building a single primary component when
+    the whole thing is too complex, return the buildable family for that
+    component (else None). Used so an otherwise-unsupported huge prompt produces
+    a useful part instead of generic decomposition."""
+    t = (prompt or "").lower()
+    m = _FALLBACK_RE.search(t)
+    if not m:
+        return None
+    what = m.group("what")
+    if "motor mount" in what:
+        return "skateboard_motor_mount" if "skateboard" in t else "skateboard_motor_mount"
+    if "frame" in what:  # base frame / main frame / base rectangular frame
+        return "square_tube_frame"
+    return None

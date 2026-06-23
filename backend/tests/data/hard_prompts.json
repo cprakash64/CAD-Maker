@@ -2,6 +2,22 @@
   "description": "Hard-prompt benchmark for the robust deterministic assembly/frame generators and dedicated medium-part families. Each case is built end-to-end (deterministic CadQuery, no LLM) and must produce validated, exportable CAD instead of timing out or returning generic decomposition. Asserts classification, design mode, that geometry is generated (not decomposed), validation is not a critical failure, STEP+STL export, and that required components/features exist.",
   "cases": [
     {
+      "name": "cnc_router_frame",
+      "prompt": "Create a desktop CNC router frame concept, 900mm x 700mm x 350mm, with aluminum extrusion-style rails, gantry side plates, bed cross-members, motor mount plates, and linear rail mounting holes. Keep it parametric and clearly separate base, gantry, and bed.",
+      "expected_family_id": "cnc_router_frame",
+      "expected_design_mode": "assembly",
+      "expected_strategy": "assembly_generator",
+      "expects_generation": true,
+      "expects_decomposition": false,
+      "export_allowed": true,
+      "allowed_validation_status": ["pass", "warning"],
+      "approx_envelope_mm": {"x": 900, "y": 700, "z": 350},
+      "required_roles": ["base_rail", "bed_crossmember", "linear_rail_mount", "gantry_side_plate", "gantry_bridge", "motor_plate"],
+      "required_groups": ["base", "bed", "gantry"],
+      "min_components": 14,
+      "min_holes": 12
+    },
+    {
       "name": "machine_frame",
       "prompt": "Create a welded steel machine frame 1200mm long, 800mm wide, and 900mm tall using 40mm square tubing. Include four vertical legs, top and bottom rectangular frames, diagonal braces, leveling foot plates with bolt holes, motor mounting plate, and a removable electronics panel.",
       "expected_family_id": "machine_frame",

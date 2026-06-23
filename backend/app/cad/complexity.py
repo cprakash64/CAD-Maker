@@ -25,7 +25,9 @@ _MACHINE_PATTERNS = [
     "sports car", "roll cage", "rollcage", "engine bay", "transmission tunnel",
 ]
 
-# Distinct subsystems that, in numbers, signal an assembly rather than a part.
+# STRONG subsystem signals — these, in numbers, reliably indicate a whole
+# multi-subsystem machine rather than a single part, so they drive the
+# is_complex *threshold*. Kept conservative to avoid decomposing ordinary parts.
 _SUBSYSTEMS = [
     "suspension", "roll cage", "rollcage", "engine bay", "engine mount",
     "transmission", "drivetrain", "cross-member", "cross member", "crossmember",
@@ -33,6 +35,18 @@ _SUBSYSTEMS = [
     "body panel", "steering column", "subframe", "sub-frame", "roll bar",
     "floor pan", "bulkhead", "firewall", "differential", "exhaust system",
     "cooling system", "wheel hub", "suspension mount", "seat mount",
+]
+
+# BROADER, mechanical subsystem vocabulary used only to NAME detected systems in
+# decomposition guidance (so the UI never shows "0 subsystems detected"). These
+# do NOT lower the is_complex threshold — they only enrich the guidance once a
+# prompt is already deemed complex.
+_GUIDANCE_SUBSYSTEMS = _SUBSYSTEMS + [
+    "frame", "gantry", "bed", "rails", "linear rail", "rail", "motor mount",
+    "motor mounting", "motor plate", "mounting plate", "electronics panel",
+    "electronics", "control panel", "controller", "battery tray", "battery",
+    "bracket", "brackets", "gusset", "bearing", "axle", "actuator", "tray",
+    "panel", "leg", "base frame", "side plate", "bridge", "spindle",
 ]
 
 _ASSEMBLY_WORDS = [
@@ -81,12 +95,23 @@ class ComplexityAssessment:
         }
 
 
-def _found_subsystems(t: str) -> list[str]:
+def _found_in(t: str, vocab: list[str]) -> list[str]:
     seen: list[str] = []
-    for s in _SUBSYSTEMS:
+    for s in vocab:
         if s in t and s.replace("-", " ") not in [x.replace("-", " ") for x in seen]:
             seen.append(s)
     return seen
+
+
+def _found_subsystems(t: str) -> list[str]:
+    """Strong subsystem signals — used for the is_complex threshold."""
+    return _found_in(t, _SUBSYSTEMS)
+
+
+def _found_guidance_systems(t: str) -> list[str]:
+    """Broader detected systems — used to name components in guidance so the UI
+    shows useful systems instead of '0 subsystems detected'."""
+    return _found_in(t, _GUIDANCE_SUBSYSTEMS)
 
 
 def _has_machine(t: str) -> bool:
@@ -98,7 +123,7 @@ def assess_complexity(prompt: str) -> ComplexityAssessment:
 
     Pure string analysis — no LLM call. Conservative by design."""
     t = (prompt or "").lower()
-    subsystems = _found_subsystems(t)
+    subsystems = _found_subsystems(t)          # strong signals (drive threshold)
     machine = _has_machine(t)
     assembly_word = any(w in t for w in _ASSEMBLY_WORDS)
 
@@ -112,8 +137,11 @@ def assess_complexity(prompt: str) -> ComplexityAssessment:
 
     family = detect_assembly_family(t)
 
-    # Build human-friendly guidance from what we detected.
-    pretty = [s.replace("-", " ").title() for s in subsystems]
+    # Name detected systems using the broader vocabulary so guidance is specific
+    # (never "0 subsystems detected"). Fall back to the strong list, then to a
+    # generic-but-still-useful set.
+    detected = _found_guidance_systems(t) or subsystems
+    pretty = [s.replace("-", " ").title() for s in detected]
     components = pretty or ["Main frame", "Mounting brackets", "Sub-assemblies"]
     # Always lead with the simplest buildable unit.
     base_components = ["Main frame member / structural tube", *components]
@@ -127,7 +155,7 @@ def assess_complexity(prompt: str) -> ComplexityAssessment:
         "A rectangular mounting bracket 80mm × 40mm × 5mm with two M6 holes",
         "An L bracket with 60mm legs, 5mm thick, 20mm wide, two 6mm holes per face",
     ]
-    if any("suspension" in s or "mount" in s for s in subsystems):
+    if any("suspension" in s or "mount" in s for s in detected):
         examples.append(
             "A suspension mounting bracket: 60×40×6mm plate with a 12mm pivot hole"
         )
@@ -139,10 +167,18 @@ def assess_complexity(prompt: str) -> ComplexityAssessment:
         examples.append(
             "An engine mount bracket: 90×45×8mm plate with four M8 holes"
         )
+    if any(s in detected for s in ("gantry", "bed", "rails", "rail", "linear rail")):
+        examples.append(
+            "A single gantry side plate: 200×120×10mm with linear-rail bolt holes"
+        )
 
+    n_named = len(detected)
+    descriptor = (
+        f" ({'machine/vehicle, ' if machine else ''}{n_named} subsystems detected)"
+        if n_named else (" (whole machine/vehicle)" if machine else "")
+    )
     reason = (
-        "This describes a large multi-part assembly"
-        + (f" ({'machine/vehicle, ' if machine else ''}{len(subsystems)} subsystems detected)" if (machine or subsystems) else "")
+        "This describes a large multi-part assembly" + descriptor
         + ", which is beyond single-part generation. Generate one component at a "
         "time and assemble them, rather than the whole structure at once."
     )
@@ -151,7 +187,7 @@ def assess_complexity(prompt: str) -> ComplexityAssessment:
         is_complex=True,
         reason=reason,
         supported_family=family,
-        subsystems=subsystems,
+        subsystems=detected,
         components=base_components,
         recommended_first=recommended_first,
         examples=examples[:5],
