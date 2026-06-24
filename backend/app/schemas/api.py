@@ -90,6 +90,9 @@ class DesignDTO(BaseModel):
     project_id: str
     prompt: str
     object_type: Optional[str]
+    # Clean, family-accurate display name (e.g. "Spur gear", "Pulley", "Hex
+    # standoff", "Flange") — the UI shows this instead of the raw object_type.
+    title: Optional[str] = None
     spec: Optional[DesignSpec]
     assumptions: list[str] = []
     explanation: Optional[str] = None
@@ -184,6 +187,7 @@ class DesignSummaryDTO(BaseModel):
     project_id: str
     prompt: str
     object_type: Optional[str]
+    title: Optional[str] = None
     created_at: str
     updated_at: Optional[str] = None
     needs_clarification: bool = False

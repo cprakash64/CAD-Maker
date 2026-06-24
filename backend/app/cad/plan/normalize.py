@@ -33,7 +33,10 @@ def _holes_for(f: Feature) -> tuple[int, int]:
     if k == FeatureKind.circular_flange:
         bolts = int(f.p("bolt_count", 0, "holes", "count", "bolt_holes"))
         bore = 1 if (f.p("bore", 0, "center_bore", "id", "inner_diameter") > 0) else 0
-        return bolts, bolts + bore
+        # The center bore is a hole as well as a through-hole: count it in BOTH so
+        # the expected counts can never be the impossible "fewer holes than
+        # through-holes" (mirrors the compiler's _build_circular_flange).
+        return bolts + bore, bolts + bore
     if k == FeatureKind.pipe_spool:
         bolts = int(f.p("bolt_count", 8, "holes", "bolt_holes"))
         return bolts * 2, bolts * 2

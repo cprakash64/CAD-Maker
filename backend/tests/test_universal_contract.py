@@ -285,8 +285,8 @@ def test_vague_category_prompt_clarifies_with_clickable_options(client, auth, pr
     assert opts, f"{prompt!r} clarified with no suggested options"
     labels = {o["label"] for o in opts}
     # The promised family suggestions are present and each is a ready-to-run prompt.
-    assert {"L bracket", "U bracket", "Flat mounting plate", "Pipe clamp",
-            "Motor mount", "Shelf bracket", "Hinge bracket"} <= labels
+    assert {"L bracket", "U bracket", "Rectangular mounting plate", "Tube clamp",
+            "Motor mount plate", "Shelf bracket", "Hinge bracket"} <= labels
     for o in opts:
         assert o["prompt"] and len(o["prompt"]) > 20
 

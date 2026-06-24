@@ -63,11 +63,11 @@
           {"id": "flange", "kind": "circular_flange",
            "params": {"od": 100, "thickness": 12, "pcd": 80, "bolt_count": 6, "bolt_diameter": 9, "bore": 50}}
         ],
-        "expected": {"bbox_mm": {"x": 100, "y": 100, "z": 12}, "hole_count": 6, "through_hole_count": 7}
+        "expected": {"bbox_mm": {"x": 100, "y": 100, "z": 12}, "hole_count": 7, "through_hole_count": 7}
       },
       "expected": {
         "bbox_mm": {"x": 100, "y": 100, "z": 12},
-        "hole_count": 6, "through_hole_count": 7,
+        "hole_count": 7, "through_hole_count": 7,
         "volume_mm3": 66105.4, "volume_tol_frac": 0.02,
         "watertight": true, "max_components": 1, "printable": true
       }

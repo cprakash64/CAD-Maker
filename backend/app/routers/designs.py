@@ -86,6 +86,7 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         project_id=design.project_id,
         prompt=design.prompt,
         object_type=design.object_type,
+        title=design_service._display_title(design),
         spec=spec,
         assumptions=design.assumptions or [],
         explanation=design.explanation,
@@ -566,6 +567,7 @@ def list_designs(
             project_id=d.project_id,
             prompt=d.prompt,
             object_type=d.object_type,
+            title=design_service._display_title(d),
             created_at=d.created_at.isoformat(),
             updated_at=d.updated_at.isoformat(),
             needs_clarification=d.spec_json is None

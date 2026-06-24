@@ -153,6 +153,7 @@ def build_spec_report(
     *, requested_dimensions_mm: dict, bbox_mm: dict, volume_mm3: float,
     surface_area_mm2: float, hole_count: int, smallest_hole_mm: float | None,
     stl_bytes: bytes, object_type: str | None = None,
+    through_hole_count: int | None = None,
     requested_tooth_count: int | None = None,
     requested_gear_type: str | None = None,
     gear_intent: bool = False,
@@ -171,6 +172,8 @@ def build_spec_report(
         "bbox_mm": bbox_mm, "volume_mm3": volume_mm3,
         "surface_area_mm2": surface_area_mm2, "hole_count": hole_count, **mesh,
     }
+    if through_hole_count is not None:
+        measured["through_hole_count"] = through_hole_count
     pr = _print_readiness(measured, smallest_hole_mm)
 
     # Semantic gear audit: measure the rim's radial variation from the mesh and

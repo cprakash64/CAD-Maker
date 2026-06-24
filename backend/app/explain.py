@@ -19,9 +19,21 @@ _TYPE_NOUN = {
     "adapter_plate": "adapter plate",
     "inline_4_crankshaft": "inline-4 engine crankshaft",
     "flanged_pipe_branch": "flanged pipe branch / tee",
-    "simple_gear_or_pulley": "gear / pulley",
+    "simple_gear_or_pulley": "gear / pulley",  # refined to spur gear / pulley below
+    "hex_standoff": "hex standoff",
     "feature_graph": "custom part (flexible CAD graph)",
 }
+
+
+def _gear_pulley_noun(dims_mm: dict) -> str:
+    """The concrete noun for a simple_gear_or_pulley build, so the summary names
+    what was actually made (a spur gear / a pulley / a hex gear blank) instead of
+    the generic 'gear / pulley' the route has already decided between."""
+    if dims_mm.get("hex", 0) > 0.5:
+        return "hex gear blank"
+    if dims_mm.get("tooth_count", 0) > 0:
+        return "spur gear"
+    return "pulley"
 
 _METHOD_PHRASE = {
     "fdm_3d_print": "FDM 3D printing",
@@ -37,8 +49,10 @@ def _fmt(value: float) -> str:
 
 
 def explain(spec: DesignSpec) -> str:
-    noun = _TYPE_NOUN.get(spec.object_type, "mechanical part")
     dims_mm = spec.dims_in_mm()
+    noun = _TYPE_NOUN.get(spec.object_type, "mechanical part")
+    if spec.object_type == "simple_gear_or_pulley":
+        noun = _gear_pulley_noun(dims_mm)
     parts: list[str] = []
 
     # Lead sentence with the headline dimensions.
@@ -93,6 +107,18 @@ def explain(spec: DesignSpec) -> str:
             parts.append("Made as a grooved pulley (no teeth requested).")
         if dims_mm.get("bore_diameter_mm", 0) > 0:
             parts.append(f"Center bore ø{_fmt(dims_mm['bore_diameter_mm'])}mm for the shaft.")
+    if spec.object_type == "hex_standoff":
+        af = dims_mm.get("across_flats", 0)
+        if af > 0:
+            ac = af / 0.8660254  # across-corners = across-flats / cos(30°)
+            parts.append(
+                f"Six-sided hex prism: {_fmt(af)}mm across flats "
+                f"(~{_fmt(ac)}mm across corners).")
+        bore = dims_mm.get("bore_diameter", 0)
+        if bore > 0:
+            parts.append(f"One centered ø{_fmt(bore)}mm through bore.")
+        else:
+            parts.append("Solid body (no through bore).")
     if spec.object_type == "enclosure" and dims_mm.get("boss_diameter", 0) > 0:
         parts.append("Internal corner bosses let you screw the lid down onto the body.")
     if spec.object_type == "drill_jig" and dims_mm.get("lip_height", 0) > 0:

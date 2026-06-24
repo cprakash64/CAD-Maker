@@ -155,11 +155,13 @@ def _build_circular_flange(f: Feature) -> tuple[cq.Workplane, int, int]:
     bolt_count = int(f.p("bolt_count", 0, "holes", "count", "bolt_holes"))
     bolt_dia = _dia(f, "bolt_diameter", "hole_diameter", "bolt_dia")
     bore = _dia(f, "bore", "center_bore", "id", "inner_diameter")
-    solid, holes = _flange_disc(od, thk, pcd, bolt_count, bolt_dia, bore)
+    solid, bolt_holes = _flange_disc(od, thk, pcd, bolt_count, bolt_dia, bore)
     solid = _orient(solid, f.axis).translate(_pos(f))
-    # Bolt holes + an optional through center bore are all through-holes.
-    through = holes + (1 if bore > 0 else 0)
-    return solid, holes, through
+    # The center bore is itself a hole. Total holes = bolt holes + center bore,
+    # and all of them are through, so hole_count == through_hole_count (never the
+    # impossible "fewer holes than through-holes").
+    total = bolt_holes + (1 if bore > 0 else 0)
+    return solid, total, total
 
 
 def _build_pipe_spool(f: Feature) -> tuple[cq.Workplane, int, int]:

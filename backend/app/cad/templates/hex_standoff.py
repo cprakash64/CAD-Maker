@@ -33,7 +33,9 @@ class HexStandoffTemplate(BaseTemplate):
     dimensions = [
         DimensionSpec("across_flats", "Across-flats width", 8.0, 2.0, 300.0),
         DimensionSpec("length", "Length / height", 20.0, 1.0, 1000.0),
-        DimensionSpec("bore_diameter", "Through-bore diameter", 4.0, 0.0, 280.0),
+        # Default 0 = a solid standoff; an omitted bore means "no bore" (the spec
+        # schema rejects a passed 0, so a solid build omits this dimension).
+        DimensionSpec("bore_diameter", "Through-bore diameter", 0.0, 0.0, 280.0),
     ]
 
     def build(self, spec: DesignSpec) -> "cq.Workplane":

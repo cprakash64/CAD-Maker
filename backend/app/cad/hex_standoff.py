@@ -118,9 +118,15 @@ def parse_hex_params(prompt: str) -> dict:
 
 
 def hex_dimensions(params: dict) -> dict:
-    """DesignSpec dimensions for :class:`HexStandoffTemplate`."""
-    return {
+    """DesignSpec dimensions for :class:`HexStandoffTemplate`.
+
+    A zero bore (a solid standoff) is OMITTED rather than passed as 0 — the spec
+    schema rejects a zero dimension, and the template defaults an omitted bore to
+    'no bore'."""
+    dims = {
         "across_flats": params["across_flats_mm"],
         "length": params["length_mm"],
-        "bore_diameter": params["bore_diameter_mm"],
     }
+    if params["bore_diameter_mm"] > 0:
+        dims["bore_diameter"] = params["bore_diameter_mm"]
+    return dims

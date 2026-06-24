@@ -84,6 +84,86 @@ def _editable_parameters(spec: DesignSpec) -> dict[str, float]:
     return params
 
 
+# Template dimension keys that represent a single concentric through bore. These
+# templates (spacer, hex standoff, gear/pulley) model the bore as a DIMENSION,
+# not as a spec.holes entry, so it must be counted explicitly or the measured
+# report shows "Holes: 0" for a part that visibly has a bore.
+_BORE_DIMENSION_KEYS = ("bore_diameter", "bore_diameter_mm", "bore", "center_bore")
+
+
+def _spec_bore_mm(spec: DesignSpec) -> float | None:
+    """The concentric through-bore diameter (mm) declared as a template
+    dimension, or None when the part has no such bore."""
+    for key in _BORE_DIMENSION_KEYS:
+        if key in spec.dimensions:
+            mm = spec.to_mm(spec.dimensions[key])
+            if mm and mm > 0:
+                return mm
+    return None
+
+
+def _spec_hole_counts(spec: DesignSpec) -> tuple[int, int]:
+    """(hole_count, through_hole_count) for a DesignSpec-built part.
+
+    Every spec.holes entry is a through clearance hole; a template that carries a
+    concentric bore as a dimension (spacer / hex standoff / gear / pulley) adds
+    one more through hole. Returns counts that are always self-consistent
+    (through_hole_count <= hole_count)."""
+    holes = len(spec.holes)
+    hole_count = holes
+    through = holes
+    if _spec_bore_mm(spec) is not None:
+        hole_count += 1
+        through += 1
+    return hole_count, through
+
+
+# Clean, human display titles per object_type. The route can refine these (a
+# spur gear vs a pulley both build object_type 'simple_gear_or_pulley'); see
+# _display_title.
+_TITLE_BY_OBJECT_TYPE = {
+    "rectangular_bracket": "Mounting plate",
+    "l_bracket": "L bracket",
+    "u_bracket": "U bracket",
+    "hinge_bracket": "Hinge bracket",
+    "clamp_block": "Clamp block",
+    "enclosure": "Enclosure",
+    "spacer": "Spacer / standoff",
+    "hex_standoff": "Hex standoff",
+    "pipe_clamp": "Pipe clamp",
+    "drill_jig": "Drill jig",
+    "handle": "Handle / knob",
+    "adapter_plate": "Adapter plate",
+    "flange": "Flange",
+    "flanged_pipe_branch": "Flanged pipe branch",
+    "inline_4_crankshaft": "Crankshaft",
+}
+
+
+def _display_title(design: Design) -> str | None:
+    """A clean, family-accurate title for the UI breadcrumb / part name, so the
+    user never sees the raw internal object_type ('simple gear or pulley'). The
+    route disambiguates a gear from a pulley (same object_type)."""
+    if design.route == "deterministic_spur_gear":
+        return "Spur gear"
+    if design.route == "deterministic_hex_standoff":
+        return "Hex standoff"
+    ot = design.object_type
+    if ot == "simple_gear_or_pulley":
+        dims = (design.spec_json or {}).get("dimensions") or {}
+        try:
+            if float(dims.get("hex", 0) or 0) > 0.5:
+                return "Hex gear blank"
+            if float(dims.get("tooth_count", 0) or 0) > 0:
+                return "Spur gear"
+        except (TypeError, ValueError):
+            pass
+        return "Pulley"
+    if ot in _TITLE_BY_OBJECT_TYPE:
+        return _TITLE_BY_OBJECT_TYPE[ot]
+    return ot.replace("_", " ") if ot else None
+
+
 def _gear_subtype(prompt: str | None) -> str | None:
     """An unsupported gear subtype named in the prompt (helical/bevel/worm/…),
     so the build flags 'approximated as a spur gear' instead of a silent PASS."""
@@ -146,13 +226,17 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
             tooth_count = int(round(float(tc)))
         except (TypeError, ValueError):
             tooth_count = None
+    hole_count, through_hole_count = _spec_hole_counts(spec)
+    if smallest_hole is None:
+        smallest_hole = _spec_bore_mm(spec)  # so a bored template reports its bore
     design.semantic_json = {
         "dimension_report": build_spec_report(
             requested_dimensions_mm={k: spec.to_mm(v) for k, v in spec.dimensions.items()},
             bbox_mm=result.bounding_box_mm,
             volume_mm3=result.volume_mm3,
             surface_area_mm2=result.surface_area_mm2,
-            hole_count=len(spec.holes),
+            hole_count=hole_count,
+            through_hole_count=through_hole_count,
             smallest_hole_mm=smallest_hole,
             stl_bytes=result.stl_bytes,
             object_type=spec.object_type,
@@ -1303,21 +1387,20 @@ VAGUE_SUGGESTIONS: list[dict] = [
     {"label": "L bracket",
      "prompt": "An L bracket with 60mm legs, 5mm thick, 20mm wide, two 6mm holes per face"},
     {"label": "U bracket",
-     "prompt": "A U bracket 80mm wide, 60mm tall, 6mm thick with two M6 base holes "
-               "and an 8mm pivot hole through each side wall"},
-    {"label": "Flat mounting plate",
-     "prompt": "A rectangular mounting plate 80x40x5mm with four 6mm holes"},
+     "prompt": "A U bracket with a 70mm base, 40mm side walls, 5mm thick, two M6 holes"},
+    {"label": "Rectangular mounting plate",
+     "prompt": "A rectangular mounting plate 100mm x 60mm x 4mm with four M6 holes"},
     {"label": "Hinge bracket",
      "prompt": "A hinge bracket with a 70x40x6mm base and two side ears 30mm tall, "
                "6mm thick, with an 8mm pin hole through both ears"},
-    {"label": "Pipe clamp",
-     "prompt": "A pipe clamp for 32mm OD tube, 20mm wide, with two M5 holes"},
-    {"label": "Motor mount",
-     "prompt": "A NEMA 17 motor plate 60mm square, 6mm thick, with a 22mm center bore "
-               "and four M3 holes on a 31mm square pattern"},
     {"label": "Shelf bracket",
      "prompt": "A shelf bracket 120mm x 80mm x 5mm with a corner gusset and four "
                "6mm mounting holes"},
+    {"label": "Tube clamp",
+     "prompt": "A tube clamp for 32mm OD tube, 20mm wide, with two M5 holes"},
+    {"label": "Motor mount plate",
+     "prompt": "A NEMA 17 motor plate 60mm square, 6mm thick, with a 22mm center bore "
+               "and four M3 holes on a 31mm square pattern"},
 ]
 
 
@@ -1412,6 +1495,37 @@ def _store_clarification(db: Session, design: Design, clar: dict,
     return design
 
 
+# Words in a generated summary that ASSERT a hole / bore / bolt circle exists.
+# Negated mentions ("no through bore", "solid body") are stripped before this
+# runs, so it only fires on a positive claim.
+_HOLE_CLAIM_RE = re.compile(
+    r"\bbores?\b|\bholes?\b|\bbolt circle\b|\bthrough[- ]?bore\b|"
+    r"\bcenter bore\b|\bcentre bore\b|\bmounting holes?\b|\bbolt holes?\b|"
+    r"\bthrough[- ]?holes?\b|\bpin hole\b|\bclearance hole\b",
+    re.I,
+)
+_HOLE_NEGATION_RE = re.compile(
+    r"\bno (?:through[- ]?)?(?:center |centre )?(?:bore|holes?)\b|\bsolid body\b"
+    r"|\bsolid (?:blank|cylinder|disc|disk|part)\b|\bwithout (?:a )?(?:bore|holes?)\b",
+    re.I,
+)
+
+
+def _summary_claims_hole(design: Design) -> bool:
+    """True when the design's visible summary (explanation + assumptions)
+    positively claims a hole / bore / bolt circle exists."""
+    text = (getattr(design, "explanation", None) or "") + " || " + " || ".join(
+        getattr(design, "assumptions", None) or [])
+    text = _HOLE_NEGATION_RE.sub(" ", text)
+    return bool(_HOLE_CLAIM_RE.search(text))
+
+
+def _measured_hole_count(design: Design) -> int | None:
+    sem = design.semantic_json or {}
+    measured = (sem.get("dimension_report") or {}).get("measured") or {}
+    return measured.get("hole_count")
+
+
 def reconciled_validation_status(design: Design) -> str | None:
     """Effective validation status, reconciled with the evidence so the UI can
     never show a PASS that contradicts the checks:
@@ -1419,6 +1533,9 @@ def reconciled_validation_status(design: Design) -> str | None:
     * critical failures stay critical_failure (export blocked elsewhere);
     * a dimension report that is NOT within tolerance, or a feature audit with
       missing required features, downgrades a PASS to 'warning' (REVIEW);
+    * a summary that CLAIMS a bore/hole/bolt circle while the measured hole count
+      is 0 is an inconsistent report — it can never be a clean PASS, so it is
+      downgraded to 'warning';
     * otherwise the dimension report's own status stands.
     """
     sem = design.semantic_json or {}
@@ -1429,6 +1546,10 @@ def reconciled_validation_status(design: Design) -> str | None:
     within = dim.get("within_tolerance")
     audit_passed = (sem.get("feature_audit") or {}).get("passed")
     if within is False or audit_passed is False:
+        return "warning"
+    # Report-consistency guard: the summary says there is a bore/hole but the
+    # measured geometry has none — never PASS an inconsistent report.
+    if _summary_claims_hole(design) and _measured_hole_count(design) == 0:
         return "warning"
     return status
 
