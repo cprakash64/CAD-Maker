@@ -155,7 +155,34 @@ _FAMILIES: tuple[CADFamily, ...] = (
         ),
         example_prompts=(
             "A spacer 10mm OD, 5mm bore, 12mm long",
+        ),
+    ),
+    CADFamily(
+        family_id="hex_standoff",
+        display_name="Hex standoff / hex spacer",
+        design_mode=DesignMode.single_part,
+        maturity=Maturity.production_ready,
+        keywords=("hex standoff", "hexagonal standoff", "hex spacer",
+                  "hexagonal spacer", "hex pillar"),
+        object_types=("hex_standoff",),
+        required_dimensions=("length/height",),
+        optional_dimensions=("across flats", "through bore / M-size"),
+        default_assumptions=(
+            "True six-sided hex prism (round bodies use the spacer family)",
+            "8mm across flats, 20mm long, Ø4mm through bore unless specified",
+            "Across-flats preserved exactly; across-corners derived",
+        ),
+        generator="hex_standoff template (deterministic, pre-LLM)",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict",
+        export_policy=EXPORT_PART,
+        known_limitations=(
+            "Plain hex body with one concentric through-bore — threads are not "
+            "modelled (an M-callout sets a clearance bore, not a thread).",
+        ),
+        example_prompts=(
             "A hex standoff 8mm across flats, 20mm long, with an M4 through bore",
+            "A 25mm long hex spacer, 12mm across flats, 4.5mm through bore",
         ),
     ),
     CADFamily(

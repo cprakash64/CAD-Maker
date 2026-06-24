@@ -190,6 +190,12 @@ def classify_prompt(prompt: str) -> PromptClassification:
 # (app.cad.plan.deterministic._FAMILIES), most-specific-first, so the classifier
 # names the same family the generator will build.
 def _detect_dedicated_part_family(low: str) -> str | None:
+    # Hex standoff/spacer is built by a dedicated deterministic route — classify
+    # it the same way so the verdict matches what is generated.
+    from app.cad.hex_standoff import is_hex_standoff_prompt
+
+    if is_hex_standoff_prompt(low):
+        return "hex_standoff"
     if "screwdriver" in low or "screw driver" in low:
         return "screwdriver"
     if re.search(r"\brobot(?:ic)?\b", low) and "arm" in low \

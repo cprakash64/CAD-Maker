@@ -203,6 +203,31 @@ def build_spec_report(
             }
         }
 
+    # Semantic hex audit: a hex standoff must have six visible flats, never a
+    # round cylinder. Measured from the same outer silhouette.
+    from app.cad.semantic_audits import (
+        audit_hex_standoff,
+        is_hex_request,
+        measure_hex_sides,
+    )
+
+    if is_hex_request(object_type):
+        sil = measure_hex_sides(stl_bytes)
+        hex_issues = audit_hex_standoff(
+            object_type=object_type,
+            measured_corner_count=sil["corner_count"], hex_intent=True)
+        semantic_issues = list(semantic_issues) + hex_issues
+        is_hex = not any(i.check in ("hex_is_round", "hex_silhouette_unverified")
+                         for i in hex_issues)
+        semantic_meta["hex"] = {
+            "across_flats_mm": requested_dimensions_mm.get("across_flats"),
+            "across_corners_mm": (
+                round(requested_dimensions_mm["across_flats"] / 0.8660254, 3)
+                if requested_dimensions_mm.get("across_flats") else None),
+            "measured_corner_count": sil["corner_count"],
+            "hex_six_sided": is_hex,
+        }
+
     # No requested hole/bbox targets in the template path, so only geometry-health
     # criticals (disconnected / non-watertight / non-manifold / zero volume) apply.
     requested: dict = {}

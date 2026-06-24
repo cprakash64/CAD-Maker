@@ -278,6 +278,73 @@ def _try_gear(db: Session, design: Design, prompt: str, parse_start: float) -> D
     return design
 
 
+def _try_hex_standoff(db: Session, design: Design, prompt: str, parse_start: float) -> Design:
+    """DETERMINISTIC HEX-STANDOFF route. A hex standoff/spacer prompt is built
+    here, BEFORE the LLM/CadPlan, feature-graph, round-spacer or generic-part
+    paths, so it can never be routed to a round cylinder. Tagged
+    route='deterministic_hex_standoff'.
+
+    Geometry is a true six-sided prism (HexStandoffTemplate); the geometry-
+    measured hex audit runs inside _regenerate_geometry (object_type
+    'hex_standoff'), so a round body fails validation instead of passing."""
+    from app.cad.hex_standoff import (
+        ROUTE_DETERMINISTIC_HEX_STANDOFF,
+        hex_dimensions,
+        parse_hex_params,
+    )
+
+    params = parse_hex_params(prompt)
+    spec = DesignSpec(
+        object_type="hex_standoff",
+        dimensions=hex_dimensions(params),
+        manufacturing_method="fdm_3d_print",
+        material="PLA",
+    )
+    _regenerate_geometry(db, design, spec)  # geometry + exports + hex audit
+
+    design.route = ROUTE_DETERMINISTIC_HEX_STANDOFF
+    design.route_reason = "Hex standoff prompt → deterministic six-sided hex prism."
+    design.clarification_question = None
+    bore_txt = (f"Ø{params['bore_diameter_mm']:g}mm through bore"
+                if params["bore_diameter_mm"] else "solid (no bore)")
+    assumptions = [
+        f"Hex standoff: {params['across_flats_mm']:g}mm across flats "
+        f"(≈{params['across_corners_mm']:g}mm across corners), "
+        f"{params['length_mm']:g}mm long, {bore_txt}.",
+        "True hexagonal prism — across-flats is preserved exactly; across-corners "
+        "is derived. Concept CAD — threads are not modelled.",
+    ]
+    if params["metric_screw"]:
+        assumptions.append(
+            f"M{params['metric_screw']:g} callout → "
+            f"Ø{params['bore_diameter_mm']:g}mm clearance bore.")
+    design.assumptions = assumptions
+
+    semantic = dict(design.semantic_json or {})
+    hex_audit = ((semantic.get("dimension_report") or {}).get("semantic_audit") or {}).get("hex") or {}
+    semantic["hex_debug"] = {
+        "family": "hex_standoff",
+        "route": ROUTE_DETERMINISTIC_HEX_STANDOFF,
+        "across_flats": params["across_flats_mm"],
+        "across_corners": params["across_corners_mm"],
+        "length": params["length_mm"],
+        "bore_diameter": params["bore_diameter_mm"],
+        "measured_corner_count": hex_audit.get("measured_corner_count"),
+        "hex_six_sided": hex_audit.get("hex_six_sided"),
+    }
+    design.semantic_json = semantic
+
+    db.commit()
+    db.refresh(design)
+    log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+              routed=ROUTE_DETERMINISTIC_HEX_STANDOFF, produced_spec=True,
+              across_flats=params["across_flats_mm"],
+              hex_six_sided=hex_audit.get("hex_six_sided"),
+              validation_status=reconciled_validation_status(design),
+              latency_ms=elapsed_ms(parse_start))
+    return design
+
+
 def _plan_long_prompt(prompt: str) -> "ParseResult":
     """Route a long/complex prompt through ComplexCADPlan -> ParseResult."""
     from app.parsing.complex_plan import build_complex_plan
@@ -1154,6 +1221,22 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
         log_event("prompt_decomposition_required", design_id=design.id,
                   subsystems=len(assessment.subsystems))
         return design
+
+    # 2bb) DETERMINISTIC HEX-STANDOFF GATE: a hex standoff/spacer is built by the
+    #      dedicated six-sided hex-prism builder BEFORE the LLM/CadPlan, feature-
+    #      graph, round-spacer or generic-part paths — the production bug was a hex
+    #      standoff routed to one of those and rendered as a round cylinder. Runs
+    #      AFTER the complexity gate (so a whole machine that mentions a spacer
+    #      still decomposes). A plain round "spacer" (no 'hex') is unaffected.
+    from app.cad.hex_standoff import is_hex_standoff_prompt
+
+    if is_hex_standoff_prompt(prompt):
+        try:
+            return _try_hex_standoff(db, design, prompt, parse_start)
+        except CadGenerationError as exc:
+            log_event("hex_standoff_generation_failed", design_id=design.id,
+                      detail=str(exc)[:200])
+            # fall through to the normal pipeline only if the hex build failed.
 
     # 2c) DETERMINISTIC SPUR-GEAR GATE: a genuine gear part is built by the
     #     dedicated module-based toothed-profile builder BEFORE the LLM/CadPlan,

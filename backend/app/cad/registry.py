@@ -14,6 +14,7 @@ from app.cad.templates.flanged_pipe_branch import FlangedPipeBranchTemplate
 from app.cad.templates.gear_pulley import GearPulleyTemplate
 from app.cad.templates.enclosure import EnclosureTemplate
 from app.cad.templates.handle import HandleTemplate
+from app.cad.templates.hex_standoff import HexStandoffTemplate
 from app.cad.templates.l_bracket import LBracketTemplate
 from app.cad.templates.pipe_clamp import PipeClampTemplate
 from app.cad.templates.spacer import SpacerTemplate
@@ -25,6 +26,7 @@ _TEMPLATES: dict[str, BaseTemplate] = {
         LBracketTemplate(),
         EnclosureTemplate(),
         SpacerTemplate(),
+        HexStandoffTemplate(),
         PipeClampTemplate(),
         DrillJigTemplate(),
         HandleTemplate(),

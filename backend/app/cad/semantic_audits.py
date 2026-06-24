@@ -245,15 +245,90 @@ def audit_gear_metadata(object_type: str | None, tooth_count) -> list[AuditIssue
 # These are intentionally light: a TODO-grade safety net so a clearly-wrong shape
 # can't silently PASS. They operate on already-extracted feature ids / metadata.
 
-def audit_hex_standoff(*, object_type: str | None, outer_corner_count: int | None,
-                       is_hex: bool) -> list[AuditIssue]:
-    """A hex standoff / hex gear blank must actually have ~6 outer flats."""
-    if not is_hex:
+# --- hex standoff ----------------------------------------------------------
+
+# Object types that represent a hexagonal-bodied part.
+HEX_OBJECT_TYPES = {"hex_standoff"}
+# A true regular hexagon's outer silhouette swings between the across-corners
+# radius (vertices) and the across-flats radius (apothem). The ideal radial
+# depth ratio is 1 - cos(30°) ≈ 0.134; a round cylinder gives ~0. The 0.05 floor
+# sits well above tessellation noise yet far below a real hexagon, so a round
+# body can never pass and a true hex never false-fails.
+# A true hexagonal prism has exactly six distinct outer corner edges. We allow a
+# little slack (3..8) for tessellation/rounding; a faceted circle has many more.
+HEX_CORNER_RANGE = (3, 8)
+# At or above this many distinct outer corners the body is a faceted circle, not
+# a hexagon — a critical "round, not hex" mismatch.
+HEX_ROUND_CORNERS = 10
+
+
+def is_hex_request(object_type: str | None) -> bool:
+    return (object_type or "").lower() in HEX_OBJECT_TYPES
+
+
+def measure_hex_sides(stl_bytes: bytes, rim_frac: float = 0.8) -> dict:
+    """Count the DISTINCT outer vertical edges of a prism's silhouette.
+
+    A radial-depth measurement (``measure_radial_teeth``) can't see a hexagon: a
+    hexagonal prism's only outer vertices are its six corners (all at the
+    circumradius), so its radial silhouette reads flat like a cylinder. Instead
+    we count distinct outer-rim vertex POSITIONS — a true hexagonal prism has
+    exactly six, while a tessellated cylinder has many (one per facet segment).
+
+    Returns ``{"corner_count": int | None}`` — the number of distinct outer
+    corner positions (None when the mesh is too small to measure).
+    """
+    pts = _stl_xy(stl_bytes)
+    if len(pts) < 16:
+        return {"corner_count": None}
+    cx = sum(p[0] for p in pts) / len(pts)
+    cy = sum(p[1] for p in pts) / len(pts)
+    radii = [math.hypot(x - cx, y - cy) for x, y in pts]
+    rmax = max(radii) if radii else 0.0
+    if rmax <= 0:
+        return {"corner_count": None}
+    floor = rim_frac * rmax
+    # Distinct outer-rim positions, rounded to 0.1mm so the top/bottom copies of
+    # each corner collapse to one point. A polygon's corners are sharp and few; a
+    # faceted circle's rim points are many.
+    distinct = {
+        (round(x, 1), round(y, 1))
+        for (x, y), r in zip(pts, radii) if r >= floor
+    }
+    return {"corner_count": len(distinct)}
+
+
+def audit_hex_standoff(*, object_type: str | None,
+                       measured_corner_count: int | None,
+                       hex_intent: bool = False) -> list[AuditIssue]:
+    """Audit a hex standoff's GENERATED silhouette against its hex claim.
+
+    ``measured_corner_count`` is the number of distinct outer corner edges (see
+    :func:`measure_hex_sides`): six for a true hexagonal prism, many for a
+    faceted circle. A hex part that comes out round is a CRITICAL mismatch — the
+    "round cylinder reported as a hex standoff" failure. ``hex_intent`` forces
+    the audit even when the object_type metadata is absent.
+    """
+    if not is_hex_request(object_type) and not hex_intent:
         return []
-    if outer_corner_count is not None and outer_corner_count > 8:
-        return [AuditIssue("hex_not_faceted", "warning",
-                           f"Hex profile requested but the outer boundary has "
-                           f"{outer_corner_count} corners (expected ~6 flats).")]
+
+    if measured_corner_count is None:
+        return [AuditIssue(
+            "hex_silhouette_unverified", "warning",
+            "Could not measure the outer silhouette to confirm hex flats.")]
+
+    if measured_corner_count >= HEX_ROUND_CORNERS:
+        return [AuditIssue(
+            "hex_is_round", "critical",
+            "Hex standoff outer profile is a faceted circle, not a hexagon "
+            f"({measured_corner_count} outer edges measured). Six flat sides are "
+            "required.")]
+
+    if not (HEX_CORNER_RANGE[0] <= measured_corner_count <= HEX_CORNER_RANGE[1]):
+        return [AuditIssue(
+            "hex_not_six_sided", "warning",
+            f"Hex profile requested but the outer boundary reads "
+            f"{measured_corner_count} corners (expected six flats).")]
     return []
 
 

@@ -282,7 +282,7 @@
     {
       "name": "hex_standoff_feature_graph",
       "prompt": "A hex standoff 8mm across flats, 20mm long, with an M4 through bore",
-      "expected_family_id": "spacer",
+      "expected_family_id": "hex_standoff",
       "expected_design_mode": "single_part",
       "expected_strategy": "cadplan",
       "expected_can_generate": true,

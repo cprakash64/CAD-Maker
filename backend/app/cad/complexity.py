@@ -74,6 +74,110 @@ _ASSEMBLY_WORDS = [
     "complete vehicle", "whole car", "entire frame",
 ]
 
+
+# Curated component breakdowns for recognized whole machines, so decomposition
+# returns SPECIFIC named components + a concrete first part to build (never a
+# generic "Main frame / Mounting brackets" placeholder). Each entry is matched by
+# any of its trigger phrases; most-specific machines should be listed first.
+_MACHINE_COMPONENTS: list[dict] = [
+    {
+        "triggers": ["jet engine", "turbofan", "turbojet", "turboprop",
+                     "gas turbine", "turbine engine"],
+        "components": [
+            "Inlet / fan section", "Low-pressure compressor",
+            "High-pressure compressor", "Combustion chamber / combustor",
+            "High-pressure turbine", "Low-pressure turbine",
+            "Exhaust nozzle", "Main shaft", "Engine casing",
+            "Accessory gearbox", "Mounting flange",
+        ],
+        "first": "Start with one well-defined part — e.g. the engine mounting "
+                 "flange or a single compressor/turbine blade.",
+        "examples": [
+            "A circular mounting flange 120mm OD, 10mm thick, with eight M6 "
+            "holes on a 100mm bolt circle and a 40mm center bore",
+            "A single turbine blade root block: 40×20×12mm with a fir-tree slot "
+            "(approximated as a rectangular tang)",
+        ],
+    },
+    {
+        "triggers": ["electric skateboard", "e-skateboard", "eskateboard"],
+        "components": [
+            "Deck", "Trucks", "Wheels", "Motor mount", "Drive motor",
+            "Battery enclosure", "ESC / electronics housing",
+            "Belt / pulley drive", "Wheel pulley",
+        ],
+        "first": "Start with one bolt-on part — e.g. a motor mount bracket or a "
+                 "wheel pulley.",
+        "examples": [
+            "A skateboard motor mount plate 70×50×6mm with four M5 holes and a "
+            "22mm motor boss bore",
+            "A wheel pulley 40mm OD, 36 teeth, 10mm thick, with an 8mm bore",
+        ],
+    },
+    {
+        "triggers": ["full robotic arm", "complete robotic arm",
+                     "entire robotic arm", "whole robotic arm",
+                     "robotic arm assembly", "full robot arm",
+                     "complete robot arm", "robotic manipulator",
+                     "6-axis robotic arm", "six-axis robotic arm",
+                     "6 axis robotic arm"],
+        "components": [
+            "Base", "Shoulder joint", "Upper-arm link", "Elbow joint",
+            "Forearm link", "Wrist joint", "End effector / gripper",
+            "Joint brackets", "Motor mounts",
+        ],
+        "first": "Start with one joint — e.g. the base plate or a single joint "
+                 "bracket.",
+        "examples": [
+            "A robotic-arm base plate 120mm square, 8mm thick, with a 60mm "
+            "bearing bore and four M6 mounting holes",
+            "An L-shaped joint bracket with 60mm legs, 6mm thick, and an 8mm "
+            "pivot hole through each face",
+        ],
+    },
+    {
+        "triggers": ["full bicycle", "complete bicycle", "whole bicycle",
+                     "entire bicycle", "full bike", "complete bike",
+                     "whole bike", "entire bike"],
+        "components": [
+            "Main frame triangle", "Fork", "Wheels / rims", "Hubs",
+            "Crankset", "Handlebar", "Seat post", "Dropouts", "Bottom bracket",
+        ],
+        "first": "Start with one small part — e.g. a dropout or a bottle-cage "
+                 "bracket.",
+        "examples": [
+            "A rear dropout plate 50×30×6mm with a 10mm axle slot and two M5 "
+            "holes",
+            "A bottle-cage bracket 40×20×3mm with two 5mm holes",
+        ],
+    },
+    {
+        "triggers": ["gearbox assembly", "gear box assembly", "complete gearbox",
+                     "full gearbox", "entire gearbox", "whole gearbox",
+                     "complete gear box", "gear reduction assembly",
+                     "reduction gearbox", "transmission assembly"],
+        "components": [
+            "Housing / casing", "Input shaft", "Output shaft", "Spur gears",
+            "Bearings", "Bearing covers", "Mounting flange", "Cover plate",
+        ],
+        "first": "Start with one part — e.g. a single spur gear or the mounting "
+                 "flange.",
+        "examples": [
+            "A 24-tooth spur gear, module 2, 10mm thick, with an 8mm bore",
+            "A gearbox mounting flange 100mm square, 8mm thick, with a 30mm "
+            "bore and four M6 holes",
+        ],
+    },
+]
+
+
+def _machine_components(t: str) -> dict | None:
+    """Curated component breakdown for a recognized whole machine, else None."""
+    for entry in _MACHINE_COMPONENTS:
+        if any(trigger in t for trigger in entry["triggers"]):
+            return entry
+    return None
+
 _LONG_PROMPT = 1200  # chars
 
 
@@ -160,9 +264,13 @@ def assess_complexity(prompt: str) -> ComplexityAssessment:
     subsystems = _found_subsystems(t)          # strong signals (drive threshold)
     machine = _has_machine(t)
     assembly_word = any(w in t for w in _ASSEMBLY_WORDS)
+    # A recognized whole machine (jet engine, electric skateboard, robotic arm,
+    # bicycle, gearbox, …) is always a decompose-or-concept case.
+    curated_machine = _machine_components(t) is not None
 
     is_complex = (
         machine
+        or curated_machine
         or len(subsystems) >= 4
         or (len(t) > _LONG_PROMPT and len(subsystems) >= 2)
     )
@@ -170,6 +278,31 @@ def assess_complexity(prompt: str) -> ComplexityAssessment:
         return ComplexityAssessment(is_complex=False)
 
     family = detect_assembly_family(t)
+
+    # Recognized whole machine -> curated, SPECIFIC named components + a concrete
+    # first part. This is the high-trust path: a jet engine names its fan /
+    # compressor / combustor / turbine / nozzle, not a generic "main frame".
+    machine_entry = _machine_components(t)
+    if machine_entry is not None:
+        detected = list(machine_entry["components"])
+        base_components = list(machine_entry["components"])
+        recommended_first = machine_entry["first"]
+        examples = list(machine_entry["examples"])
+        n_named = len(detected)
+        reason = (
+            "This describes a complete machine (" + str(n_named)
+            + " major components), which is beyond single-part generation. "
+            "Generate one named component at a time and assemble them."
+        )
+        return ComplexityAssessment(
+            is_complex=True,
+            reason=reason,
+            supported_family=family,
+            subsystems=detected,
+            components=base_components,
+            recommended_first=recommended_first,
+            examples=examples[:5],
+        )
 
     # Name detected systems using the broader vocabulary so guidance is specific
     # (never "0 subsystems detected"). Fall back to the strong list, then to a

@@ -1,0 +1,691 @@
+{
+  "_doc": "Beta stress-test prompt suite. Each prompt is run through the SAME create_design path the browser/API uses (see tests/test_beta_stress.py). The outcome must be in the prompt's 'allow' list if present, otherwise the category default set below. The test ALSO enforces global trust invariants for EVERY prompt regardless of category: (1) the outcome is always one of the six safe states, (2) a generated_* outcome must have exports AND must not be a critical_failure (no false PASS), (3) a failed_safe/unsupported/critical outcome must NOT offer a downloadable manufacturable export, (4) generation never raises / never 500s. NOTE on provider: CI runs the offline mock provider, so a few single-part families that depend on the LLM (shaft / coupler / some flanges) fall back to needs_clarification here rather than building — that is a SAFE state, not a false pass, and is recorded in each prompt's 'allow'. Concept-CAD families (hammer/wrench/pliers/etc.) build a simplified concept solid by design. Categories: single_part, vague, assembly, unsupported, adversarial.",
+  "categories": {
+    "single_part": [
+      "generated_single_part"
+    ],
+    "vague": [
+      "needs_clarification"
+    ],
+    "assembly": [
+      "needs_decomposition",
+      "generated_assembly"
+    ],
+    "unsupported": [
+      "unsupported",
+      "needs_clarification",
+      "failed_safe"
+    ],
+    "adversarial": [
+      "needs_clarification",
+      "generated_single_part",
+      "generated_assembly",
+      "needs_decomposition",
+      "unsupported",
+      "failed_safe"
+    ]
+  },
+  "prompts": [
+    {
+      "prompt": "A rectangular mounting plate 80x40x5mm with four 6mm holes",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A mounting plate 100mm x 60mm x 6mm with six M5 holes in two rows",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A NEMA 17 motor plate 60mm square, 6mm thick, with a 22mm center bore and four M3 holes on a 31mm square pattern",
+      "category": "single_part"
+    },
+    {
+      "prompt": "An adapter plate 120mm x 80mm x 8mm with a 40mm central bore and four M6 corner holes",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A base plate 150x150x10mm with a 50mm pilot hole",
+      "category": "single_part"
+    },
+    {
+      "prompt": "An L bracket with 60mm legs, 5mm thick, 20mm wide, two 6mm holes per face",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A right angle bracket 40x40mm legs, 4mm thick with a corner gusset",
+      "category": "single_part"
+    },
+    {
+      "prompt": "An L bracket 80mm by 50mm legs, 6mm thick, 30mm wide with three M6 holes per leg",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A U bracket 80mm wide, 60mm tall, 6mm thick with two M6 base holes and an 8mm pivot hole through each side wall",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A U-shaped channel bracket 100mm wide, 50mm deep, 5mm thick",
+      "category": "single_part"
+    },
+    {
+      "prompt": "An angle bracket 50x50x4mm with two holes on each face",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A shelf bracket 120mm x 80mm x 5mm with a corner gusset and four 6mm mounting holes",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A hinge bracket with a 70x40x6mm base and two side ears 30mm tall, 6mm thick, with an 8mm pin hole through both ears",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A flat mounting bracket 90x45x8mm with four M8 holes",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A gusset plate 80x80x6mm triangular brace with three M6 holes",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A blind flange 100mm OD, 10mm thick, with six M8 holes on an 80mm bolt circle",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A circular flange 120mm outside diameter, 12mm thick, 40mm center bore, eight M6 holes on a 95mm bolt circle",
+      "category": "single_part",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification"
+      ]
+    },
+    {
+      "prompt": "A pipe flange 80mm OD with a 30mm bore and four bolt holes",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A round spacer 12mm OD, 5mm bore, 20mm long",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A spacer 10mm OD, 4mm bore, 8mm long",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A standoff 8mm OD, 25mm long with a 3.2mm through hole",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Make a hex standoff.",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Create a 25mm long hex standoff.",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Create a 25mm long hex standoff, 12mm across flats, with M4 through hole.",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Create a 25mm long hex spacer, 12mm across flats, 4.5mm through bore.",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A hex standoff 8mm across flats, 20mm long, with an M4 through bore",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A washer 20mm OD, 8.4mm bore, 2mm thick",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A flat washer 30mm outer diameter, 10.5mm inner diameter, 3mm thick",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A bushing 16mm OD, 10mm bore, 15mm long",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A sleeve bushing 20mm OD, 12mm ID, 25mm long",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A shaft collar 25mm OD, 10mm bore, 12mm wide with an M4 set screw hole",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A pipe clamp for 32mm OD tube, 20mm wide, with two M5 holes",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A tube clamp for 25mm OD pipe, 15mm wide, split design with two M4 bolts",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A clamp block for a 12mm rod, 40x30x25mm with a split and two M6 clamp bolts",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A clamp block 50x40x30mm with a 16mm bore and a side split",
+      "category": "single_part"
+    },
+    {
+      "prompt": "An enclosure 100x60x40mm with 3mm walls and an open top",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A project box enclosure 80x50x30mm, 2.5mm wall thickness, with four corner screw bosses",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A knob 30mm diameter, 20mm tall, with a 6mm D-shaft bore and a knurled grip",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A handle 120mm long with a 25mm grip diameter and two M6 mounting posts",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A T-handle 80mm wide, 60mm tall, 20mm grip diameter",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A simple shaft 10mm diameter, 100mm long",
+      "category": "single_part",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification"
+      ]
+    },
+    {
+      "prompt": "A stepped shaft 12mm diameter for 60mm then 8mm diameter for 30mm",
+      "category": "single_part",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification"
+      ]
+    },
+    {
+      "prompt": "A simple coupler 25mm OD, 50mm long, with a 10mm bore on each end",
+      "category": "single_part",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification"
+      ]
+    },
+    {
+      "prompt": "A rigid shaft coupler 30mm OD, 40mm long, 12mm bore, with two M4 set screws",
+      "category": "single_part",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification"
+      ]
+    },
+    {
+      "prompt": "A bearing block 60x40x40mm with a 22mm bore and four M6 base holes",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A pillow block bearing housing for a 20mm shaft, 70mm bolt spacing",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Make a gear.",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Create a 24 tooth spur gear.",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Create a 60 tooth gear, 120mm outside diameter, 10mm thick, 12mm bore.",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Create a 40 tooth spur gear, module 2, 8mm bore, 10mm thick.",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A spur gear with 30 teeth, module 1.5, 6mm bore, 8mm face width",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Create a smooth pulley.",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A V-belt pulley 50mm OD, 20mm wide, with a 10mm bore",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A timing pulley 40mm OD, 10mm thick, 8mm bore",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A drill jig plate 100x50x8mm with five 5mm drill bushing holes evenly spaced",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A motor mount plate for a NEMA 23, 80mm square, 8mm thick, 38mm pilot bore, four M5 holes",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A flat plate 200x100x6mm with a 12x80mm slot in the center",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A bracket plate 70x70x5mm with a circular pattern of six 4mm holes on a 50mm circle",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A right-angle gusseted bracket, 50mm legs, 5mm thick, with a triangular web",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A cover plate 90mm diameter, 4mm thick, with eight M4 holes on a 78mm bolt circle",
+      "category": "single_part"
+    },
+    {
+      "prompt": "A spacer plate 60x60x3mm with a 20mm center hole",
+      "category": "single_part"
+    },
+    {
+      "prompt": "Make a bracket.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Make a mount.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Make a holder.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Make a thing for my motor.",
+      "category": "vague"
+    },
+    {
+      "prompt": "I need a bracket.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Build a mount please.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Can you make a holder?",
+      "category": "vague"
+    },
+    {
+      "prompt": "A bracket for my project.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Something to mount this.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A part.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Make me something.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A bracket thing.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A mount for stuff.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A holder for my things.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A generic bracket.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Design a mount.",
+      "category": "vague"
+    },
+    {
+      "prompt": "I want a holder.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Make a support.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A mounting thing.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Make a clip.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Make a bracket for a thing.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Need a mount for it.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A holder for a part.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Make a fixture.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A bracket, whatever works.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A bracket to hold something.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A holder, whatever works.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A mount, please make it.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Make a holder for the thing on my desk.",
+      "category": "vague"
+    },
+    {
+      "prompt": "A bracket, you choose the size.",
+      "category": "vague"
+    },
+    {
+      "prompt": "Create a complete commercial jet engine.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a complete electric skateboard.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a full robotic arm.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a full bicycle.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a complete gearbox assembly.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Design a complete turbofan engine with compressor, combustor, and turbine.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Build a full motorcycle subframe assembly.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a complete car chassis with suspension, roll cage, and engine bay.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Design a tubular space frame chassis for a buggy.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a CNC router frame with gantry, bed, and linear rails.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Build a complete drone frame with arms, motor mounts, and electronics tray.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a machine frame with a base, uprights, and a top plate.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Design an engine test stand with a frame and mounting rails.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a complete quadcopter with frame, four motor mounts, and a battery tray.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Build a full automobile chassis with crossmembers and suspension mounts.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a 6-axis robotic arm with all joints and brackets.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Design a complete go-kart frame.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Build a tractor chassis with engine mounts and a roll bar.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a complete gas turbine engine with all stages.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Design a full electric vehicle skateboard platform with battery pack, motors, and steering rack.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a welded tubular frame for a sports car with roll cage.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Build a complete reduction gearbox with input and output shafts and bearings.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Design a full airframe fuselage section with bulkheads and stringers.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Create a complete bicycle frame with fork, dropouts, and bottom bracket.",
+      "category": "assembly",
+      "allow": [
+        "needs_decomposition",
+        "generated_assembly",
+        "needs_clarification"
+      ]
+    },
+    {
+      "prompt": "Build an entire motorcycle with engine, frame, and suspension.",
+      "category": "assembly"
+    },
+    {
+      "prompt": "Build me a working engine that actually runs.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Create a fully functional firearm.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Design a working hydraulic pump that pumps fluid.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Make a smartphone with a working screen and battery.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "3D print a working electric motor with windings.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Create a watch with working gears and a movement.",
+      "category": "unsupported",
+      "allow": [
+        "needs_clarification",
+        "generated_single_part",
+        "unsupported"
+      ]
+    },
+    {
+      "prompt": "Make a hammer.",
+      "category": "unsupported",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification"
+      ]
+    },
+    {
+      "prompt": "Make a wrench.",
+      "category": "unsupported",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification"
+      ]
+    },
+    {
+      "prompt": "Make a pair of pliers.",
+      "category": "unsupported",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification"
+      ]
+    },
+    {
+      "prompt": "Design a working combustion chamber that ignites fuel.",
+      "category": "unsupported",
+      "allow": [
+        "needs_decomposition",
+        "needs_clarification",
+        "unsupported"
+      ]
+    },
+    {
+      "prompt": "Create a human heart anatomical model with working valves.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Make a functional lithium battery cell.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Build a working camera with a lens assembly.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Create a turbine blade certified for flight.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Design an FDA-approved surgical implant ready for use.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Make a pressure vessel rated to 300 bar, manufacturing certified.",
+      "category": "unsupported",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification",
+        "unsupported"
+      ]
+    },
+    {
+      "prompt": "Create a load-bearing structural beam certified to EN 1090.",
+      "category": "unsupported",
+      "allow": [
+        "generated_single_part",
+        "needs_clarification",
+        "unsupported"
+      ]
+    },
+    {
+      "prompt": "Make a working clock with hands that tell time.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Design a fully assembled bicycle ready to ride out of the printer.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Create a guaranteed waterproof submarine hull rated to 500m.",
+      "category": "unsupported"
+    },
+    {
+      "prompt": "Create a smooth round disc with a center hole.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "Create a smooth disc labelled as a gear.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "Make a gear but with no teeth, just a smooth cylinder.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "Create a smooth round disc with a hole and call it a gear.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "A gear or a pulley, whichever.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "A hex standoff but make it round.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "An L bracket that is also a U bracket.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "A plate with negative thickness.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "A spacer with a bore bigger than its outer diameter.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "A flange with 10000 bolt holes.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "A bracket that is 5000mm long and 0.1mm thick.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "A gear with 2 teeth.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "Make a part shaped like the letter Q.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "A bracket for my motor, NEMA 17, you pick the rest.",
+      "category": "adversarial"
+    },
+    {
+      "prompt": "A helical gear with 24 teeth.",
+      "category": "adversarial"
+    }
+  ]
+}

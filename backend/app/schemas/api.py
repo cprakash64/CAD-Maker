@@ -173,6 +173,10 @@ class DesignDTO(BaseModel):
     # outside_diameter/root_diameter/bore_diameter/measured_tooth_count/
     # gear_visible_teeth). Present only for gear designs.
     gear_debug: Optional[dict] = None
+    # Deterministic hex-standoff debug block (family/route/across_flats/
+    # across_corners/length/bore_diameter/measured_corner_count/hex_six_sided).
+    # Present only for hex-standoff designs.
+    hex_debug: Optional[dict] = None
 
 
 class DesignSummaryDTO(BaseModel):

@@ -21,6 +21,7 @@ class ObjectType(str, Enum):
     l_bracket = "l_bracket"
     enclosure = "enclosure"
     spacer = "spacer"
+    hex_standoff = "hex_standoff"
     pipe_clamp = "pipe_clamp"
     drill_jig = "drill_jig"
     handle = "handle"

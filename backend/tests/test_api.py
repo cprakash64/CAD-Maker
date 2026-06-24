@@ -132,4 +132,4 @@ def test_list_and_templates(client, auth):
     # Templates are public catalog data (no auth needed).
     t = client.get("/api/templates")
     assert t.status_code == 200
-    assert len(t.json()) == 11  # 8 base + crankshaft + flanged_pipe_branch + gear/pulley
+    assert len(t.json()) == 12  # 8 base + crankshaft + flanged_pipe_branch + gear/pulley + hex_standoff

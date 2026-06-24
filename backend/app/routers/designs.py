@@ -164,6 +164,7 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         clarification_options=(design.semantic_json or {}).get("clarification_options") or [],
         telemetry=(design.semantic_json or {}).get("telemetry"),
         gear_debug=(design.semantic_json or {}).get("gear_debug"),
+        hex_debug=(design.semantic_json or {}).get("hex_debug"),
     )
 
 

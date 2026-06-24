@@ -30,6 +30,7 @@ SAMPLES = {
         }
     ),
     "spacer": dict(dimensions={"outer_diameter": 12, "length": 20, "bore_diameter": 6.4}),
+    "hex_standoff": dict(dimensions={"across_flats": 12, "length": 20, "bore_diameter": 4.5}),
     "pipe_clamp": dict(
         dimensions={
             "pipe_diameter": 25,
