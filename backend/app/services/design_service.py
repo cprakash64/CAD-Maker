@@ -1237,6 +1237,7 @@ def create_design(
 
     _attach_classification(db, design, classification)
     _attach_contract(db, design, prompt)
+    log_design_telemetry(design, "design_created", export_clicked=False)
     return design
 
 
@@ -1554,6 +1555,153 @@ def reconciled_validation_status(design: Design) -> str | None:
     return status
 
 
+# === Expectation control: concept vs validated, export wording, beta notice ===
+
+# Persistent beta disclaimer (workspace + export area).
+BETA_NOTICE = (
+    "Beta CAD output. Always verify dimensions and engineering requirements "
+    "before manufacturing."
+)
+# Shown for any concept assembly that allows export.
+CONCEPT_NOTICE = (
+    "Concept geometry only. Not structurally certified. Review before fabrication."
+)
+# Template object_types whose bore is a PARAMETER (not a spec.holes entry), so the
+# manual hole editor must not claim "No holes yet" for them.
+_PARAMETRIC_BORE_TYPES = {"spacer", "hex_standoff", "simple_gear_or_pulley"}
+
+
+def is_concept_design(design: Design) -> bool:
+    """True for a generated multi-part CONCEPT (assembly / frame / vehicle /
+    chassis / machine). These are a geometric first pass, never a certified or
+    manufacturing-ready part, so the UI must never show them a plain PASS."""
+    sem = design.semantic_json or {}
+    if sem.get("design_mode") == "assembly":
+        return True
+    if (design.route or "") == "assembly":
+        return True
+    return (sem.get("classification") or {}).get("design_mode") == "assembly"
+
+
+def _parametric_bore_mm(design: Design) -> float | None:
+    """The parameter-driven concentric bore (mm) of a deterministic template
+    family (spacer / hex standoff / gear / pulley), else None."""
+    spec = design.spec_json or {}
+    ot = spec.get("object_type") or design.object_type
+    if ot not in _PARAMETRIC_BORE_TYPES:
+        return None
+    dims = spec.get("dimensions") or {}
+    for key in _BORE_DIMENSION_KEYS:
+        v = dims.get(key)
+        try:
+            if v is not None and float(v) > 0:
+                return float(v)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def presentation_descriptor(design: Design) -> dict:
+    """The single source of truth for expectation-controlling UI copy: the status
+    badge/detail, whether the design is a concept (never a manufacturing PASS),
+    the export wording, the parametric-bore hint, and the beta notice.
+
+    The frontend renders these verbatim so the wording stays consistent and is
+    asserted in backend tests.
+    """
+    status = reconciled_validation_status(design)
+    critical = is_critical_failure(design)
+    concept = is_concept_design(design)
+
+    # Status badge — a concept assembly never shows a plain manufacturing PASS.
+    if critical:
+        badge, detail, tone = (
+            "FAILED", "Geometry failed validation — export blocked", "fail")
+    elif concept:
+        badge, detail, tone = (
+            "CONCEPT", "Geometry PASS · Engineering review required", "review")
+    elif status == "pass":
+        badge, detail, tone = "PASS", "Validated single part", "pass"
+    elif status == "warning":
+        badge, detail, tone = "REVIEW", "Generated · review recommended", "review"
+    else:
+        badge, detail, tone = None, None, None
+
+    # Export wording — concept exports are labelled as concept, not manufacturable.
+    if concept:
+        export = {
+            "kind": "concept",
+            "labels": {
+                "stl": "Export concept STL",
+                "step": "Export concept STEP",
+                "package": "CAD concept package",
+            },
+            "notice": CONCEPT_NOTICE,
+        }
+    else:
+        export = {
+            "kind": "validated",
+            "labels": {
+                "stl": "Export STL",
+                "step": "Export STEP",
+                "package": "CAD package",
+            },
+            "notice": None,
+        }
+
+    # Parametric bore: a deterministic family controls its bore by parameter, so
+    # the holes/features panel shows it instead of an incorrect "No holes yet".
+    bore = _parametric_bore_mm(design)
+    parametric_holes = (
+        [{"label": "Parametric bore", "diameter_mm": round(bore, 3), "through": True}]
+        if bore is not None else []
+    )
+    # The manual hole editor is hidden for parametric-bore families (holes are
+    # driven by parameters, not a hole list).
+    manual_hole_editing = not parametric_holes
+
+    return {
+        "status_badge": badge,
+        "status_detail": detail,
+        "status_tone": tone,
+        "is_concept": concept,
+        "concept_notice": CONCEPT_NOTICE if concept else None,
+        "export_kind": export["kind"],
+        "export_labels": export["labels"],
+        "export_notice": export["notice"],
+        "parametric_holes": parametric_holes,
+        "manual_hole_editing": manual_hole_editing,
+        "beta_notice": BETA_NOTICE,
+    }
+
+
+def log_design_telemetry(design: Design, event: str, **extra) -> None:
+    """Emit one structured telemetry event for a create / edit / export / feedback
+    action, with the fields used to prioritise beta fixes. Best-effort: telemetry
+    must never break a request."""
+    try:
+        sem = design.semantic_json or {}
+        cls = sem.get("classification") or {}
+        vs = validation_summary(design)
+        reasons = list(vs.get("critical_failures") or []) + list(vs.get("warnings") or [])
+        log_event(
+            event,
+            design_id=design.id,
+            prompt=(design.prompt or "")[:300],
+            route=design.route,
+            family=cls.get("family_id"),
+            title=_display_title(design),
+            generation_outcome=(sem.get("contract") or {}).get("outcome"),
+            validation_status=reconciled_validation_status(design),
+            warning_reason=("; ".join(reasons)[:300] or None),
+            export_allowed=(not is_critical_failure(design)) and bool(list(design.exports)),
+            is_concept=is_concept_design(design),
+            **extra,
+        )
+    except Exception:  # noqa: BLE001 — telemetry is best-effort
+        pass
+
+
 def _run_generation(db: Session, design: Design, prompt: str, parse_start: float) -> Design:
     # PRIMARY ROUTE: plain English -> CadPlan feature graph -> deterministic
     # CadQuery compile -> validate -> repair. Composes primitives instead of
@@ -1654,6 +1802,7 @@ def regenerate_design(
     _regenerate_geometry(db, design, spec)
     db.commit()
     db.refresh(design)
+    log_design_telemetry(design, "design_edited", edit_kind="regenerate")
     return design
 
 
@@ -1679,6 +1828,7 @@ def modify_design(db: Session, design: Design, prompt: str) -> tuple[Design, str
         design.assumptions = existing + [f"Edit: {result.summary}"]
     db.commit()
     db.refresh(design)
+    log_design_telemetry(design, "design_edited", edit_kind="modify_prompt")
     return design, None
 
 
@@ -1748,5 +1898,12 @@ def add_feedback(
         rating=rating,
         categories=categories,
         has_comment=bool(comment),
+    )
+    # Beta telemetry: normalise the thumb rating to yes / needs_work alongside the
+    # routing/validation context used to prioritise fixes.
+    log_design_telemetry(
+        design, "design_feedback",
+        user_feedback=("yes" if rating == "up" else "needs_work" if rating == "down" else rating),
+        feedback_categories=categories,
     )
     return fb

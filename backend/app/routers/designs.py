@@ -166,6 +166,7 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         telemetry=(design.semantic_json or {}).get("telemetry"),
         gear_debug=(design.semantic_json or {}).get("gear_debug"),
         hex_debug=(design.semantic_json or {}).get("hex_debug"),
+        presentation=design_service.presentation_descriptor(design),
     )
 
 
@@ -288,6 +289,9 @@ def download_file(
     export = next((e for e in design.exports if e.fmt == fmt), None)
     if export is None:
         raise HTTPException(status_code=404, detail="No such export")
+    design_service.log_design_telemetry(
+        design, "design_exported", export_clicked=True, export_format=fmt,
+        export_kind=design_service.presentation_descriptor(design)["export_kind"])
     storage = get_storage()
     signed = storage.signed_url(export.storage_key)
     if signed:

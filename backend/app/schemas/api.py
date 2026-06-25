@@ -176,6 +176,11 @@ class DesignDTO(BaseModel):
     # outside_diameter/root_diameter/bore_diameter/measured_tooth_count/
     # gear_visible_teeth). Present only for gear designs.
     gear_debug: Optional[dict] = None
+    # Expectation-control presentation block (single source of truth for UI copy):
+    # status_badge / status_detail / status_tone, is_concept, concept_notice,
+    # export_kind / export_labels / export_notice, parametric_holes,
+    # manual_hole_editing, beta_notice. A concept assembly never shows plain PASS.
+    presentation: Optional[dict] = None
     # Deterministic hex-standoff debug block (family/route/across_flats/
     # across_corners/length/bore_diameter/measured_corner_count/hex_six_sided).
     # Present only for hex-standoff designs.
