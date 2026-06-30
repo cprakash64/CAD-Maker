@@ -2,11 +2,18 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { Header } from "@/components/Header";
+import { PartPromptProvider } from "@/components/PartPromptOverlay";
 
 export const metadata: Metadata = {
-  title: "CAD Maker — Parametric CAD workspace",
+  title: "LunaiCAD — Parametric CAD workspace",
   description:
     "Generate validated, manufacturable parametric CAD parts from a description. Inspect, edit, validate, and export STEP/STL.",
+  openGraph: {
+    title: "LunaiCAD — Parametric CAD workspace",
+    description:
+      "Generate validated, manufacturable parametric CAD parts from a plain-English description.",
+    siteName: "LunaiCAD",
+  },
 };
 
 export default function RootLayout({
@@ -18,10 +25,12 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AuthProvider>
-          <Header />
-          {/* Pages add their own container (.page); the Studio workspace is
-              full-bleed. */}
-          <main>{children}</main>
+          <PartPromptProvider>
+            <Header />
+            {/* Pages add their own container (.page); the Studio workspace is
+                full-bleed. */}
+            <main>{children}</main>
+          </PartPromptProvider>
         </AuthProvider>
       </body>
     </html>

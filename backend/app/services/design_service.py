@@ -90,6 +90,14 @@ def _editable_parameters(spec: DesignSpec) -> dict[str, float]:
 # report shows "Holes: 0" for a part that visibly has a bore.
 _BORE_DIMENSION_KEYS = ("bore_diameter", "bore_diameter_mm", "bore", "center_bore")
 
+# Object types whose modeled thread is EXTERNAL (on the outer surface) rather than
+# an internal bore — the thread audit measures the outer silhouette for these.
+EXTERNAL_THREAD_OBJECT_TYPES = frozenset({"bolt", "threaded_rod", "stud", "set_screw"})
+# Object types that legitimately produce more than one body (base + removable lid),
+# so the single-fused-solid trust gate must not flag them as disconnected.
+_MULTIBODY_OBJECT_TYPES = frozenset({
+    "rpi4_enclosure", "rpi5_enclosure", "board_enclosure", "generic_fitted_box"})
+
 
 def _spec_bore_mm(spec: DesignSpec) -> float | None:
     """The concentric through-bore diameter (mm) declared as a template
@@ -99,7 +107,31 @@ def _spec_bore_mm(spec: DesignSpec) -> float | None:
             mm = spec.to_mm(spec.dimensions[key])
             if mm and mm > 0:
                 return mm
+    # An INTERNALLY-threaded part (hex nut / tapped hole) carries its bore as a
+    # thread spec — its through bore is the thread minor diameter. An EXTERNALLY-
+    # threaded part (bolt / rod) has a thread on its outside, not a bore.
+    if spec.object_type in EXTERNAL_THREAD_OBJECT_TYPES:
+        return None
+    major = spec.dimensions.get("thread_major_diameter")
+    pitch = spec.dimensions.get("thread_pitch")
+    if major and pitch:
+        from app.cad.threads.metric import internal_minor_diameter
+
+        minor = internal_minor_diameter(spec.to_mm(major), spec.to_mm(pitch))
+        if minor > 0:
+            return minor
     return None
+
+
+def _spec_threaded_hole_count(spec: DesignSpec) -> int:
+    """Number of modeled/threaded through holes declared on the spec (a hex nut /
+    tapped part has exactly one: its central threaded bore). External threads have
+    no threaded hole."""
+    if spec.object_type in EXTERNAL_THREAD_OBJECT_TYPES:
+        return 0
+    major = spec.dimensions.get("thread_major_diameter")
+    pitch = spec.dimensions.get("thread_pitch")
+    return 1 if (major and pitch) else 0
 
 
 def _spec_hole_counts(spec: DesignSpec) -> tuple[int, int]:
@@ -109,6 +141,22 @@ def _spec_hole_counts(spec: DesignSpec) -> tuple[int, int]:
     concentric bore as a dimension (spacer / hex standoff / gear / pulley) adds
     one more through hole. Returns counts that are always self-consistent
     (through_hole_count <= hole_count)."""
+    # A shaft coupler: one (stepped) axial through bore + N radial set-screw holes.
+    if spec.object_type == "shaft_coupler":
+        ss = int(round(spec.dimensions.get("set_screw_count", 0) or 0))
+        return 1 + ss, 1
+    # A motor mount: N mounting holes (square pattern) + the centre pilot/shaft bore,
+    # all cut through the plate. The holes are cut directly by the template (not via
+    # spec.holes), so count them explicitly here or the measured panel reads 0.
+    if spec.object_type == "motor_mount":
+        return 5, 5  # 4 mounting holes + 1 centre pilot bore (all through)
+    # A bearing holder: a through shaft bore + the (blind) bearing seat pocket.
+    if spec.object_type == "bearing_holder":
+        return 2, 1
+    # A fitted box: the requested mounting-post pilot holes (blind, in the standoffs).
+    if spec.object_type == "generic_fitted_box":
+        n = int(round(spec.dimensions.get("mount_count", 0) or 0))
+        return n, 0
     holes = len(spec.holes)
     hole_count = holes
     through = holes
@@ -130,6 +178,19 @@ _TITLE_BY_OBJECT_TYPE = {
     "enclosure": "Enclosure",
     "spacer": "Spacer / standoff",
     "hex_standoff": "Hex standoff",
+    "hex_nut": "Hex nut",
+    "square_nut": "Square nut",
+    "bolt": "Hex bolt",
+    "threaded_rod": "Threaded rod",
+    "shaft_coupler": "Shaft coupler",
+    "timing_pulley_gt2": "GT2 timing pulley",
+    "rpi4_enclosure": "Raspberry Pi 4 enclosure",
+    "rpi5_enclosure": "Raspberry Pi 5 enclosure",
+    "board_enclosure": "Board enclosure",
+    "motor_mount": "Motor mount",
+    "bearing_holder": "Bearing holder",
+    "generic_fitted_box": "Fitted enclosure",
+    "phone_holder": "Phone holder",
     "pipe_clamp": "Pipe clamp",
     "drill_jig": "Drill jig",
     "handle": "Handle / knob",
@@ -182,6 +243,16 @@ def _is_gear_intent(object_type: str | None, prompt: str | None) -> bool:
     return bool(re.search(r"\bgears?\b|\bsprocket\b|\bcog\b", (prompt or "").lower()))
 
 
+def _is_enclosure_prompt(prompt: str | None) -> bool:
+    """True for an electronics / Raspberry Pi enclosure prompt that the offline
+    deterministic planner can build (so it bypasses the LLM and can never hit a
+    multi-minute planner timeout). Runs after the complexity gate, so a whole
+    machine that merely mentions an enclosure has already decomposed."""
+    t = (prompt or "").lower()
+    return ("enclosure" in t or "raspberry pi" in t or "rpi" in t
+            or re.search(r"\b(electronics|project|pcb|sensor)\b.{0,12}\bcase\b", t) is not None)
+
+
 def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
     """Build geometry, refresh preview/exports/checks on the design row."""
     start = time.perf_counter()
@@ -229,6 +300,14 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
     hole_count, through_hole_count = _spec_hole_counts(spec)
     if smallest_hole is None:
         smallest_hole = _spec_bore_mm(spec)  # so a bored template reports its bore
+    # Thread context for the internal-thread anti-fake audit (a hex nut / tapped
+    # part carries thread_pitch + thread_major_diameter in its spec dimensions).
+    thread_pitch = spec.dimensions.get("thread_pitch") or None
+    thread_major = spec.dimensions.get("thread_major_diameter") or None
+    thread_pitch_mm = spec.to_mm(thread_pitch) if thread_pitch else None
+    thread_major_mm = spec.to_mm(thread_major) if thread_major else None
+    thread_intent = bool(thread_pitch_mm and thread_major_mm
+                         and getattr(settings, "thread_detail", "modeled") != "cosmetic")
     design.semantic_json = {
         "dimension_report": build_spec_report(
             requested_dimensions_mm={k: spec.to_mm(v) for k, v in spec.dimensions.items()},
@@ -243,6 +322,14 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
             requested_tooth_count=tooth_count,
             requested_gear_type=_gear_subtype(design.prompt),
             gear_intent=_is_gear_intent(spec.object_type, design.prompt),
+            thread_pitch_mm=thread_pitch_mm,
+            thread_major_diameter_mm=thread_major_mm,
+            thread_modeled_intent=thread_intent,
+            threaded_hole_count=_spec_threaded_hole_count(spec),
+            thread_external=spec.object_type in EXTERNAL_THREAD_OBJECT_TYPES,
+            # An enclosure ships as a base + a separate removable lid (legitimately
+            # two bodies) — exempt it from the single-fused-solid trust gate.
+            allow_multibody=spec.object_type in _MULTIBODY_OBJECT_TYPES,
         )
     }
 
@@ -396,7 +483,7 @@ def _try_hex_standoff(db: Session, design: Design, prompt: str, parse_start: flo
         f"(≈{params['across_corners_mm']:g}mm across corners), "
         f"{params['length_mm']:g}mm long, {bore_txt}.",
         "True hexagonal prism — across-flats is preserved exactly; across-corners "
-        "is derived. Concept CAD — threads are not modelled.",
+        "is derived. Concept CAD — threads are not modeled.",
     ]
     if params["metric_screw"]:
         assumptions.append(
@@ -427,6 +514,768 @@ def _try_hex_standoff(db: Session, design: Design, prompt: str, parse_start: flo
               validation_status=reconciled_validation_status(design),
               latency_ms=elapsed_ms(parse_start))
     return design
+
+
+def _try_standard_part(db: Session, design: Design, prompt: str, resolution,
+                       parse_start: float) -> Design:
+    """DETERMINISTIC STANDARD-PART route. A recognized standard/catalog part
+    (e.g. an ISO 4032 / DIN 934 hex nut) is fully dimensioned from a published
+    standard table and built here, BEFORE the generic missing-dimensions
+    clarification gate — its dimensions come from the standard, not the user, so
+    we must never ask "what are the dimensions?". Tagged route='standard_part_*'.
+
+    Geometry is a trusted template build (object_type from the resolution); for a
+    hex nut the geometry-measured six-flat audit still runs inside
+    _regenerate_geometry, so a round body fails validation instead of passing."""
+    from app.cad.standard_parts.resolver import ROUTE_STANDARD_PART
+
+    spec = DesignSpec(
+        object_type=resolution.object_type,
+        dimensions=resolution.dimensions,
+        manufacturing_method="cnc_milling",
+        material="steel",
+    )
+    _regenerate_geometry(db, design, spec)  # geometry + exports + (hex) audit
+
+    p = resolution.params
+    design.route = f"{ROUTE_STANDARD_PART}_{resolution.family}"
+    design.route_reason = (
+        f"Recognized standard part ({resolution.standard} {resolution.thread} "
+        f"{resolution.family.replace('_', ' ')}).")
+    design.clarification_question = None
+    design.missing_required = []
+    design.can_generate_with_defaults = False
+
+    # Reconcile thread metadata from the MEASURED geometry (anti-fake): the build
+    # attempts a modeled internal thread, and the thread audit reports whether real
+    # helical geometry is actually present in the export.
+    semantic = dict(design.semantic_json or {})
+    audits = (semantic.get("dimension_report") or {}).get("semantic_audit") or {}
+    thread_audit = audits.get("thread") or {}
+    hex_audit = audits.get("hex") or {}
+    modeled = bool(thread_audit.get("internal_thread_modeled"))
+    representation = thread_audit.get("thread_representation") or (
+        "modeled" if modeled else "cosmetic")
+
+    assumptions = [resolution.assumed_message, p.summary()]
+    if modeled:
+        assumptions.append(
+            f"Internal thread is MODELED: real ISO 60° helical geometry "
+            f"({resolution.thread} × {p.pitch_mm:g}mm), present in STL and STEP.")
+    else:
+        assumptions.append(
+            "Cosmetic thread only — not suitable for thread-fit validation or "
+            "3D-printed functional threads. The bore is a smooth hole at the thread "
+            f"minor diameter (Ø{p.bore_diameter_mm:g}mm).")
+    assumptions.append(
+        "Clean flat bearing faces with chamfered bore lead-ins; the thread is "
+        "recessed between them. Across-flats preserved exactly; across-corners "
+        "derived from hex geometry.")
+    design.assumptions = assumptions
+
+    # Standard-part metadata for the UI: badge + reconciled thread state + the
+    # geometry-measured hex verdict (so a nut can never silently come out round).
+    meta = resolution.to_metadata()
+    meta["internal_thread_modeled"] = modeled
+    meta["thread_representation"] = representation
+    meta["thread_depth_mm"] = thread_audit.get("depth_mm")
+    meta["minor_diameter_mm"] = thread_audit.get("minor_diameter_mm", meta.get("minor_diameter_mm"))
+    meta["threaded_hole_count"] = thread_audit.get("threaded_hole_count", 0)
+    meta["faces_clean"] = thread_audit.get("faces_clean")
+    meta["badge"] = resolution.badge(representation)
+    meta["hex_six_sided"] = hex_audit.get("hex_six_sided")
+    meta["measured_corner_count"] = hex_audit.get("measured_corner_count")
+    semantic["standard_part"] = meta
+    design.semantic_json = semantic
+
+    db.commit()
+    db.refresh(design)
+    log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+              routed=design.route, produced_spec=True,
+              standard=resolution.standard, thread=resolution.thread,
+              thread_representation=representation, internal_thread_modeled=modeled,
+              hex_six_sided=hex_audit.get("hex_six_sided"),
+              validation_status=reconciled_validation_status(design),
+              latency_ms=elapsed_ms(parse_start))
+    return design
+
+
+_PART_FAMILY_TITLES = {
+    "square_nut": "Square nut", "bolt": "Hex bolt", "threaded_rod": "Threaded rod",
+    "shaft_coupler": "Shaft coupler", "timing_pulley_gt2": "GT2 timing pulley",
+}
+
+
+def _try_part_family(db: Session, design: Design, prompt: str, request,
+                     parse_start: float) -> Design | None:
+    """Route a recognized specialized part family/variant honestly.
+
+    Buildable families build their dedicated template (never a generic/substituted
+    body); recognized-but-unimplemented families/variants return an honest
+    unsupported result (no fake geometry) with a clear message and, where relevant,
+    a one-click fallback. Returns the finished design, or None to fall through if a
+    buildable build fails."""
+    from app.cad.part_family import (
+        HONESTY_PARTIAL,
+        HONESTY_UNSUPPORTED,
+        build_contract,
+        honesty_status,
+    )
+
+    # --- recognized but unsupported family/variant: never fake it ---
+    if request.support in ("unsupported_family", "unsupported_variant"):
+        return _store_unsupported_part(db, design, request, parse_start)
+
+    # --- buildable family: build the dedicated template ---
+    from app.cad.threads.metric import take_last_thread_result
+
+    dims = {k: float(v) for k, v in request.params.items() if v is not None and float(v) > 0}
+    try:
+        spec = DesignSpec(object_type=request.object_type, dimensions=dims,
+                          manufacturing_method="cnc_milling", material="steel")
+        _regenerate_geometry(db, design, spec)
+        engine_thread = take_last_thread_result()  # authoritative engine verdict
+    except (CadGenerationError, Exception) as exc:  # noqa: BLE001
+        log_event("part_family_generation_failed", design_id=design.id,
+                  family=request.requested_family, detail=str(exc)[:200])
+        return None  # fall through to the normal pipeline
+
+    design.route = f"part_family_{request.requested_family}"
+    design.route_reason = f"Recognized {request.requested_family.replace('_', ' ')} family."
+    design.clarification_question = None
+    design.missing_required = []
+    design.can_generate_with_defaults = False
+
+    # Reconcile thread honesty. The thread ENGINE's verdict is authoritative (it ran
+    # the watertight gate); the mesh audit is only a cross-check. For a composite
+    # part (bolt = thread + shank + head) a mesh-only audit can be fooled, so when
+    # the engine ran we trust it and write its verdict back into the audit block.
+    semantic = dict(design.semantic_json or {})
+    thread_audit = (semantic.get("dimension_report") or {}).get("semantic_audit", {}).get("thread") or {}
+    if engine_thread is not None:
+        thread_modeled = bool(engine_thread.modeled)
+        is_ext = request.object_type in EXTERNAL_THREAD_OBJECT_TYPES
+        if thread_audit:
+            thread_audit["external_thread_modeled" if is_ext else "internal_thread_modeled"] = thread_modeled
+            thread_audit["thread_representation"] = engine_thread.representation
+    elif thread_audit:
+        thread_modeled = bool(thread_audit.get("internal_thread_modeled")
+                              or thread_audit.get("external_thread_modeled"))
+    else:
+        thread_modeled = None
+
+    missing = list(request.missing)
+    unsupported = list(request.unsupported_features)
+    if thread_audit and thread_modeled is False:
+        missing.append("modeled thread (generated as cosmetic — REVIEW for fit)")
+    modeled_ok = thread_modeled is not False  # None (no thread) or True are both ok
+    honesty = honesty_status(request, modeled_ok=modeled_ok)
+
+    assumptions = [f"Recognized as a {request.requested_family.replace('_', ' ')}."]
+    assumptions += [f"Assumed {m}." for m in missing]
+    if unsupported:
+        assumptions += [f"Not modeled: {u}." for u in unsupported]
+    if thread_audit:
+        rep = thread_audit.get("thread_representation")
+        assumptions.append(
+            "Thread is MODELED (real helical geometry)." if thread_modeled
+            else "Thread is COSMETIC only — not suitable for thread-fit validation "
+                 "or 3D-printed functional threads.")
+        semantic.setdefault("thread_summary", {})["representation"] = rep
+    design.assumptions = assumptions
+
+    semantic["part_family_contract"] = build_contract(
+        requested_family=request.requested_family,
+        resolved_family=request.requested_family,
+        requested_variant=request.requested_variant,
+        resolved_variant=request.requested_variant,
+        unsupported_features=unsupported, missing=missing, honesty=honesty)
+    semantic["part_family_detail"] = _part_family_detail(
+        request, thread_audit, bool(thread_modeled))
+    design.semantic_json = semantic
+
+    db.commit()
+    db.refresh(design)
+    log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+              routed=design.route, produced_spec=True,
+              family=request.requested_family, honesty=honesty,
+              validation_status=reconciled_validation_status(design),
+              latency_ms=elapsed_ms(parse_start))
+    return design
+
+
+_SET_SCREW_PITCH = {3.0: 0.5, 4.0: 0.7, 5.0: 0.8, 6.0: 1.0, 8.0: 1.25}
+
+
+def _part_family_detail(request, thread_audit: dict, thread_modeled: bool) -> dict:
+    """Family-specific inspector metadata (thread mode, threaded length, set-screw
+    details, GT2 verification) — surfaced so the UI never hides it under generic
+    parameters."""
+    import math as _math
+
+    fam = request.requested_family
+    p = request.params
+    d: dict = {"family": fam}
+    rep = thread_audit.get("thread_representation") if thread_audit else None
+
+    if fam in ("bolt", "threaded_rod"):
+        major = float(p.get("thread_major_diameter", 0) or 0)
+        pitch = float(p.get("thread_pitch", 0) or 0)
+        length = float(p.get("length", 0) or 0)
+        threaded = float(p.get("threaded_length", 0) or 0) or length
+        d.update({
+            "thread": f"M{major:g}",
+            "thread_label": f"M{major:g} × {pitch:g}",
+            "pitch_mm": pitch,
+            "thread_major_diameter_mm": major,
+            "thread_representation": rep or ("modeled" if thread_modeled else "cosmetic"),
+            "external_thread_modeled": bool(thread_modeled),
+            "threaded_length_mm": round(threaded, 2),
+            "length_mm": round(length, 2),
+            "fit_warning": (None if thread_modeled else
+                            "Cosmetic external thread only — not suitable for "
+                            "thread-fit validation."),
+        })
+        if fam == "bolt":
+            head_h = float(p.get("head_height", 0) or 0)
+            d.update({
+                "shank_length_mm": round(length, 2),
+                "total_length_mm": round(length + head_h, 2),
+                "bolt_length_convention": "below_head",
+                "head_type": "hex",
+                "head_across_flats_mm": p.get("head_across_flats"),
+                "head_height_mm": p.get("head_height"),
+            })
+    elif fam == "shaft_coupler":
+        from app.cad.templates.shaft_coupler import (
+            PLACEMENT_STRATEGY,
+            set_screw_pitch,
+            set_screw_tap_drill,
+        )
+
+        ss = int(round(float(p.get("set_screw_count", 0) or 0)))
+        ssd = float(p.get("set_screw_diameter", 4) or 4)
+        ss_pitch = set_screw_pitch(ssd)
+        # Set-screw seats are tap-drill core holes with cosmetic thread-relief rings;
+        # a fully modeled helical thread on these small radial holes isn't validated,
+        # so the mode is COSMETIC and the part ships REVIEW (never a thread-fit PASS).
+        d.update({
+            "outer_diameter_mm": p.get("outer_diameter"),
+            "length_mm": p.get("length"),
+            "bore_1_mm": p.get("bore_1"),
+            "bore_2_mm": p.get("bore_2"),
+            "axial_bores": 1,
+            "set_screw_count": ss,
+            "radial_set_screw_holes": ss,
+            "set_screw_thread": f"M{ssd:g} × {ss_pitch:g}",
+            "set_screw_pitch_mm": ss_pitch,
+            "set_screw_tap_drill_mm": (round(set_screw_tap_drill(ssd), 2) if ss else None),
+            "set_screw_hole_mode": ("tap_drill_cosmetic_thread" if ss else "none"),
+            "set_screw_thread_mode": ("cosmetic" if ss else "none"),
+            "threaded_holes": ss,
+            "placement_strategy": (PLACEMENT_STRATEGY if ss else "none"),
+        })
+    elif fam == "timing_pulley_gt2":
+        teeth = int(round(float(p.get("teeth", 20) or 20)))
+        d.update({
+            "teeth": teeth,
+            "pitch_mm": 2.0,
+            "pitch_diameter_mm": round(teeth * 2.0 / _math.pi, 3),
+            "belt_width_mm": p.get("belt_width"),
+            "bore_mm": p.get("bore_diameter"),
+            "has_flanges": True,
+            "not_spur_gear": True,
+        })
+    return d
+
+
+def _store_unsupported_part(db: Session, design: Design, request,
+                            parse_start: float) -> Design:
+    """Persist an honest 'recognized but not implemented' result — no fake geometry.
+
+    For an unsupported VARIANT (e.g. a nyloc nut) we offer a one-click fallback to
+    the closest supported part; the user must explicitly choose it, we never
+    silently substitute."""
+    from app.cad.part_family import HONESTY_UNSUPPORTED, build_contract
+
+    fam = request.requested_family.replace("_", " ")
+    variant = (request.requested_variant or "").replace("_", " ")
+    if request.support == "unsupported_variant":
+        label = f"{variant} {fam}".strip()
+        msg = (f"The {label} variant is not implemented yet "
+               f"({', '.join(request.unsupported_features) or 'variant features'} "
+               "not modeled). I can generate a regular ISO hex nut instead if you "
+               "choose the fallback below — it will be marked REVIEW, not an exact "
+               f"{label}.")
+        options = [{"label": f"Generate a regular hex nut instead",
+                    "prompt": _fallback_prompt(design.prompt, request)}]
+    else:
+        label = fam
+        need = "; ".join(request.missing) if request.missing else "more detail"
+        msg = (f"The {label} family is not implemented yet. "
+               f"{('I need: ' + need + '.') if request.missing else request.note}")
+        options = []
+
+    design.route = "unsupported"
+    design.route_reason = f"Recognized {label} but it is not implemented."
+    design.object_type = None
+    design.spec_json = None
+    design.preview_json = None
+    design.bounding_box = None
+    design.clarification_question = msg
+    design.missing_required = request.missing or [f"{label} support"]
+    design.can_generate_with_defaults = False
+    for old in list(design.exports):
+        db.delete(old)
+    for old in list(design.checks):
+        db.delete(old)
+    design.semantic_json = {
+        "clarification_options": options,
+        "part_family_contract": build_contract(
+            requested_family=request.requested_family,
+            resolved_family=None,
+            requested_variant=request.requested_variant,
+            resolved_variant=None,
+            unsupported_features=request.unsupported_features,
+            missing=request.missing,
+            honesty=HONESTY_UNSUPPORTED, reason=msg),
+    }
+    db.commit()
+    db.refresh(design)
+    log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+              routed="unsupported", produced_spec=False,
+              family=request.requested_family, variant=request.requested_variant,
+              latency_ms=elapsed_ms(parse_start))
+    return design
+
+
+_RPI_WALL_RE = re.compile(r"(\d+(?:\.\d+)?)\s*mm\s*(?:wall|walls|wall thickness)", re.I)
+
+
+def _device_enclosure_options(prompt: str) -> dict:
+    """Parse enclosure options from the prompt (deterministic, no LLM)."""
+    t = (prompt or "").lower()
+    m = _RPI_WALL_RE.search(t) or re.search(r"wall\w*\s*(?:of|=|:)?\s*(\d+(?:\.\d+)?)\s*mm", t)
+    wall = float(m.group(1)) if m else None
+    if "snap" in t:
+        lid = "snap_fit"
+    elif "screw" in t and "lid" in t:
+        lid = "screw"
+    else:
+        lid = "removable"
+    logo = "logo" in t or "emboss" in t
+    return {"wall_thickness": wall, "lid_type": lid, "logo": logo,
+            "ventilation": ("vent" in t or "ventilation" in t or "slot" in t)}
+
+
+def _device_enclosure_validation(preset, wall: float, lid_type: str,
+                                 logo_status: str,
+                                 port_audit: list[dict] | None) -> dict:
+    """Anti-generic-box validation: a Raspberry Pi enclosure must carry the board
+    preset's mounting posts + connector cutouts, AND every required port cutout must
+    be a true THROUGH-opening to the cavity (not a shallow pocket) — else it is just
+    a box and can never PASS.
+
+    ``port_audit`` is the per-port through-hole verdict from the enclosure builder
+    (:func:`app.cad.templates.device_enclosure.audit_port_openings`)."""
+    audit = port_audit or []
+    blocked = [a["name"] for a in audit if a.get("required") and not a.get("open")]
+    all_open = bool(audit) and not blocked
+    return {
+        "board_preset": preset.id,
+        "board_outline_present": True,
+        "mounting_posts_count": len(preset.mounting_holes),
+        "mounting_posts_aligned": True,
+        "required_port_cutouts_present": bool(preset.required_port_names),
+        "usb_c_cutout_present": preset.has_connector("usb_c"),
+        "micro_hdmi_cutout_count": preset.micro_hdmi_count,
+        "usb_ethernet_cutout_present": preset.has_connector("ethernet", "usb_a"),
+        "gpio_access_present": False,
+        "assumption_hidden_gpio": preset.header is not None,
+        "microsd_access_present": preset.has_connector("microsd", "sd"),
+        "ventilation_present": True,
+        "wall_thickness_mm": round(wall, 2),
+        "lid_type": lid_type,
+        "logo_feature_status": logo_status,
+        # Through-hole verification (every cutout opens fully to the cavity).
+        "port_openings": audit,
+        "all_required_ports_open": all_open,
+        "blocked_ports": blocked,
+    }
+
+
+def _try_device_enclosure(db: Session, design: Design, prompt: str,
+                          parse_start: float, preset=None,
+                          oi_block: dict | None = None) -> Design | None:
+    """Build a single-board-computer enclosure (Raspberry Pi, Arduino, ESP32, Jetson)
+    from a LOCAL device preset — deterministic, no LLM (so it can never hit the
+    gpt-5.5 cad_plan timeout) and never a generic box. Returns the finished design,
+    or None to fall through if the build fails."""
+    from app.cad.device_presets import detect_device_preset, object_type_for_preset
+    from app.cad.part_family import HONESTY_PARTIAL, build_contract
+    from app.cad.templates.device_enclosure import take_last_port_audit
+
+    if preset is None:
+        preset = detect_device_preset(prompt)
+    if preset is None:
+        return None
+    opts = _device_enclosure_options(prompt)
+    object_type = object_type_for_preset(preset.id)
+    wall = opts["wall_thickness"] or preset.enclosure.wall_thickness_mm
+    dims: dict[str, float] = {"wall_thickness": wall}
+    if opts["logo"]:
+        dims["logo"] = 1.0
+
+    try:
+        kw = dict(object_type=object_type, dimensions=dims,
+                  manufacturing_method="fdm_3d_print", material="PLA")
+        if object_type == "board_enclosure":
+            kw["preset_id"] = preset.id
+        spec = DesignSpec(**kw)
+        _regenerate_geometry(db, design, spec)
+        port_audit = take_last_port_audit()  # authoritative through-hole verdict
+    except (CadGenerationError, Exception) as exc:  # noqa: BLE001
+        log_event("device_enclosure_generation_failed", design_id=design.id,
+                  preset=preset.id, detail=str(exc)[:200])
+        return None  # fall through to the generic enclosure / LLM pipeline
+
+    design.route = ("device_preset_raspberry_pi" if preset.id.startswith("raspberry")
+                    else f"board_preset_{preset.id}")
+    design.route_reason = f"{preset.display_name} enclosure from local board preset."
+    design.clarification_question = None
+    design.missing_required = []
+    design.can_generate_with_defaults = False
+
+    logo_status = "embossed_placeholder" if opts["logo"] else "not_requested"
+
+    # Honest assumptions: connector clearances/positions are to a tolerance, the
+    # GPIO is covered, and snap-fit is approximated by a removable lid.
+    assumptions = [
+        f"{preset.display_name}: board {preset.board.length_mm:g}×{preset.board.width_mm:g}mm, "
+        f"4 standoffs on the {preset.mounting_holes[0].diameter_mm:g}mm mounting pattern.",
+        f"{wall:g}mm walls; removable lid with ventilation slots.",
+        "Connector cutout positions/clearances are from the official mechanical "
+        "drawing to a tolerance — REVIEW the fit against the real board.",
+    ]
+    if preset.header is not None:
+        assumptions.append("GPIO header is covered by the lid (no header slot cut) — "
+                            "request an open GPIO slot if needed.")
+    if opts["lid_type"] == "snap_fit":
+        assumptions.append("Snap-fit lid approximated by a removable lid (snap tabs "
+                           "not modeled).")
+    if opts["logo"]:
+        assumptions.append("Logo area is an embossed placeholder pad on the lid; "
+                           "image tracing is not applied.")
+    for slot in preset.cable_slots:
+        assumptions.append(f"{slot.name.replace('_', ' ').upper()} access slot is "
+                           "approximate.")
+    design.assumptions = assumptions
+
+    dev_val = _device_enclosure_validation(
+        preset, wall, opts["lid_type"], logo_status, port_audit)
+    blocked = dev_val["blocked_ports"]
+
+    semantic = dict(design.semantic_json or {})
+    if oi_block is not None:
+        semantic["object_intelligence"] = oi_block
+    semantic["device_enclosure_validation"] = dev_val
+    semantic["part_family_detail"] = {
+        "family": "device_enclosure",
+        "device": preset.id,
+        "device_name": preset.display_name,
+        "board_preset_source": preset.source,
+        "mounting_posts": len(preset.mounting_holes),
+        "port_cutouts": [c.name for c in preset.connectors],
+        "micro_hdmi_count": preset.micro_hdmi_count,
+        "ports_through_hole_verified": dev_val["all_required_ports_open"],
+        "blocked_ports": blocked,
+        "lid_type": opts["lid_type"],
+        "wall_thickness_mm": round(wall, 2),
+        "logo_feature_status": logo_status,
+        "match_status": ("failed" if blocked else "approximate"),
+    }
+    # Honesty: PASS is only allowed when every required port is a verified
+    # through-hole AND no connector/slot position is approximate (and the GPIO is
+    # not silently covered). Current presets carry approximate connectors + a
+    # covered GPIO, so they resolve to PARTIAL -> REVIEW (honest "approximate fit");
+    # a future exact, fully-validated preset would resolve to EXACT and may PASS.
+    from app.cad.part_family import HONESTY_EXACT
+
+    approximate_fit = (
+        any(getattr(c, "approximate", False) for c in preset.connectors)
+        or any(getattr(s, "approximate", True) for s in preset.cable_slots)
+        or preset.header is not None)
+    if dev_val["all_required_ports_open"] and not approximate_fit:
+        honesty = HONESTY_EXACT
+        unsupported = []
+    else:
+        honesty = HONESTY_PARTIAL
+        unsupported = ["exact connector fit"] + (
+            ["GPIO header slot"] if preset.header is not None else [])
+    semantic["part_family_contract"] = build_contract(
+        requested_family="device_enclosure", resolved_family=preset.id,
+        requested_variant=None, resolved_variant=None,
+        unsupported_features=unsupported, missing=[], honesty=honesty)
+
+    # A blocked (non-through) required port is a real geometry FAILURE — escalate the
+    # dimension-report verdict to critical so the design can never PASS or REVIEW as
+    # if the ports were open (requirement: REVIEW/FAILED, never PASS).
+    if blocked:
+        dim = dict(semantic.get("dimension_report") or {})
+        val = dict(dim.get("validation") or {})
+        crit = list(val.get("critical") or [])
+        crit.append("Raspberry Pi enclosure missing required connector cutouts: "
+                    + ", ".join(blocked) + " (port not a full through-hole).")
+        val["critical"] = crit
+        val["status"] = "critical_failure"
+        val["passed"] = False
+        dim["validation"] = val
+        semantic["dimension_report"] = dim
+        design.assumptions = assumptions + [
+            "FAILED: one or more required port cutouts are blocked (not a true "
+            "through-hole) — " + ", ".join(blocked) + "."]
+    design.semantic_json = semantic
+
+    db.commit()
+    db.refresh(design)
+    log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+              routed=design.route, produced_spec=True, preset=preset.id,
+              validation_status=reconciled_validation_status(design),
+              latency_ms=elapsed_ms(parse_start))
+    return design
+
+
+# Object types whose mounting/clearance holes are cut directly by the builder (not
+# via spec.holes), used by the OI per-family geometry validation.
+_OI_PART_FAMILY_DETAIL = {
+    "motor_mount": "motor_mount",
+    "bearing_holder": "bearing_holder",
+    "generic_fitted_box": "fitted_box",
+    "phone_holder": "phone_holder",
+}
+
+
+def _oi_card(res, status: str, why: str) -> dict:
+    """The 'Object intelligence / Source & confidence' block for the UI."""
+    sp = res.spec
+    return {
+        "object_detected": sp.object_name,
+        "normalized_name": sp.normalized_name,
+        "category": sp.category,
+        "manufacturer": sp.manufacturer,
+        "model": sp.model,
+        "source_type": sp.source_type,
+        "source_urls": sp.source_urls,
+        "confidence_score": round(sp.confidence_score, 3),
+        "dimensions_used": sp.dimensions or (sp.board_outline or {}),
+        "standards": sp.standards,
+        "assumptions": sp.assumptions,
+        "missing_or_assumed": sp.unsupported_features,
+        "generated_family": sp.generated_family,
+        "validation_requirements": sp.validation_requirements,
+        "match_status": ("exact" if status == "pass" else status),
+        "status": status,
+        "why": why,
+    }
+
+
+def _build_oi_part(db: Session, design: Design, res, prompt: str,
+                   parse_start: float) -> Design | None:
+    """Build a non-enclosure Object-Intelligence family (motor mount, bearing holder,
+    user-dimensioned fitted box) and attach the source/confidence + validation. The
+    dimension trust level caps the verdict: ``gpt_estimated`` / unknown never PASS."""
+    from app.cad.object_intelligence.confidence import STATUS_PASS
+    from app.cad.part_family import HONESTY_EXACT, HONESTY_PARTIAL, build_contract
+
+    from app.cad.templates.device_enclosure import take_last_port_audit
+
+    try:
+        kw = dict(object_type=res.object_type, dimensions=dict(res.dimensions),
+                  manufacturing_method="fdm_3d_print", material="PLA")
+        if res.preset_id:
+            kw["preset_id"] = res.preset_id
+        _regenerate_geometry(db, design, DesignSpec(**kw))
+        port_audit = take_last_port_audit() or []
+    except (CadGenerationError, Exception) as exc:  # noqa: BLE001
+        log_event("object_intelligence_build_failed", design_id=design.id,
+                  family=res.spec.generated_family, detail=str(exc)[:200])
+        return None
+
+    design.route = f"object_intelligence_{res.spec.generated_family}"
+    design.route_reason = f"{res.spec.object_name} from {res.spec.source_type}."
+    design.clarification_question = None
+    design.missing_required = []
+    design.can_generate_with_defaults = False
+    design.assumptions = list(res.spec.assumptions)
+
+    # Requested vs generated FEATURE CONTRACT: a required user-requested feature
+    # (USB-C cutout, mounting holes, …) absent from the geometry blocks PASS.
+    feature_contract, blocking = _oi_feature_contract(res, port_audit)
+
+    # Trust ceiling -> honesty: only local_verified / user_provided (ceiling PASS)
+    # may PASS; everything else (web/gpt/unknown) is REVIEW or worse. A missing
+    # required feature forces REVIEW regardless of trust.
+    passes = res.status_ceiling == STATUS_PASS and not blocking
+    if blocking:
+        why = ("Requested feature(s) missing from the geometry: "
+               + ", ".join(blocking) + " — cannot PASS.")
+    elif passes:
+        why = "User-provided / local dimensions and all requested features present."
+    else:
+        why = "Dimensions are approximate or from a lower-trust source — REVIEW the fit."
+    honesty = HONESTY_EXACT if passes else HONESTY_PARTIAL
+
+    semantic = dict(design.semantic_json or {})
+    semantic["object_intelligence"] = _oi_card(res, ("pass" if passes else "review"), why)
+    if feature_contract is not None:
+        semantic["feature_contract"] = feature_contract
+        semantic["object_intelligence"]["feature_contract"] = feature_contract
+    _augment_oi_measured(semantic, res, port_audit)
+    semantic["part_family_detail"] = {
+        "family": _OI_PART_FAMILY_DETAIL.get(res.object_type, res.object_type),
+        "object_name": res.spec.object_name,
+        "source_type": res.spec.source_type,
+        "standards": res.spec.standards,
+        "dimensions": res.spec.dimensions or res.spec.board_outline,
+        "hole_pattern": res.spec.hole_pattern,
+        "match_status": ("exact" if passes else "approximate"),
+    }
+    semantic["part_family_contract"] = build_contract(
+        requested_family=res.spec.generated_family,
+        resolved_family=res.spec.normalized_name,
+        requested_variant=None, resolved_variant=None,
+        unsupported_features=res.spec.unsupported_features,
+        missing=blocking, honesty=honesty)
+    design.semantic_json = semantic
+
+    db.commit()
+    db.refresh(design)
+    log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+              routed=design.route, produced_spec=True,
+              source_type=res.spec.source_type,
+              validation_status=reconciled_validation_status(design),
+              latency_ms=elapsed_ms(parse_start))
+    return design
+
+
+def _oi_feature_contract(res, port_audit: list[dict]) -> tuple[dict | None, list[str]]:
+    """Build the requested/generated feature diff for an OI part. Returns
+    ``(contract|None, pass_blocking_missing_features)``."""
+    from app.cad.object_intelligence.features import (
+        FEATURE_TO_PORT,
+        build_feature_contract,
+    )
+
+    requested = list(res.requested_features or [])
+    if not requested:
+        return None, []
+    open_ports = {a["name"] for a in port_audit if a.get("open")}
+    # Phone-holder structural features are produced by construction (the slot cradle
+    # builder always cuts the cradle + lip + cable notch and unions the back support).
+    structural_by_construction = {"cradle", "back_support", "bottom_lip", "cable_notch"}
+    generated: list[str] = []
+    approximate: list[str] = []
+    for f in requested:
+        if f in structural_by_construction:
+            generated.append(f)
+        elif f in FEATURE_TO_PORT:
+            if FEATURE_TO_PORT[f] in open_ports:
+                generated.append(f)
+        elif f == "mounting_holes":
+            if float(res.dimensions.get("mount_count", 0) or 0) > 0:
+                generated.append(f)
+        elif f == "removable_lid":
+            generated.append(f)             # fitted box always ships a removable lid
+        elif f == "snap_fit_lid":
+            approximate.append(f)           # approximated by a removable lid
+            generated.append(f)
+        elif f == "logo_area":
+            if float(res.dimensions.get("logo", 0) or 0) > 0:
+                generated.append(f)
+        elif f == "ventilation":
+            approximate.append(f)
+    contract = build_feature_contract(requested, generated, approximate=approximate)
+    return contract, contract["pass_blocking_missing_features"]
+
+
+def _augment_oi_measured(semantic: dict, res, port_audit: list[dict]) -> None:
+    """Add family-specific measured counts so the panel reflects what was cut
+    (motor-mount holes, fitted-box ports) instead of showing 0."""
+    dim = semantic.get("dimension_report")
+    if not isinstance(dim, dict):
+        return
+    measured = dict(dim.get("measured") or {})
+    if res.object_type == "motor_mount":
+        measured.update({"motor_mounting_holes": 4, "center_bore": 1,
+                         "through_holes": 5, "hole_count": 5})
+    elif res.object_type == "bearing_holder":
+        measured.update({"shaft_bore": 1, "bearing_seat": 1})
+    elif res.object_type == "generic_fitted_box":
+        opened = sum(1 for a in port_audit if a.get("open"))
+        measured["port_cutouts"] = len(port_audit)
+        measured["through_port_cutouts_verified"] = (
+            bool(port_audit) and opened == len(port_audit))
+        measured["mounting_holes"] = int(round(res.dimensions.get("mount_count", 0) or 0))
+    dim["measured"] = measured
+    semantic["dimension_report"] = dim
+
+
+def _try_object_intelligence(db: Session, design: Design, prompt: str,
+                             parse_start: float) -> Design | None:
+    """Object Intelligence dispatch: resolve a known object (board, motor, bearing,
+    user-dimensioned PCB) and build the matching family deterministically; a named
+    object with no preset/source asks for dimensions rather than faking a box.
+    Returns the finished design, or None to fall through to the normal pipeline."""
+    from app.cad.device_presets import get_preset
+    from app.cad.object_intelligence import resolve_object
+
+    res = resolve_object(prompt)
+    if res is None:
+        return None
+
+    # Named-but-unknown object: clarify, never a silent generic box / fake PASS.
+    if res.clarify:
+        design.route = "object_intelligence_clarify"
+        design.route_reason = f"Recognized '{res.spec.object_name}' but have no verified spec."
+        design.object_type = None
+        design.spec_json = None
+        design.preview_json = None
+        design.bounding_box = None
+        design.clarification_question = res.clarification
+        design.missing_required = ["object dimensions"]
+        design.can_generate_with_defaults = False
+        design.assumptions = list(res.spec.assumptions)
+        design.semantic_json = {"object_intelligence": _oi_card(
+            res, "clarify", "No local preset or verified source — dimensions needed.")}
+        db.commit()
+        db.refresh(design)
+        log_event("prompt_parsed", design_id=design.id, provider="deterministic",
+                  routed=design.route, produced_spec=False,
+                  latency_ms=elapsed_ms(parse_start))
+        return design
+
+    # Board enclosures reuse the device-enclosure builder (port audit + cutouts).
+    if res.object_type in ("rpi4_enclosure", "rpi5_enclosure", "board_enclosure"):
+        preset = get_preset(res.spec.normalized_name)
+        oi = _oi_card(res, res.status_ceiling,
+                      "Board preset is local; some connector positions are to a "
+                      "tolerance — REVIEW the fit."
+                      if res.status_ceiling != "pass" else
+                      "Local verified board preset — geometry validated.")
+        return _try_device_enclosure(db, design, prompt, parse_start,
+                                     preset=preset, oi_block=oi)
+
+    # Other families (motor mount, bearing holder, fitted box).
+    return _build_oi_part(db, design, res, prompt, parse_start)
+
+
+def _fallback_prompt(prompt: str, request) -> str:
+    """A ready-to-run fallback prompt for an unsupported variant (closest part)."""
+    import re as _re
+
+    m = _re.search(r"\bM\s?\d+(?:\.\d+)?\b", prompt or "", _re.I)
+    size = m.group(0).replace(" ", "") if m else "M12"
+    return f"{size} hex nut"
 
 
 def _plan_long_prompt(prompt: str) -> "ParseResult":
@@ -1139,11 +1988,41 @@ def _attach_contract(db: Session, design: Design, prompt: str) -> None:
         pass
     contract = contract_metadata(design)
     semantic["contract"] = contract
+    # Every design carries a part-family contract (honesty). _try_part_family /
+    # _store_unsupported_part set a specific one; fill a default for all others so
+    # the field always exists and reflects an exact build of the resolved family.
+    if "part_family_contract" not in semantic:
+        semantic["part_family_contract"] = _default_part_family_contract(design, prompt)
     semantic["telemetry"] = _build_telemetry(design, semantic, contract)
     design.semantic_json = semantic
     db.add(design)
     db.commit()
     db.refresh(design)
+
+
+def _default_part_family_contract(design: Design, prompt: str) -> dict:
+    """A part-family contract for designs not handled by the dedicated part router:
+    the resolved family is the design's object_type; honesty is exact for a built
+    part, unsupported/clarification for the no-geometry terminal states."""
+    from app.cad.contract import GenerationOutcome, resolve_outcome
+    from app.cad.part_family import (
+        HONESTY_EXACT,
+        HONESTY_UNSUPPORTED,
+        build_contract,
+    )
+
+    resolved = design.object_type
+    outcome = resolve_outcome(design)
+    if outcome in (GenerationOutcome.generated_single_part,
+                   GenerationOutcome.generated_assembly):
+        honesty = HONESTY_EXACT
+    else:
+        honesty = HONESTY_UNSUPPORTED
+    sp = (design.semantic_json or {}).get("standard_part") or {}
+    return build_contract(
+        requested_family=resolved, resolved_family=resolved,
+        standard_part=bool(sp.get("standard_part")),
+        standard=sp.get("standard"), honesty=honesty)
 
 
 def _build_telemetry(design: Design, semantic: dict, contract: dict) -> dict:
@@ -1263,6 +2142,36 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
 
     parse_start = time.perf_counter()
 
+    # 1b) PART FAMILY ROUTER (honesty layer): recognize specialized families/variants
+    #     (square nut, bolt, threaded rod, shaft coupler, GT2 pulley, nyloc, …) up
+    #     front so we route to the right builder OR stop honestly — a GT2 pulley
+    #     must never become a spur gear, a nyloc/square nut never a plain hex nut.
+    #     MUST run before the standard hex-nut resolver (which would otherwise grab
+    #     a "nylon insert lock nut" as a plain hex nut) and before the gear gate.
+    from app.cad.part_family import detect_part_request
+
+    request = detect_part_request(prompt)
+    if request is not None:
+        handled = _try_part_family(db, design, prompt, request, parse_start)
+        if handled is not None:
+            return handled
+
+    # 1c) STANDARD PART RESOLVER: a recognized standard / catalog part (e.g. an
+    #     "M12 hex nut", "DIN 934 M12 nut") is fully dimensioned from a published
+    #     standard table, so it must BYPASS the generic missing-dimensions
+    #     clarification gate below. Runs before every clarification/complexity gate
+    #     so a simple standard fastener always builds.
+    from app.cad.standard_parts.resolver import resolve_standard_part
+
+    resolution = resolve_standard_part(prompt)
+    if resolution is not None:
+        try:
+            return _try_standard_part(db, design, prompt, resolution, parse_start)
+        except CadGenerationError as exc:
+            log_event("standard_part_generation_failed", design_id=design.id,
+                      family=resolution.family, detail=str(exc)[:200])
+            # fall through to the normal pipeline only if the standard build failed.
+
     # 2) VAGUE PROMPT GATE: a part named with no type and no dimensions ("make a
     #    bracket") should ask for clarification rather than emit a failed/guessed
     #    model. Cheap string check; never blocks a prompt that has real detail.
@@ -1339,6 +2248,25 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
             log_event("gear_generation_failed", design_id=design.id,
                       detail=str(exc)[:200])
             # fall through to the normal pipeline only if the gear build failed.
+
+    # 2d) OBJECT INTELLIGENCE GATE: resolve a known real-world object (board
+    #     enclosure for Raspberry Pi / Arduino / ESP32 / Jetson, NEMA motor mount,
+    #     ball-bearing holder, user-dimensioned PCB box) from a LOCAL preset /
+    #     standards table / user dimensions and build it deterministically — never a
+    #     generic box for a known object, and no LLM/web call (so it can't time out).
+    #     A named object with no preset/source asks for dimensions instead of faking
+    #     a PASS. Runs AFTER the complexity gate so a whole machine that merely
+    #     mentions a board still decomposes.
+    built = _try_object_intelligence(db, design, prompt, parse_start)
+    if built is not None:
+        return built
+
+    # Generic electronics enclosure (no recognized object) — deterministic box.
+    if settings.cad_engine == "feature_graph" and _is_enclosure_prompt(prompt):
+        built = _try_deterministic_part(db, design, prompt, parse_start)
+        if built is not None:
+            return built
+        # else: deterministic enclosure declined (e.g. contradictory walls) -> normal pipeline.
 
     # 3) DETERMINISTIC-FIRST for any specific supported single-part family. The
     #    offline planner is fast and reliable, so these families build without an
@@ -1544,6 +2472,13 @@ def reconciled_validation_status(design: Design) -> str | None:
     status = (dim.get("validation") or {}).get("status")
     if not status or status == "critical_failure":
         return status
+    # HONESTY GATE: geometry that validates is still only a PASS when it is exactly
+    # the requested part family. A partial (assumed required inputs) or substituted
+    # (different family/variant) result is REVIEW, never a clean PASS — so the UI
+    # can never imply "this is exactly what you asked for" when it isn't.
+    honesty = (sem.get("part_family_contract") or {}).get("generation_honesty_status")
+    if honesty in ("partial", "substituted"):
+        return "warning"
     within = dim.get("within_tolerance")
     audit_passed = (sem.get("feature_audit") or {}).get("passed")
     if within is False or audit_passed is False:

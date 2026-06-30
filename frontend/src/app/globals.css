@@ -2,12 +2,183 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   Theme tokens. Colors are stored as space-separated RGB triples so Tailwind
+   can apply opacity modifiers (`bg-raised/70`) via rgb(var(--x) / <alpha>).
+   Dark is the default; light is applied automatically from the OS preference.
+   ========================================================================== */
 :root {
-  color-scheme: dark;
+  color-scheme: light dark;
+
+  /* --- surfaces (dark, warm graphite) --- */
+  --c-ink: 11 10 9;
+  --c-panel: 19 18 16;
+  --c-raised: 27 25 22;
+  --c-edge: 43 40 35;
+  --c-viewport: 10 9 8;
+  /* Refined champagne / warm anodized brass (not neon, not mustard). */
+  --c-accent: 207 169 77; /* #cfa94d base */
+  --c-accent-top: 226 192 114; /* sheen highlight (gradient top) */
+  --c-accent-hover: 222 186 98; /* hover: slightly brighter, still elegant */
+  --c-champagne: 216 180 90;
+  --c-danger: 194 92 82;
+  --c-on-accent: 26 22 14; /* deep warm ink on the brass fill (both themes) */
+
+  /* --- titanium gray ramp (50 = brightest text → 950 = darkest surface) --- */
+  --c-slate-50: 244 239 230;
+  --c-slate-100: 236 230 218;
+  --c-slate-200: 218 210 196;
+  --c-slate-300: 175 167 153;
+  --c-slate-400: 140 133 122;
+  --c-slate-500: 116 109 99;
+  --c-slate-600: 91 85 76;
+  --c-slate-700: 66 61 54;
+  --c-slate-800: 42 39 35;
+  --c-slate-900: 26 24 20;
+  --c-slate-950: 16 15 13;
+
+  /* success = champagne brass (never green) */
+  --c-emerald-200: 236 212 154;
+  --c-emerald-300: 226 188 104;
+  --c-emerald-400: 214 170 77;
+  --c-emerald-500: 201 155 61;
+  --c-emerald-600: 184 137 58;
+  --c-emerald-700: 156 116 48;
+
+  /* danger = muted brick */
+  --c-red-100: 236 199 192;
+  --c-red-200: 221 170 161;
+  --c-red-300: 207 140 130;
+  --c-red-400: 194 92 82;
+  --c-red-500: 181 84 74;
+  --c-red-600: 158 74 65;
+
+  /* warnings = warmed amber (no acid yellow) */
+  --c-amber-100: 240 220 176;
+  --c-amber-200: 232 207 149;
+  --c-amber-300: 220 183 102;
+  --c-amber-400: 205 162 74;
+  --c-amber-500: 189 143 63;
+
+  /* --- glass + decorative --- */
+  --glass-fill: rgba(255, 248, 235, 0.055);
+  --glass-fill-strong: rgba(255, 248, 235, 0.075);
+  --glass-border: rgba(255, 240, 210, 0.12);
+  --glass-border-strong: rgba(255, 240, 210, 0.2);
+  --grid-line: rgba(255, 240, 210, 0.05);
+  --body-glow-a: rgba(214, 170, 77, 0.05);
+  --body-glow-b: rgba(255, 248, 235, 0.022);
+  --scrollbar: #2b2823;
+  --scrollbar-hover: #423d36;
 }
 
-body {
-  @apply bg-ink text-slate-200 antialiased;
+@media (prefers-color-scheme: light) {
+  :root {
+    /* --- surfaces (light, warm ivory / titanium) --- */
+    --c-ink: 245 241 233;
+    --c-panel: 253 250 245;
+    --c-raised: 236 230 220;
+    --c-edge: 211 202 188;
+    --c-viewport: 228 222 211;
+    /* Muted antique brass on ivory — premium, never saturated mustard. */
+    --c-accent: 184 137 36; /* #b88924 base */
+    --c-accent-top: 205 161 62; /* sheen highlight (gradient top) */
+    --c-accent-hover: 162 116 26; /* hover: deeper, livelier */
+    --c-champagne: 184 137 36;
+    --c-danger: 178 70 60;
+    --c-on-accent: 22 17 9;
+
+    /* ramp flips: 50 = darkest text → 950 = lightest surface */
+    --c-slate-50: 33 29 24;
+    --c-slate-100: 46 41 34;
+    --c-slate-200: 61 55 47;
+    --c-slate-300: 92 83 71;
+    --c-slate-400: 122 111 96;
+    --c-slate-500: 146 134 117;
+    --c-slate-600: 176 165 149;
+    --c-slate-700: 200 190 175;
+    --c-slate-800: 220 212 199;
+    --c-slate-900: 234 228 218;
+    --c-slate-950: 244 240 232;
+
+    --c-emerald-200: 176 138 56;
+    --c-emerald-300: 161 124 46;
+    --c-emerald-400: 150 116 38;
+    --c-emerald-500: 138 105 33;
+    --c-emerald-600: 122 92 28;
+    --c-emerald-700: 104 78 24;
+
+    --c-red-100: 168 70 60;
+    --c-red-200: 178 74 63;
+    --c-red-300: 178 70 60;
+    --c-red-400: 178 70 60;
+    --c-red-500: 158 62 53;
+    --c-red-600: 138 54 46;
+
+    --c-amber-100: 150 110 36;
+    --c-amber-200: 158 116 40;
+    --c-amber-300: 166 122 44;
+    --c-amber-400: 150 110 36;
+    --c-amber-500: 138 101 33;
+
+    --glass-fill: rgba(255, 253, 248, 0.72);
+    --glass-fill-strong: rgba(255, 253, 248, 0.86);
+    --glass-border: rgba(70, 58, 34, 0.14);
+    --glass-border-strong: rgba(70, 58, 34, 0.24);
+    --grid-line: rgba(70, 58, 34, 0.06);
+    --body-glow-a: rgba(150, 116, 38, 0.06);
+    --body-glow-b: rgba(255, 255, 255, 0.5);
+    --scrollbar: #cdc3b3;
+    --scrollbar-hover: #b3a895;
+  }
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-ink font-sans text-slate-200 antialiased;
+    /* Calm warm field: two faint radial pools of warmth that fade out. */
+    background-image:
+      radial-gradient(1100px 620px at 78% -8%, var(--body-glow-a), transparent 60%),
+      radial-gradient(900px 520px at 6% 4%, var(--body-glow-b), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  /* Visible, on-brand focus ring everywhere (accessibility). */
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-accent) / 0.65);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: rgb(var(--c-accent) / 0.28);
+    color: rgb(var(--c-slate-50));
+  }
+
+  /* Quiet, warm scrollbars. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--scrollbar);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-hover);
+    background-clip: padding-box;
+  }
 }
 
 /* Tabular figures for dimensions / measurements everywhere. */
@@ -18,85 +189,174 @@ body {
 @layer components {
   /* Centered content container for non-workspace pages. */
   .page {
-    @apply mx-auto max-w-7xl px-5 py-6;
+    @apply mx-auto max-w-7xl px-5 py-8 sm:px-6;
   }
 
-  /* --- surfaces --- */
+  /* --- surfaces ---------------------------------------------------------- */
   .card {
-    @apply rounded-lg border border-edge bg-panel;
+    @apply rounded-xl border shadow-glass backdrop-blur-xl;
+    background-color: var(--glass-fill);
+    border-color: var(--glass-border);
   }
   .surface {
-    @apply rounded-lg border border-edge bg-raised;
+    @apply rounded-lg border border-edge bg-raised/70 backdrop-blur-sm;
+  }
+  .glass {
+    @apply rounded-xl border shadow-glass backdrop-blur-xl;
+    background-color: var(--glass-fill-strong);
+    border-color: var(--glass-border);
+  }
+  .hairline {
+    @apply border-edge;
+  }
+  .etched-grid {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px;
   }
 
-  /* --- buttons (flat, no glow) --- */
+  /* --- buttons (refined, soft lift, champagne glow — no neon) ----------- */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2
-      text-sm font-medium transition-colors disabled:cursor-not-allowed
-      disabled:opacity-50;
+    @apply inline-flex select-none items-center justify-center gap-1.5 rounded-lg
+      px-4 py-2 text-sm font-medium transition-all duration-200 ease-premium
+      disabled:cursor-not-allowed disabled:opacity-50;
   }
-  /* Brass primary action with dark carbon text — premium, not neon. */
   .btn-primary {
-    @apply btn bg-accent font-semibold text-ink hover:bg-accent/90;
+    @apply btn font-semibold;
+    color: rgb(var(--c-on-accent));
+    /* Warm anodized-brass sheen: light top → base bottom. */
+    background: linear-gradient(180deg, rgb(var(--c-accent-top)), rgb(var(--c-accent)));
+    box-shadow: 0 1px 0 0 rgba(255, 248, 235, 0.22) inset,
+      0 8px 22px -14px rgb(var(--c-accent) / 0.6);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgb(var(--c-accent-top)), rgb(var(--c-accent-hover)));
+    transform: translateY(-1px);
+    box-shadow: 0 1px 0 0 rgba(255, 248, 235, 0.28) inset,
+      0 14px 28px -14px rgb(var(--c-accent) / 0.7);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+    background: linear-gradient(180deg, rgb(var(--c-accent)), rgb(var(--c-accent-hover)));
+  }
+  .btn-primary:disabled {
+    /* Flat solid fill so the inherited opacity-50 fades it uniformly — a clean
+       faded brass, not a muddy gradient + shadow. */
+    background: rgb(var(--c-accent));
+    box-shadow: none;
   }
   .btn-ghost {
-    @apply btn border border-edge bg-transparent text-slate-200 hover:bg-raised;
+    @apply btn border bg-transparent text-slate-200;
+    border-color: var(--glass-border);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    @apply bg-raised/80 text-slate-50;
+    border-color: var(--glass-border-strong);
+    transform: translateY(-1px);
   }
   .btn-sm {
-    @apply rounded px-2.5 py-1 text-xs;
+    @apply rounded-md px-3 py-1.5 text-xs;
   }
 
-  /* --- inputs --- */
+  /* --- inputs (precise engineering command surface) -------------------- */
   .input {
-    @apply w-full rounded-md border border-edge bg-raised px-3 py-2 text-sm
+    @apply w-full rounded-lg border bg-raised/60 px-3.5 py-2.5 text-sm
       text-slate-100 placeholder:text-slate-500 outline-none
-      focus:border-accent focus:ring-1 focus:ring-accent/30;
+      transition-colors duration-200;
+    border-color: var(--glass-border);
+  }
+  .input:focus {
+    @apply bg-raised/80;
+    border-color: rgb(var(--c-accent) / 0.55);
+    box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.12);
   }
 
-  /* --- typography helpers --- */
+  /* --- typography helpers --------------------------------------------- */
   .label {
-    @apply text-[11px] font-semibold uppercase tracking-wider text-slate-400;
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500;
   }
 
-  /* Example / selectable chips. */
   .chip {
-    @apply rounded-md border border-edge bg-raised px-2.5 py-1 text-xs text-slate-300
-      transition-colors hover:border-accent/60 hover:text-slate-100;
+    @apply inline-flex items-center rounded-full border bg-raised/50 px-3 py-1
+      text-xs text-slate-300 transition-all duration-200;
+    border-color: var(--glass-border);
+  }
+  .chip:hover:not(:disabled) {
+    @apply text-slate-50;
+    border-color: rgb(var(--c-accent) / 0.5);
+    background-color: rgb(var(--c-accent) / 0.08);
   }
 
-  /* --- status badges (icon + label, muted fills — never neon) --- */
+  /* --- status badges --------------------------------------------------- */
   .badge {
-    @apply inline-flex items-center gap-1 rounded-md border px-2 py-0.5
-      text-[11px] font-semibold uppercase tracking-wide;
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5
+      text-[10px] font-semibold uppercase tracking-[0.1em];
   }
-  /* Validated = neutral graphite with off-white text (brass check added by caller). */
   .badge-pass {
-    @apply badge border-edge bg-raised text-slate-100;
+    @apply badge border-edge bg-raised/70 text-slate-100;
   }
   .badge-review {
     @apply badge border-amber-500/40 bg-amber-500/10 text-amber-300;
   }
   .badge-fail {
-    @apply badge border-danger/60 bg-danger/15 text-[#e6a39b];
+    @apply badge border-danger/50 bg-danger/15;
+    color: rgb(var(--c-red-300));
   }
   .badge-neutral {
-    @apply badge border-edge bg-raised text-slate-400;
+    @apply badge border-edge bg-raised/50 text-slate-400;
+  }
+  .badge-accent {
+    @apply badge;
+    border-color: rgb(var(--c-accent) / 0.45);
+    background-color: rgb(var(--c-accent) / 0.12);
+    color: rgb(var(--c-accent));
   }
 
-  /* --- inline notices --- */
+  /* --- inline notices -------------------------------------------------- */
   .banner {
-    @apply rounded-md border p-3 text-sm;
+    @apply rounded-lg border p-3.5 text-sm;
   }
   .banner-info {
-    @apply banner border-edge bg-raised text-slate-300;
+    @apply banner border-edge bg-raised/60 text-slate-300 backdrop-blur-sm;
   }
   .banner-warn {
-    @apply banner border-amber-500/40 bg-amber-500/10 text-amber-100;
+    @apply banner border-amber-500/35 bg-amber-500/10 text-amber-100;
   }
   .banner-danger {
-    @apply banner border-danger/60 bg-danger/10 text-[#e6a39b];
+    @apply banner border-danger/50 bg-danger/10;
+    color: rgb(var(--c-red-300));
   }
   .banner-success {
-    @apply banner border-edge bg-raised text-slate-200;
+    @apply banner border-edge bg-raised/60 text-slate-200;
+  }
+}
+
+@layer utilities {
+  .lift {
+    @apply transition-all duration-200 ease-premium;
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 1px 0 0 rgba(255, 248, 235, 0.06) inset,
+      0 24px 50px -28px rgba(0, 0, 0, 0.85);
+    border-color: var(--glass-border-strong);
+  }
+}
+
+/* Respect reduced-motion: drop transforms/animations, keep states legible. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .btn-primary:hover:not(:disabled),
+  .btn-ghost:hover:not(:disabled),
+  .lift:hover {
+    transform: none;
   }
 }

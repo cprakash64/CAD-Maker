@@ -156,11 +156,22 @@ def test_sensor_enclosure_generates_with_defaults(client, auth):
 
 
 # --- regression families --------------------------------------------------------
-@pytest.mark.parametrize("prompt", [NEMA, L_BRACKET, VISE, ADAPTER],
-                         ids=["nema_plate", "l_bracket", "vise_jaw", "adapter_plate"])
+@pytest.mark.parametrize("prompt", [L_BRACKET, VISE, ADAPTER],
+                         ids=["l_bracket", "vise_jaw", "adapter_plate"])
 def test_regression_families_still_generate(client, auth, prompt):
     d = _create(client, auth, prompt)
     _assert_generated(client, auth, d)
+
+
+def test_nema_plate_uses_motor_mount_family(client, auth):
+    """A NEMA stepper mounting plate now resolves to the Object-Intelligence motor
+    mount (exact 4-hole face pattern + pilot bore), not a generic plate."""
+    d = _create(client, auth, NEMA)
+    assert d["object_type"] == "motor_mount"
+    assert not d["needs_clarification"]
+    assert d["validation_status"] != "critical_failure"
+    det = d.get("part_family_detail") or {}
+    assert det.get("hole_pattern", {}).get("count") == 4
 
 
 # --- wrong primary geometry must FAIL even though files exist -------------------

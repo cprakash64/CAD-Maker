@@ -100,7 +100,8 @@ def _compensation_notes() -> list[str]:
 
 def _validation_summary(measured: dict, requested: dict,
                         within_tolerance: bool | None, pr: dict,
-                        semantic_issues: list | None = None) -> dict:
+                        semantic_issues: list | None = None,
+                        allow_multibody: bool = False) -> dict:
     """Classify the build into pass / warning / critical_failure.
 
     CRITICAL (production-blocking trust failures): disconnected bodies, out-of-
@@ -108,9 +109,12 @@ def _validation_summary(measured: dict, requested: dict,
     non-manifold mesh, zero/negative volume, and SEMANTIC mismatches (e.g. a gear
     with no teeth). WARNINGS: non-blocking advisories (e.g. a hole below the
     printable minimum, too few teeth). Everything else passes.
+
+    ``allow_multibody`` exempts the single-solid rule for parts that are LEGITIMATELY
+    multi-body (e.g. an enclosure shipped as a base + a removable lid).
     """
     crit: list[str] = []
-    if measured.get("components", 1) != 1:
+    if not allow_multibody and measured.get("components", 1) != 1:
         crit.append(
             f"Disconnected geometry: {measured.get('components')} separate bodies "
             "(expected one fused solid)."
@@ -157,6 +161,12 @@ def build_spec_report(
     requested_tooth_count: int | None = None,
     requested_gear_type: str | None = None,
     gear_intent: bool = False,
+    thread_pitch_mm: float | None = None,
+    thread_major_diameter_mm: float | None = None,
+    thread_modeled_intent: bool = False,
+    threaded_hole_count: int | None = None,
+    thread_external: bool = False,
+    allow_multibody: bool = False,
 ) -> dict:
     """Dimension report for a template / DesignSpec-built part.
 
@@ -231,6 +241,63 @@ def build_spec_report(
             "hex_six_sided": is_hex,
         }
 
+    # Internal-thread anti-fake audit: a part that claims a MODELED internal
+    # thread must actually contain helical thread geometry (a varying bore wall),
+    # never a smooth bore reported as threaded. Reconciles thread_representation
+    # from the MEASURED mesh so the metadata can never over-claim.
+    if thread_pitch_mm and thread_major_diameter_mm:
+        from app.cad.semantic_audits import (
+            audit_internal_thread,
+            measure_external_thread,
+            measure_internal_thread,
+            measure_thread_on_faces,
+        )
+
+        if thread_external:
+            span = measure_external_thread(stl_bytes, thread_major_diameter_mm)["bore_radial_span_mm"]
+            depth = round(1.2269 * thread_pitch_mm / 2.0, 4)
+            face_intrusion = None  # an external thread has no bearing face to clear
+        else:
+            span = measure_internal_thread(stl_bytes, thread_major_diameter_mm)["bore_radial_span_mm"]
+            depth = round(1.0825 * thread_pitch_mm / 2.0, 4)
+            height = (bbox_mm or {}).get("z") or 0.0
+            face_intrusion = measure_thread_on_faces(
+                stl_bytes, thread_major_diameter_mm, height)["face_intrusion_points"]
+        modeled = (span is not None) and span >= 0.4 * depth
+        thread_issues = audit_internal_thread(
+            claimed_modeled=bool(thread_modeled_intent),
+            thread_pitch_mm=thread_pitch_mm,
+            bore_radial_span_mm=span, thread_depth_mm=depth,
+            face_intrusion_points=face_intrusion if modeled else None,
+            measured_hole_count=None if thread_external else hole_count)
+        semantic_issues = list(semantic_issues) + thread_issues
+        if modeled:
+            representation = "modeled"
+        elif thread_modeled_intent:
+            representation = "failed_to_model_fallback_cosmetic"
+        else:
+            representation = "cosmetic"
+        minor = (thread_major_diameter_mm - (1.2269 if thread_external else 1.0825) * thread_pitch_mm)
+        semantic_meta["thread"] = {
+            "pitch_mm": thread_pitch_mm,
+            "major_diameter_mm": thread_major_diameter_mm,
+            "minor_diameter_mm": round(minor, 4),
+            "depth_mm": depth,
+            "external": bool(thread_external),
+            "bore_radial_span_mm": (round(span, 4) if span is not None else None),
+            "face_intrusion_points": face_intrusion,
+            "faces_clean": (True if thread_external else
+                            (face_intrusion is not None and face_intrusion <= 30)),
+            "threaded_hole_count": (0 if thread_external else (threaded_hole_count if modeled else 0)),
+            "external_thread_modeled": (modeled if thread_external else None),
+            "internal_thread_modeled": (None if thread_external else modeled),
+            "thread_representation": representation,
+        }
+        # Surface the threaded-hole count alongside the measured hole counts so the
+        # inspector can report "Threaded holes: 1" (internal threads only).
+        if not thread_external:
+            measured["threaded_hole_count"] = threaded_hole_count if modeled else 0
+
     # No requested hole/bbox targets in the template path, so only geometry-health
     # criticals (disconnected / non-watertight / non-manifold / zero volume) apply.
     requested: dict = {}
@@ -243,7 +310,8 @@ def build_spec_report(
         "within_tolerance": None,
         "print_readiness": pr,
         "semantic_audit": semantic_meta,
-        "validation": _validation_summary(measured, requested, None, pr, semantic_issues),
+        "validation": _validation_summary(measured, requested, None, pr,
+                                           semantic_issues, allow_multibody=allow_multibody),
         "notes": _compensation_notes(),
     }
 

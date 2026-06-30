@@ -11,6 +11,7 @@ import {
   type ProviderStatus,
 } from "@/lib/api";
 import { useRequireAuth } from "@/lib/auth";
+import { usePartPrompt } from "@/components/PartPromptOverlay";
 
 const TEMPLATES = [
   "rectangular_bracket", "l_bracket", "enclosure", "spacer", "pipe_clamp",
@@ -21,6 +22,7 @@ const TEMPLATES = [
 export default function DrawingToCadPage() {
   const router = useRouter();
   const { user, loading } = useRequireAuth();
+  const partPrompt = usePartPrompt();
   const [file, setFile] = useState<File | null>(null);
   const [hint, setHint] = useState("");
   const [override, setOverride] = useState("");
@@ -116,26 +118,59 @@ export default function DrawingToCadPage() {
   const canConfirmWithOverride = !!interp && !!override;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5 py-8">
-      <div>
-        <h1 className="text-2xl font-bold">Drawing-to-CAD Assist</h1>
-        <p className="mt-1 text-sm text-slate-300">
-          Drawing-to-CAD Assist extracts geometry and dimensions when possible.
-          You must <strong>confirm</strong> the detected type and assumptions
-          before any CAD is generated — it is assistance, not exact conversion.
+    <div className="page max-w-3xl space-y-5 lg:max-w-4xl">
+      <div className="space-y-1.5">
+        <span className="label block">Drawing → CAD</span>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">
+          Drawing-to-CAD Assist
+        </h1>
+        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-400">
+          Extracts geometry and dimensions from a 2D drawing when possible. You
+          confirm the detected type and assumptions before any CAD is generated —
+          it is assistance, not exact conversion.
         </p>
         {status && (
-          <p className="mt-1 text-xs">
-            Provider:{" "}
+          <p className="mt-1.5 inline-flex items-center gap-2 text-xs text-slate-500">
+            Provider
             <span
-              className={
-                status.image_understanding ? "text-emerald-300" : "text-amber-300"
-              }
+              className={`inline-flex items-center gap-1.5 rounded-full border border-edge bg-raised/50 px-2 py-0.5 ${
+                status.image_understanding ? "text-accent" : "text-amber-300"
+              }`}
             >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  status.image_understanding ? "bg-accent" : "bg-amber-400"
+                }`}
+              />
               {status.status_label}
             </span>
           </p>
         )}
+      </div>
+
+      {/* Unified flow: the Spotlight prompt overlay handles text + image in one
+          surface. This is the recommended quick path; the detailed reviewer
+          below stays available for confirming assumptions. */}
+      <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-slate-100">Quick image prompt</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-slate-400">
+            Attach a sketch or drawing and describe it in one place — same engine,
+            fewer steps.
+          </p>
+        </div>
+        <button
+          className="btn-primary shrink-0"
+          onClick={() => partPrompt.open(undefined, { image: true })}
+        >
+          Open image prompt
+        </button>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <span className="h-px flex-1 bg-edge" />
+        <span className="label">Detailed reviewer</span>
+        <span className="h-px flex-1 bg-edge" />
       </div>
 
       {imageBlocked && (

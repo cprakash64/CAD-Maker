@@ -1,20 +1,23 @@
-export const metadata = { title: "Import & Compatibility — SourceCAD" };
+export const metadata = { title: "Import & Compatibility — LunaiCAD" };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="card p-5">
-      <h2 className="mb-2 text-lg font-semibold">{title}</h2>
-      <div className="space-y-2 text-sm text-slate-300">{children}</div>
+      <h2 className="mb-2 text-base font-semibold tracking-tight text-slate-100">{title}</h2>
+      <div className="space-y-2 text-sm leading-relaxed text-slate-300">{children}</div>
     </section>
   );
 }
 
 export default function ImportDocsPage() {
   return (
-    <div className="mx-auto max-w-3xl space-y-5 py-8">
-      <div>
-        <h1 className="text-2xl font-bold">Import &amp; Compatibility</h1>
-        <p className="mt-1 text-sm text-slate-300">
+    <div className="page max-w-3xl space-y-5">
+      <div className="space-y-1.5">
+        <span className="label block">Documentation</span>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+          Import &amp; Compatibility
+        </h1>
+        <p className="mt-1 text-sm leading-relaxed text-slate-400">
           Every part exports as <strong>STEP</strong> (parametric-friendly B-rep)
           and <strong>STL</strong> (mesh). The “CAD Package” download bundles
           STEP, STL, the DesignSpec JSON, a manufacturing report, and drawing
@@ -43,7 +46,7 @@ export default function ImportDocsPage() {
         <ol className="list-decimal space-y-1 pl-5">
           <li><em>File → Open</em> the <code>.step</code> file.</li>
           <li>Switch to the <em>Part</em> or <em>TechDraw</em> workbench to add dimensions/drawings.</li>
-          <li>STEP files from SourceCAD are generated with OpenCascade — the same kernel FreeCAD uses — so they import cleanly.</li>
+          <li>STEP files from LunaiCAD are generated with OpenCascade — the same kernel FreeCAD uses — so they import cleanly.</li>
         </ol>
       </Section>
 

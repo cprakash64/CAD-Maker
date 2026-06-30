@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import ViewToolbar, { type ViewName } from "./ViewToolbar";
+import { useEffect, useRef, useState } from "react";
+import ViewToolbar, { type DisplayMode, type ViewName } from "./ViewToolbar";
 // Import directly (NOT next/dynamic) so React refs forward to Viewer3D — the
 // previous dynamic() wrapper dropped the ref, so view buttons and circle-edit
 // projection never reached the viewer. Studio3D itself is dynamically imported
@@ -20,14 +20,28 @@ interface Props {
   features: FeatureInfo[];
   onSelect: (f: SelectedFeature | null) => void;
   materialColor?: string;
-  viewerClassName?: string;
 }
 
-export default function Studio3D({ mesh, features, onSelect, materialColor, viewerClassName }: Props) {
+export default function Studio3D({ mesh, features, onSelect, materialColor }: Props) {
   const viewerRef = useRef<ViewerHandle>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [activeView, setActiveView] = useState<ViewName>("iso");
+  const [projection, setProjection] = useState<"perspective" | "orthographic">("perspective");
+  const [showGrid, setShowGrid] = useState(true);
+  const [showAxes, setShowAxes] = useState(true);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("shaded");
+  const [measureMode, setMeasureMode] = useState(false);
+  const [dark, setDark] = useState(true);
   const [circleMode, setCircleMode] = useState(false);
+
+  // Follow the OS light/dark preference so the viewer chrome matches the app.
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => setDark(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
   const [circle, setCircle] = useState<{ x: number; y: number; r: number } | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const [marker, setMarker] = useState<{ x: number; y: number; label: string } | null>(null);
@@ -97,108 +111,157 @@ export default function Studio3D({ mesh, features, onSelect, materialColor, view
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <ViewToolbar
-          active={activeView}
-          onSelect={(v) => {
-            setActiveView(v);
-            viewerRef.current?.setView(v);
-          }}
-          onCapturePng={() => viewerRef.current?.capturePng()}
-        />
-        <div className="flex items-center gap-1">
+    <div className="relative h-full w-full">
+      <Viewer3D
+        ref={viewerRef}
+        mesh={mesh}
+        materialColor={materialColor}
+        showGrid={showGrid}
+        showAxes={showAxes}
+        orthographic={projection === "orthographic"}
+        dark={dark}
+        displayMode={displayMode}
+        measureMode={measureMode}
+        className="absolute inset-0 h-full w-full overflow-hidden rounded-xl border border-edge bg-viewport"
+        onPick={(p: PickedEntity) => onSelect({ entity_type: p.type, entity_id: p.id, label: p.label })}
+      />
+
+      {/* Overlay captures circle gestures only in circle mode. */}
+      <div
+        ref={overlayRef}
+        className={`absolute inset-0 ${circleMode ? "cursor-crosshair" : "pointer-events-none"}`}
+        onMouseDown={onDown}
+        onMouseMove={onMove}
+        onMouseUp={onUp}
+        onMouseLeave={() => (dragStart.current = null)}
+      >
+        {circle && (
+          <svg className="h-full w-full">
+            <circle
+              cx={circle.x}
+              cy={circle.y}
+              r={Math.max(circle.r, 1)}
+              fill="rgba(214,170,77,0.16)"
+              stroke="#d6aa4d"
+              strokeWidth={2}
+            />
+          </svg>
+        )}
+        {marker && !circle && (
+          <div
+            className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-on-accent"
+            style={{ left: marker.x, top: marker.y }}
+          >
+            {marker.label}
+            <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1 rotate-45 bg-accent" />
+          </div>
+        )}
+        {/* Dev-only: show projected feature anchors to debug selection. */}
+        {debug &&
+          viewerRef.current
+            ?.projectPoints(features.map((f) => f.anchor))
+            .map((pt, i) =>
+              pt && features[i] && features[i]!.type !== "body" ? (
+                <div
+                  key={features[i]!.id}
+                  className="pointer-events-none absolute h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400"
+                  style={{ left: pt[0], top: pt[1] }}
+                  title={features[i]!.id}
+                />
+              ) : null
+            )}
+      </div>
+
+      {/* Floating toolbar — keeps all vertical space for the model. */}
+      <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-wrap items-start justify-end gap-2">
+        <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5">
+          <ViewToolbar
+            active={activeView}
+            onSelect={(v) => {
+              setActiveView(v);
+              viewerRef.current?.setView(v);
+            }}
+            onHome={() => {
+              setActiveView("iso");
+              viewerRef.current?.setView("iso");
+            }}
+            onCapturePng={() => viewerRef.current?.capturePng()}
+            projection={projection}
+            onToggleProjection={() =>
+              setProjection((p) => (p === "perspective" ? "orthographic" : "perspective"))
+            }
+            showGrid={showGrid}
+            onToggleGrid={() => setShowGrid((g) => !g)}
+            showAxes={showAxes}
+            onToggleAxes={() => setShowAxes((a) => !a)}
+            displayMode={displayMode}
+            onSelectDisplayMode={setDisplayMode}
+            measureMode={measureMode}
+            onToggleMeasure={() => {
+              setMeasureMode((m) => !m);
+              setCircleMode(false); // measure and circle-edit are exclusive
+            }}
+          />
+          {measureMode && (
+            <button
+              className="rounded-lg border border-[color:var(--glass-border)] bg-panel/85 px-2.5 py-1.5 text-xs text-slate-300 shadow-glass backdrop-blur-xl transition-colors hover:text-slate-100"
+              onClick={() => viewerRef.current?.clearMeasurements()}
+              title="Clear all measurements"
+            >
+              Clear
+            </button>
+          )}
           {process.env.NODE_ENV !== "production" && (
             <button
-              className={`rounded px-2 py-1 text-xs ${
-                debug ? "bg-emerald-600 text-white" : "border border-edge text-slate-400"
+              className={`rounded-lg border px-2 py-1.5 text-xs shadow-glass backdrop-blur-xl ${
+                debug
+                  ? "border-accent/60 bg-accent/15 text-accent"
+                  : "border-[color:var(--glass-border)] bg-panel/85 text-slate-400 hover:text-slate-100"
               }`}
               onClick={() => setDebug((d) => !d)}
               title="Dev: show feature anchors"
             >
-              ⌖ anchors
+              ⌖
             </button>
           )}
           <button
-            className={`rounded px-2.5 py-1 text-xs ${
-              circleMode ? "bg-accent text-white" : "border border-edge text-slate-300"
+            className={`rounded-lg border px-2.5 py-1.5 text-xs shadow-glass backdrop-blur-xl transition-colors ${
+              circleMode
+                ? "border-accent/60 bg-accent/15 text-accent"
+                : "border-[color:var(--glass-border)] bg-panel/85 text-slate-300 hover:text-slate-100"
             }`}
             onClick={() => {
               setCircleMode((m) => !m);
+              setMeasureMode(false); // measure and circle-edit are exclusive
               setCircle(null);
               setNotFound(false);
             }}
-            title="Draw a circle over a feature to select it"
+            title="Circle Edit — draw a circle over a feature to select it"
           >
-            ◯ Circle Edit{circleMode ? " (on)" : ""}
+            ◯ Circle{circleMode ? " · on" : ""}
           </button>
         </div>
       </div>
 
-      <div className="relative">
-        <Viewer3D
-          ref={viewerRef}
-          mesh={mesh}
-          materialColor={materialColor}
-          className={viewerClassName}
-          onPick={(p: PickedEntity) => onSelect({ entity_type: p.type, entity_id: p.id, label: p.label })}
-        />
-        {/* Overlay captures circle gestures only in circle mode. */}
-        <div
-          ref={overlayRef}
-          className={`absolute inset-0 ${circleMode ? "cursor-crosshair" : "pointer-events-none"}`}
-          onMouseDown={onDown}
-          onMouseMove={onMove}
-          onMouseUp={onUp}
-          onMouseLeave={() => (dragStart.current = null)}
-        >
-          {circle && (
-            <svg className="h-full w-full">
-              <circle
-                cx={circle.x}
-                cy={circle.y}
-                r={Math.max(circle.r, 1)}
-                fill="rgba(91,140,255,0.15)"
-                stroke="#5b8cff"
-                strokeWidth={2}
-              />
-            </svg>
+      {/* Floating status hints — bottom-left, out of the way. */}
+      {(circleMode || notFound || measureMode) && (
+        <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[18rem]">
+          {notFound && (
+            <p className="rounded-lg border border-amber-500/30 bg-panel/90 px-3 py-1.5 text-[11px] text-amber-300 shadow-glass backdrop-blur-xl">
+              No editable feature there — try circling a hole, edge or flange.
+            </p>
           )}
-          {marker && !circle && (
-            <div
-              className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded bg-accent px-1.5 py-0.5 text-[10px] text-white"
-              style={{ left: marker.x, top: marker.y }}
-            >
-              {marker.label}
-              <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1 rotate-45 bg-accent" />
-            </div>
+          {measureMode && (
+            <p className="rounded-lg border border-[color:var(--glass-border)] bg-panel/90 px-3 py-1.5 text-[11px] text-slate-300 shadow-glass backdrop-blur-xl">
+              Measure on — click two points on the model; labels show mm.
+            </p>
           )}
-          {/* Dev-only: show projected feature anchors to debug selection. */}
-          {debug &&
-            viewerRef.current
-              ?.projectPoints(features.map((f) => f.anchor))
-              .map((pt, i) =>
-                pt && features[i] && features[i]!.type !== "body" ? (
-                  <div
-                    key={features[i]!.id}
-                    className="pointer-events-none absolute h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400"
-                    style={{ left: pt[0], top: pt[1] }}
-                    title={features[i]!.id}
-                  />
-                ) : null
-              )}
+          {circleMode && !notFound && (
+            <p className="rounded-lg border border-[color:var(--glass-border)] bg-panel/90 px-3 py-1.5 text-[11px] text-slate-300 shadow-glass backdrop-blur-xl">
+              Circle Edit on — drag over a hole, edge, flange or face.
+            </p>
+          )}
         </div>
-      </div>
-
-      {notFound && (
-        <p className="text-[11px] text-amber-300">
-          No editable feature found in that area — try circling a hole, edge or flange.
-        </p>
-      )}
-      {circleMode && (
-        <p className="text-[11px] text-slate-400">
-          Circle Edit on — drag a circle over a hole, edge, flange or face to select it.
-        </p>
       )}
     </div>
   );

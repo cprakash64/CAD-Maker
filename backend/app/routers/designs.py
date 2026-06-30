@@ -18,10 +18,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.auth.deps import get_current_user
 from app.cad.base import CadGenerationError
@@ -35,7 +35,7 @@ from app.editing.localized import (
     apply_localized_request,
 )
 from app.manufacturability.checks import run_checks
-from app.models import Design, Feedback, Project, User
+from app.models import Design, ExportFile, Feedback, Project, User
 from app.rate_limit import rate_limit
 from app.schemas.editing_spec import LocalizedEditRequest, LocalizedModificationSpec
 from app.services.package_service import build_package_zip
@@ -166,6 +166,11 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         telemetry=(design.semantic_json or {}).get("telemetry"),
         gear_debug=(design.semantic_json or {}).get("gear_debug"),
         hex_debug=(design.semantic_json or {}).get("hex_debug"),
+        standard_part=(design.semantic_json or {}).get("standard_part"),
+        part_family_contract=(design.semantic_json or {}).get("part_family_contract"),
+        part_family_detail=(design.semantic_json or {}).get("part_family_detail"),
+        device_enclosure_validation=(design.semantic_json or {}).get("device_enclosure_validation"),
+        object_intelligence=(design.semantic_json or {}).get("object_intelligence"),
         presentation=design_service.presentation_descriptor(design),
     )
 
@@ -557,14 +562,43 @@ def get_design(
 def list_designs(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ) -> list[DesignSummaryDTO]:
-    # Only this user's designs (joined through their projects).
+    """Lightweight design list for this user (newest first).
+
+    Performance: the response is a SUMMARY only — it never carries the heavy
+    per-design payload (mesh preview, semantic/dimension report, feature graph,
+    program code). Those JSON columns are DEFERRED at the query level so a long
+    history doesn't drag megabytes of geometry through the list endpoint, and
+    ``export_ready`` is resolved in ONE query instead of a per-row lazy load (the
+    old N+1 that made this endpoint take 6–14s). Paginated via limit/offset.
+    """
+    # Load only the light columns needed for a summary; defer the big JSON blobs.
     designs = db.scalars(
         select(Design)
+        .options(load_only(
+            Design.id, Design.project_id, Design.prompt, Design.object_type,
+            Design.route, Design.spec_json, Design.clarification_question,
+            Design.created_at, Design.updated_at,
+        ))
         .join(Project, Design.project_id == Project.id)
         .where(Project.user_id == user.id)
         .order_by(Design.updated_at.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
+
+    # Resolve export readiness for the whole page in a single query (no N+1).
+    ids = [d.id for d in designs]
+    with_exports: set[str] = set()
+    if ids:
+        with_exports = set(db.scalars(
+            select(ExportFile.design_id)
+            .where(ExportFile.design_id.in_(ids))
+            .distinct()
+        ).all())
+
     return [
         DesignSummaryDTO(
             id=d.id,
@@ -576,7 +610,7 @@ def list_designs(
             updated_at=d.updated_at.isoformat(),
             needs_clarification=d.spec_json is None
             and d.clarification_question is not None,
-            export_ready=len(d.exports) > 0,
+            export_ready=d.id in with_exports,
         )
         for d in designs
     ]

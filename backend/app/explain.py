@@ -21,6 +21,7 @@ _TYPE_NOUN = {
     "flanged_pipe_branch": "flanged pipe branch / tee",
     "simple_gear_or_pulley": "gear / pulley",  # refined to spur gear / pulley below
     "hex_standoff": "hex standoff",
+    "hex_nut": "regular hex nut (ISO 4032 / DIN 934)",
     "feature_graph": "custom part (flexible CAD graph)",
 }
 

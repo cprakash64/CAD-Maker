@@ -29,8 +29,24 @@ SAMPLES = {
             "lid_thickness": 2.5,
         }
     ),
+    "rpi4_enclosure": dict(dimensions={"wall_thickness": 2.5}),
+    "rpi5_enclosure": dict(dimensions={"wall_thickness": 2.5, "logo": 1.0}),
+    "board_enclosure": dict(dimensions={"wall_thickness": 2.5}, preset_id="arduino_uno_r3"),
+    "motor_mount": dict(dimensions={"nema_size": 17, "bolt_spacing": 31.0,
+                                    "bolt_hole": 3.4, "pilot_diameter": 23.0,
+                                    "plate_size": 50.0, "thickness": 6.0}),
+    "bearing_holder": dict(dimensions={"bearing_outer": 22.0, "bearing_bore": 8.0,
+                                       "bearing_width": 7.0, "lip": 1.5, "wall": 4.0,
+                                       "thickness": 11.0}),
+    "generic_fitted_box": dict(dimensions={"board_length": 80.0, "board_width": 50.0,
+                                           "board_height": 15.0, "wall_thickness": 2.5,
+                                           "mount_hole": 3.0, "mount_count": 4.0}),
+    "phone_holder": dict(dimensions={"phone_width": 71.6, "phone_depth": 7.8,
+                                     "phone_length": 147.6, "fit_clearance": 1.5,
+                                     "lean_deg": 15.0, "wall": 4.0}),
     "spacer": dict(dimensions={"outer_diameter": 12, "length": 20, "bore_diameter": 6.4}),
     "hex_standoff": dict(dimensions={"across_flats": 12, "length": 20, "bore_diameter": 4.5}),
+    "hex_nut": dict(dimensions={"across_flats": 18, "height": 10.8, "bore_diameter": 10.1, "chamfer": 1.18}),
     "pipe_clamp": dict(
         dimensions={
             "pipe_diameter": 25,
@@ -59,6 +75,17 @@ SAMPLES = {
     "inline_4_crankshaft": dict(dimensions={}),  # all engineered defaults
     "flanged_pipe_branch": dict(dimensions={}),
     "simple_gear_or_pulley": dict(dimensions={"tooth_count": 18}),
+    "square_nut": dict(dimensions={"width": 19, "height": 10,
+                                   "thread_major_diameter": 12, "thread_pitch": 1.75}),
+    "bolt": dict(dimensions={"thread_major_diameter": 12, "thread_pitch": 1.75,
+                             "length": 20, "head_across_flats": 18, "head_height": 7.5}),
+    "threaded_rod": dict(dimensions={"thread_major_diameter": 12, "thread_pitch": 1.75,
+                                     "length": 20}),
+    "shaft_coupler": dict(dimensions={"length": 25, "outer_diameter": 20, "bore_1": 6,
+                                      "bore_2": 8, "set_screw_diameter": 4,
+                                      "set_screw_count": 2}),
+    "timing_pulley_gt2": dict(dimensions={"teeth": 20, "belt_width": 8,
+                                          "bore_diameter": 6, "flange": 1}),
 }
 
 

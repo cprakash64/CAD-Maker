@@ -698,13 +698,35 @@ def _plan_motor_plate(t: str) -> CadPlan:
     )
 
 
+# Raspberry Pi board footprints (mm) → preset OUTER enclosure box so a "Raspberry
+# Pi N enclosure" with no explicit box size still builds deterministically (board +
+# wall + clearance + standoff height). Both Pi 4 and Pi 5 share the 85×56mm HAT
+# footprint. REVIEW-grade assumption, surfaced to the user.
+_RPI_ENCLOSURE_PRESET = {
+    "raspberry pi 5": {"width": 95, "depth": 66, "height": 30},
+    "raspberry pi 4": {"width": 95, "depth": 66, "height": 30},
+    "raspberry pi": {"width": 95, "depth": 66, "height": 30},
+}
+
+
+def _rpi_preset(t: str) -> tuple[str, dict] | None:
+    for key in ("raspberry pi 5", "raspberry pi 4", "raspberry pi"):
+        if key in t or t.replace("rpi", "raspberry pi").find(key) >= 0:
+            return key, _RPI_ENCLOSURE_PRESET[key]
+    if "rpi" in t:
+        return "raspberry pi", _RPI_ENCLOSURE_PRESET["raspberry pi"]
+    return None
+
+
 def _plan_enclosure(t: str) -> CadPlan:
     from app.cad.plan.defaults import CAD_DEFAULTS
 
     d = CAD_DEFAULTS["enclosure"]
-    w = _near(t, "wide", "width") or d["width"]
-    depth = _near(t, "deep", "depth") or d["depth"]
-    h = _near(t, "tall", "high", "height") or d["height"]
+    rpi = _rpi_preset(t)
+    base = dict(rpi[1]) if rpi else d
+    w = _near(t, "wide", "width") or base["width"]
+    depth = _near(t, "deep", "depth") or base["depth"]
+    h = _near(t, "tall", "high", "height") or base["height"]
     wall = _near(t, "wall thickness", "wall", "walls")
     # Contradictory walls (thicker than the cavity) are FATAL — can't be built.
     if wall and 2 * wall >= min(w, depth, h):
@@ -725,6 +747,21 @@ def _plan_enclosure(t: str) -> CadPlan:
     assumptions = [
         f"Enclosure {int(w)}×{int(depth)}×{int(h)}mm, {wall}mm walls, removable back plate/lid",
     ]
+    if rpi:
+        assumptions.insert(0, f"{rpi[0].title()} enclosure: outer box sized from the "
+                              "board footprint + wall + clearance (REVIEW the fit).")
+    # Secondary cosmetic features named in the prompt are NOT modeled by the
+    # deterministic enclosure (they must never block fast generation). Flag them so
+    # the part ships REVIEW with honest assumptions rather than a silent omission.
+    for feat, note in (
+        ("snap-fit", "Snap-fit lid not modeled — a removable plate/lid is provided instead."),
+        ("snap fit", "Snap-fit lid not modeled — a removable plate/lid is provided instead."),
+        ("vent", "Ventilation slots not modeled (cosmetic) — add them in CAD if required."),
+        ("logo", "Logo emboss not modeled — a flat top is provided as the logo placement area."),
+        ("emboss", "Logo emboss not modeled — a flat top is provided as the logo placement area."),
+    ):
+        if feat in t and note not in assumptions:
+            assumptions.append(note)
     if is_sensor:
         features.append(Feature(id="sensor_hole", kind="hole", axis="y",
                                 description="front-face sensor hole",

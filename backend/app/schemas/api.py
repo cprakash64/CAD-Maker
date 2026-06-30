@@ -185,6 +185,23 @@ class DesignDTO(BaseModel):
     # across_corners/length/bore_diameter/measured_corner_count/hex_six_sided).
     # Present only for hex-standoff designs.
     hex_debug: Optional[dict] = None
+    # Standard / catalog part block (standard_part=true, family, standard, thread,
+    # pitch_mm, across_flats/corners, height, bore, thread_representation, badge,
+    # assumed_message). Present only for recognized standard parts (e.g. hex nuts).
+    standard_part: Optional[dict] = None
+    # Part Family Contract (honesty): requested_family / resolved_family /
+    # requested_variant / resolved_variant / standard_part / unsupported_features /
+    # substituted_features / missing_inputs / generation_honesty_status. Always set.
+    part_family_contract: Optional[dict] = None
+    # Family-specific inspector detail (thread mode/length for bolts & rods;
+    # bore/set-screw fields for couplers; teeth/pitch/PD for GT2 pulleys).
+    part_family_detail: Optional[dict] = None
+    # Device-enclosure validation block (board preset, mounting posts, port cutouts,
+    # ventilation, lid, logo) — present for board enclosures.
+    device_enclosure_validation: Optional[dict] = None
+    # Object Intelligence: detected object, source type, confidence, dimensions used,
+    # assumptions, generated family, match status, why PASS/REVIEW/CONCEPT.
+    object_intelligence: Optional[dict] = None
 
 
 class DesignSummaryDTO(BaseModel):

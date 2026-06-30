@@ -62,18 +62,37 @@ def _tessellate(solid: "cq.Workplane", tolerance: float = 0.1) -> PreviewMesh:
     )
 
 
-def _export_bytes(solid: "cq.Workplane", suffix: str) -> bytes:
-    """Export to a temp file (CadQuery writes files), then read bytes back."""
+def _export_bytes(solid: "cq.Workplane", suffix: str,
+                  tolerance: float | None = None,
+                  angular_tolerance: float | None = None) -> bytes:
+    """Export to a temp file (CadQuery writes files), then read bytes back.
+
+    ``tolerance`` / ``angular_tolerance`` refine the STL tessellation; they are
+    required for fine helical features (modeled threads) so the mesh resolves the
+    helix and stays watertight. STEP is BRep-based and ignores these."""
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = Path(tmp.name)
     try:
-        cq.exporters.export(solid, str(tmp_path))
+        kwargs = {}
+        if tolerance is not None:
+            kwargs["tolerance"] = tolerance
+        if angular_tolerance is not None:
+            kwargs["angularTolerance"] = angular_tolerance
+        cq.exporters.export(solid, str(tmp_path), **kwargs)
         data = tmp_path.read_bytes()
         if not data:
             raise RuntimeError(f"Export produced empty {suffix} file")
         return data
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+def _has_modeled_thread(spec: DesignSpec) -> bool:
+    """True when the spec carries a thread (pitch + major diameter) that is cut as
+    fine helical geometry and therefore needs a finer export/preview tessellation."""
+    dims = spec.dimensions or {}
+    return float(dims.get("thread_pitch", 0) or 0) > 0 and \
+        float(dims.get("thread_major_diameter", 0) or 0) > 0
 
 
 def build_solid(spec: DesignSpec) -> "cq.Workplane":
@@ -122,7 +141,19 @@ def generate(spec: DesignSpec) -> GenerationResult:
         surface_area_mm2 = round(float(solid.val().Area()), 3)
     except Exception:  # noqa: BLE001
         surface_area_mm2 = 0.0
-    stl_bytes = _export_bytes(solid, ".stl")
+    # Modeled threads are fine helical features: a coarse mesh hides the thread
+    # and tears the surface open, so export the STL (and preview) at the thread
+    # tessellation tolerance. STEP is BRep and always carries the modeled thread.
+    fine = _has_modeled_thread(spec)
+    if fine:
+        from app.cad.threads.metric import (
+            THREAD_STL_ANGULAR_TOLERANCE,
+            THREAD_STL_TOLERANCE,
+        )
+        stl_bytes = _export_bytes(solid, ".stl", tolerance=THREAD_STL_TOLERANCE,
+                                  angular_tolerance=THREAD_STL_ANGULAR_TOLERANCE)
+    else:
+        stl_bytes = _export_bytes(solid, ".stl")
 
     if spec.object_type in TOPOLOGY_GATED_TYPES:
         from app.cad.topology import validate_topology  # local import avoids a cycle
@@ -142,7 +173,7 @@ def generate(spec: DesignSpec) -> GenerationResult:
         spec_hash=spec_hash(spec),
         stl_bytes=stl_bytes,
         step_bytes=_export_bytes(solid, ".step"),
-        preview=_tessellate(solid),
+        preview=_tessellate(solid, tolerance=0.04 if fine else 0.1),
         bounding_box_mm=bbox,
         features=features,
         volume_mm3=volume_mm3,

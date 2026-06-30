@@ -248,7 +248,7 @@ def audit_gear_metadata(object_type: str | None, tooth_count) -> list[AuditIssue
 # --- hex standoff ----------------------------------------------------------
 
 # Object types that represent a hexagonal-bodied part.
-HEX_OBJECT_TYPES = {"hex_standoff"}
+HEX_OBJECT_TYPES = {"hex_standoff", "hex_nut"}
 # A true regular hexagon's outer silhouette swings between the across-corners
 # radius (vertices) and the across-flats radius (apothem). The ideal radial
 # depth ratio is 1 - cos(30°) ≈ 0.134; a round cylinder gives ~0. The 0.05 floor
@@ -276,7 +276,7 @@ def measure_hex_sides(stl_bytes: bytes, rim_frac: float = 0.8) -> dict:
     exactly six, while a tessellated cylinder has many (one per facet segment).
 
     Returns ``{"corner_count": int | None}`` — the number of distinct outer
-    corner positions (None when the mesh is too small to measure).
+    corner DIRECTIONS (None when the mesh is too small to measure).
     """
     pts = _stl_xy(stl_bytes)
     if len(pts) < 16:
@@ -288,14 +288,18 @@ def measure_hex_sides(stl_bytes: bytes, rim_frac: float = 0.8) -> dict:
     if rmax <= 0:
         return {"corner_count": None}
     floor = rim_frac * rmax
-    # Distinct outer-rim positions, rounded to 0.1mm so the top/bottom copies of
-    # each corner collapse to one point. A polygon's corners are sharp and few; a
-    # faceted circle's rim points are many.
-    distinct = {
-        (round(x, 1), round(y, 1))
+    # Count DISTINCT angular corner directions among the outer-rim points (5°
+    # sectors, 0/360 collapsed). A polygon's corners stick out along a few fixed
+    # directions — a regular hexagon has six, 60° apart — and a chamfered hex
+    # (whose every corner contributes several points along the SAME radial
+    # direction) still reads as six. A faceted circle spreads points across many
+    # directions, so it reads as many. This is robust to bearing-face chamfers,
+    # which a raw distinct-(x,y) count is not.
+    sectors = {
+        round(math.degrees(math.atan2(y - cy, x - cx)) / 5.0) % 72
         for (x, y), r in zip(pts, radii) if r >= floor
     }
-    return {"corner_count": len(distinct)}
+    return {"corner_count": len(sectors)}
 
 
 def audit_hex_standoff(*, object_type: str | None,
@@ -330,6 +334,157 @@ def audit_hex_standoff(*, object_type: str | None,
             f"Hex profile requested but the outer boundary reads "
             f"{measured_corner_count} corners (expected six flats).")]
     return []
+
+
+# --- internal thread (anti-fake) -------------------------------------------
+def _stl_xyz(stl_bytes: bytes) -> list[tuple[float, float, float]]:
+    """Extract (x, y, z) of every triangle vertex from a binary STL."""
+    if not stl_bytes or len(stl_bytes) < 84:
+        return []
+    n = struct.unpack("<I", stl_bytes[80:84])[0]
+    pts: list[tuple[float, float, float]] = []
+    off = 84
+    for _ in range(n):
+        if off + 50 > len(stl_bytes):
+            break
+        for v in range(3):
+            base = off + 12 + v * 12
+            x, y, z = struct.unpack("<fff", stl_bytes[base:base + 12])
+            pts.append((x, y, z))
+        off += 50
+    return pts
+
+
+def measure_internal_thread(stl_bytes: bytes, major_diameter_mm: float) -> dict:
+    """Measure the radial variation of the bore wall — the anti-fake thread signal.
+
+    A MODELED internal thread is a helix: at the bore the wall radius swings
+    between the minor (crest) and major (root) radius, so the spread of bore-region
+    radii ≈ the thread depth. A SMOOTH bore is a single cylinder, so the spread is
+    ~0. Only vertices at/under the major radius (the bore region) are considered,
+    so the outer hex body never contributes.
+
+    Returns ``{"bore_radial_span_mm": float | None}``."""
+    pts = _stl_xyz(stl_bytes)
+    if len(pts) < 16 or major_diameter_mm <= 0:
+        return {"bore_radial_span_mm": None}
+    cx = sum(p[0] for p in pts) / len(pts)
+    cy = sum(p[1] for p in pts) / len(pts)
+    rmaj = major_diameter_mm / 2.0
+    bore = [math.hypot(x - cx, y - cy) for x, y, _z in pts
+            if math.hypot(x - cx, y - cy) <= rmaj + 0.25]
+    if len(bore) < 8:
+        return {"bore_radial_span_mm": None}
+    return {"bore_radial_span_mm": max(bore) - min(bore)}
+
+
+def measure_external_thread(stl_bytes: bytes, major_diameter_mm: float,
+                            z_range: tuple[float, float] | None = None) -> dict:
+    """Measure the OUTER-rim radial variation — the anti-fake signal for an
+    EXTERNAL thread (bolt / threaded rod / stud). A modeled external thread swings
+    the outer radius between the major (crest) and minor (root) radius once per
+    turn, so the spread of outer-rim radii ≈ the thread depth; a smooth cylinder
+    has a constant outer radius (spread ~0).
+
+    Two refinements keep it honest:
+      * only the shank band [≈minor, major] is considered, so a bolt's wider hex
+        head never inflates the span; and
+      * the measurement is taken over the MIDDLE of the shank (or the supplied
+        ``z_range``), excluding the end zones — otherwise a smooth cylinder's
+        lead-in/end chamfers alone would read as a thread.
+
+    Returns ``{"bore_radial_span_mm": float|None}`` (same key as the internal
+    measure so the report can treat them uniformly)."""
+    pts = _stl_xyz(stl_bytes)
+    if len(pts) < 16 or major_diameter_mm <= 0:
+        return {"bore_radial_span_mm": None}
+    cx = sum(p[0] for p in pts) / len(pts)
+    cy = sum(p[1] for p in pts) / len(pts)
+    rmaj = major_diameter_mm / 2.0
+    shank = [(z, math.hypot(x - cx, y - cy)) for x, y, z in pts
+             if 0.55 * rmaj <= math.hypot(x - cx, y - cy) <= rmaj + 0.35]
+    if len(shank) < 8:
+        return {"bore_radial_span_mm": None}
+    if z_range is not None:
+        z0, z1 = z_range
+    else:
+        zs = [z for z, _ in shank]
+        zmin, zmax = min(zs), max(zs)
+        margin = max(1.5, 0.12 * (zmax - zmin))  # exclude end-chamfer zones
+        z0, z1 = zmin + margin, zmax - margin
+    mid = [r for z, r in shank if z0 <= z <= z1]
+    # A smooth extruded cylinder has vertices ONLY at its end rings — its middle
+    # band is empty. A modeled thread (a helix) has dense vertices all along z.
+    # So an (almost) empty middle band means NO thread geometry: report span 0,
+    # never fall back to the full band (whose end chamfers would fake a thread).
+    if len(mid) < 6:
+        return {"bore_radial_span_mm": 0.0}
+    return {"bore_radial_span_mm": max(mid) - min(mid)}
+
+
+def measure_thread_on_faces(stl_bytes: bytes, major_diameter_mm: float,
+                            height_mm: float, plane_tol: float = 0.06) -> dict:
+    """Count mesh vertices lying ON a flat bearing face (z ≈ 0 or z ≈ height) but
+    INSIDE the thread-root radius — i.e. thread/bore geometry that has bled onto a
+    bearing face. A clean nut has none: the bore opening is recessed behind a
+    lead-in, so the flat faces only carry material at/outside the root radius.
+
+    Returns ``{"face_intrusion_points": int | None}``."""
+    pts = _stl_xyz(stl_bytes)
+    if len(pts) < 16 or major_diameter_mm <= 0 or height_mm <= 0:
+        return {"face_intrusion_points": None}
+    cx = sum(p[0] for p in pts) / len(pts)
+    cy = sum(p[1] for p in pts) / len(pts)
+    rmaj = major_diameter_mm / 2.0
+    bad = 0
+    for x, y, z in pts:
+        on_face = z < plane_tol or z > height_mm - plane_tol
+        if on_face and math.hypot(x - cx, y - cy) < rmaj - 0.2:
+            bad += 1
+    return {"face_intrusion_points": bad}
+
+
+def audit_internal_thread(*, claimed_modeled: bool, thread_pitch_mm: float | None,
+                          bore_radial_span_mm: float | None,
+                          thread_depth_mm: float | None,
+                          face_intrusion_points: int | None = None,
+                          measured_hole_count: int | None = None) -> list[AuditIssue]:
+    """Anti-fake internal-thread audit: a part claiming a MODELED internal thread
+    must actually contain helical thread geometry (a varying bore wall), not just a
+    smooth cylindrical bore.
+
+    A modeled claim with a flat bore is a WARNING (review) — never a silent PASS —
+    so the design ships with an honest "cosmetic only" notice instead of pretending
+    the bore is threaded. (A correctly cosmetic/fallback part makes no claim and is
+    not audited here.)"""
+    if not claimed_modeled or not thread_pitch_mm:
+        return []
+    issues: list[AuditIssue] = []
+    if bore_radial_span_mm is None:
+        issues.append(AuditIssue(
+            "internal_thread_unverified", "warning",
+            "Could not measure the bore to confirm modeled thread geometry."))
+    else:
+        # Expect the bore wall to vary by a good fraction of the thread depth.
+        floor = 0.4 * (thread_depth_mm or thread_pitch_mm * 0.54)
+        if bore_radial_span_mm < floor:
+            issues.append(AuditIssue(
+                "internal_thread_not_modeled", "warning",
+                "Thread was generated as cosmetic only; use modeled thread for 3D "
+                "printing or machining validation."))
+    # A modeled thread must be bounded between the lead-in chamfers — it must NOT
+    # bleed onto the flat top/bottom bearing faces.
+    if face_intrusion_points is not None and face_intrusion_points > 30:
+        issues.append(AuditIssue(
+            "internal_thread_on_bearing_face", "warning",
+            "Thread geometry reaches a bearing face; the top/bottom faces should be "
+            "clean with the thread recessed behind the lead-in chamfer."))
+    # A part claiming a modeled internal thread must actually report a through hole.
+    if measured_hole_count is not None and measured_hole_count < 1:
+        issues.append(AuditIssue(
+            "internal_thread_no_hole", "warning",
+            "Internal thread claimed but no through hole is reported."))
+    return issues
 
 
 def audit_screwdriver(feature_ids: list[str]) -> list[AuditIssue]:

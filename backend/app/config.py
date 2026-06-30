@@ -124,8 +124,11 @@ class Settings:
     openai_reasoning_effort: str | None = None
     # Reliability: per-request timeout and SDK-level automatic retries (the
     # OpenAI client retries transient 429/5xx/connection errors with backoff).
-    openai_timeout_seconds: int = 60
-    openai_max_retries: int = 2
+    # Planning timeout is intentionally short (<=20s): known templates are routed
+    # deterministically (no LLM), and a slow/stuck planner must fail fast and fall
+    # back rather than block the UI for minutes (the production 503-after-183s bug).
+    openai_timeout_seconds: int = 20
+    openai_max_retries: int = 1
     # Total wall-clock budget for ONE generation (all LLM fallbacks + repair
     # passes combined). Bounds the model-fallback chain so a request can never
     # hang for minutes; exceeding it returns a clean 503. Alias accepted at load
@@ -140,6 +143,18 @@ class Settings:
     # OpenAI planner uses cad_llm_model with a gpt-5.1 → gpt-4.1 fallback chain.
     cad_llm_provider: str | None = None
     cad_llm_model: str = "gpt-5.5"
+
+    # Object Intelligence: allow bounded trusted-source web lookup for objects with
+    # no local preset. OFF by default (and in tests) — local presets/standards and
+    # user-provided dimensions never need it, and an unknown object asks for
+    # dimensions rather than hanging on a slow lookup.
+    object_intelligence_web_search: bool = False
+
+    # Thread modeling detail for fasteners / tapped holes:
+    #   "modeled"         — real helical thread geometry (default for std fasteners)
+    #   "cosmetic"        — fast smooth-bore preview (no thread geometry)
+    #   "high_resolution" — modeled thread at finer tessellation (final / 3D print)
+    thread_detail: str = "modeled"
 
     # --- CAD accuracy / 3D-print policy (all millimetres) ---
     # Dimensional tolerance for "requested vs generated" validation. A measured

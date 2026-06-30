@@ -20,3 +20,6 @@ frontend/.env.local
 .DS_Store
 *.log
 frontend/tsconfig.tsbuildinfo
+
+# Generated debug artifacts (threaded-part cross-sections, etc.)
+backend/reports/thread_debug/

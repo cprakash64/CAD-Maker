@@ -49,10 +49,15 @@ export interface Design {
   project_id: string;
   prompt: string;
   object_type: string | null;
+  // Clean, family-accurate display name ("Spur gear", "Pulley", "Hex standoff",
+  // "Flange"). Prefer this over object_type for the part title.
+  title: string | null;
   spec: DesignSpec | null;
   assumptions: string[];
   explanation: string | null;
   clarification_question: string | null;
+  // Ready-to-run suggested parts for a too-vague prompt (clickable in the UI).
+  clarification_options: ClarificationOption[];
   needs_clarification: boolean;
   preview: PreviewMesh | null;
   bounding_box_mm: Record<string, number> | null;
@@ -96,6 +101,199 @@ export interface Design {
   decomposition?: Decomposition | null;
   // "single_part" | "assembly" (concept model).
   design_mode?: string | null;
+  // Expectation-control presentation copy (badge/export/holes/beta notice).
+  presentation?: Presentation | null;
+  // Recognized standard / catalog part (e.g. a hex nut). Present only when the
+  // prompt mapped to a standard; carries the badge + resolved assumptions.
+  standard_part?: StandardPart | null;
+  // Part Family Contract (honesty): what was requested vs resolved, and whether
+  // the build is exact / partial / substituted / unsupported. Always present.
+  part_family_contract?: PartFamilyContract | null;
+  // Family-specific inspector detail (thread mode/length, set-screw fields, GT2).
+  part_family_detail?: PartFamilyDetail | null;
+  // Device-enclosure validation (board enclosures): board preset, posts, cutouts.
+  device_enclosure_validation?: DeviceEnclosureValidation | null;
+  // Object Intelligence: detected object, source type, confidence, dimensions used.
+  object_intelligence?: ObjectIntelligence | null;
+}
+
+export interface ObjectIntelligence {
+  object_detected: string;
+  normalized_name?: string;
+  category?: string;
+  manufacturer?: string | null;
+  model?: string | null;
+  source_type: string;
+  source_urls?: string[];
+  confidence_score?: number;
+  dimensions_used?: Record<string, number> | null;
+  standards?: string[];
+  assumptions?: string[];
+  missing_or_assumed?: string[];
+  generated_family?: string;
+  validation_requirements?: string[];
+  match_status?: string;
+  status?: string;
+  why?: string;
+  cached?: boolean;
+  feature_contract?: FeatureContract | null;
+}
+
+export interface FeatureContract {
+  requested_features: string[];
+  generated_features: string[];
+  missing_features: string[];
+  approximate_features?: string[];
+  unsupported_features?: string[];
+  pass_blocking_missing_features: string[];
+}
+
+export interface DeviceEnclosureValidation {
+  board_preset: string;
+  board_outline_present: boolean;
+  mounting_posts_count: number;
+  mounting_posts_aligned: boolean;
+  required_port_cutouts_present: boolean;
+  usb_c_cutout_present: boolean;
+  micro_hdmi_cutout_count: number;
+  usb_ethernet_cutout_present: boolean;
+  gpio_access_present: boolean;
+  assumption_hidden_gpio?: boolean;
+  microsd_access_present: boolean;
+  ventilation_present: boolean;
+  wall_thickness_mm: number;
+  lid_type: string;
+  logo_feature_status: string;
+  // Through-hole verification: every required port opens fully to the cavity.
+  all_required_ports_open?: boolean;
+  blocked_ports?: string[];
+  port_openings?: {
+    name: string;
+    side: string;
+    kind: string;
+    required: boolean;
+    open: boolean;
+    residual_mm3: number;
+  }[];
+}
+
+// Family-specific inspector fields (only the keys relevant to the family are set).
+export interface PartFamilyDetail {
+  family: string;
+  // bolts / threaded rods
+  thread?: string;
+  thread_label?: string;
+  pitch_mm?: number;
+  thread_major_diameter_mm?: number;
+  thread_representation?: string;
+  external_thread_modeled?: boolean;
+  threaded_length_mm?: number;
+  length_mm?: number;
+  shank_length_mm?: number;
+  head_type?: string;
+  head_across_flats_mm?: number;
+  head_height_mm?: number;
+  fit_warning?: string | null;
+  // shaft couplers
+  outer_diameter_mm?: number;
+  bore_1_mm?: number;
+  bore_2_mm?: number;
+  axial_bores?: number;
+  set_screw_count?: number;
+  radial_set_screw_holes?: number;
+  set_screw_thread?: string;
+  set_screw_thread_mode?: string;
+  set_screw_pitch_mm?: number;
+  set_screw_tap_drill_mm?: number | null;
+  set_screw_hole_mode?: string;
+  placement_strategy?: string;
+  threaded_holes?: number;
+  // device enclosure (Raspberry Pi)
+  device?: string;
+  device_name?: string;
+  board_preset_source?: string;
+  mounting_posts?: number;
+  port_cutouts?: string[];
+  micro_hdmi_count?: number;
+  ports_through_hole_verified?: boolean;
+  blocked_ports?: string[];
+  lid_type?: string;
+  wall_thickness_mm?: number;
+  logo_feature_status?: string;
+  match_status?: string;
+  // GT2 timing pulleys
+  teeth?: number;
+  pitch_diameter_mm?: number;
+  belt_width_mm?: number;
+  bore_mm?: number;
+  has_flanges?: boolean;
+  not_spur_gear?: boolean;
+}
+
+// Honesty contract: guarantees the UI never implies a substituted part is exact.
+export interface PartFamilyContract {
+  requested_family: string | null;
+  resolved_family: string | null;
+  requested_variant: string | null;
+  resolved_variant: string | null;
+  standard_part: boolean;
+  standard: string | null;
+  unsupported_features: string[];
+  substituted_features: string[];
+  missing_inputs: string[];
+  // "exact" | "partial" | "substituted" | "unsupported"
+  generation_honesty_status: string;
+  reason: string | null;
+}
+
+// A recognized standard / catalog part resolved deterministically from a
+// published dimensional standard (ISO/DIN), not from user-supplied dimensions.
+export interface StandardPart {
+  standard_part: boolean;
+  family: string; // "hex_nut"
+  standard: string; // "ISO 4032"
+  standard_assumed: boolean;
+  thread: string; // "M12"
+  pitch_mm: number;
+  across_flats_mm?: number;
+  across_corners_mm?: number;
+  height_mm?: number;
+  bore_diameter_mm?: number;
+  minor_diameter_mm?: number;
+  thread_depth_mm?: number | null;
+  internal_thread_modeled?: boolean;
+  // "modeled" | "cosmetic" | "failed_to_model_fallback_cosmetic"
+  thread_representation?: string;
+  badge: string; // "Standard part · ISO 4032 · M12 × 1.75 · Modeled thread"
+  assumed_message: string;
+  hex_six_sided?: boolean | null;
+  measured_corner_count?: number | null;
+}
+
+export interface ClarificationOption {
+  label: string;
+  prompt: string;
+}
+
+export interface ParametricHole {
+  label: string;
+  diameter_mm: number;
+  through: boolean;
+}
+
+// Expectation-control copy (single source of truth, computed by the backend).
+export interface Presentation {
+  status_badge: string | null;
+  status_detail: string | null;
+  status_tone: "pass" | "review" | "fail" | null;
+  is_concept: boolean;
+  concept_notice: string | null;
+  export_kind: "concept" | "validated";
+  export_labels: { stl: string; step: string; package: string };
+  export_notice: string | null;
+  parametric_holes: ParametricHole[];
+  manual_hole_editing: boolean;
+  beta_notice: string;
 }
 
 export interface Decomposition {
@@ -169,6 +367,7 @@ export interface DimensionMeasured {
   surface_area_mm2?: number;
   hole_count?: number;
   through_hole_count?: number;
+  threaded_hole_count?: number;
   triangles?: number;
   watertight?: boolean;
   manifold?: boolean;
@@ -224,6 +423,7 @@ export interface DesignSummary {
   project_id: string;
   prompt: string;
   object_type: string | null;
+  title: string | null;
   created_at: string;
   updated_at: string | null;
   needs_clarification: boolean;

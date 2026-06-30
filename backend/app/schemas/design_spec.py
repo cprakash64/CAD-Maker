@@ -22,6 +22,19 @@ class ObjectType(str, Enum):
     enclosure = "enclosure"
     spacer = "spacer"
     hex_standoff = "hex_standoff"
+    hex_nut = "hex_nut"
+    square_nut = "square_nut"
+    bolt = "bolt"
+    threaded_rod = "threaded_rod"
+    shaft_coupler = "shaft_coupler"
+    timing_pulley_gt2 = "timing_pulley_gt2"
+    rpi4_enclosure = "rpi4_enclosure"
+    rpi5_enclosure = "rpi5_enclosure"
+    board_enclosure = "board_enclosure"
+    motor_mount = "motor_mount"
+    bearing_holder = "bearing_holder"
+    generic_fitted_box = "generic_fitted_box"
+    phone_holder = "phone_holder"
     pipe_clamp = "pipe_clamp"
     drill_jig = "drill_jig"
     handle = "handle"
@@ -148,6 +161,9 @@ class DesignSpec(BaseModel):
     visual_notes: Optional[str] = Field(default=None, max_length=4000)
     # Optional trusted feature-graph (set when object_type == feature_graph).
     feature_graph: Optional[dict] = None
+    # Object-Intelligence board/device preset id (set when object_type is the
+    # generic ``board_enclosure`` — selects the curated board preset to build).
+    preset_id: Optional[str] = Field(default=None, max_length=64)
 
     @field_validator("dimensions", mode="before")
     @classmethod

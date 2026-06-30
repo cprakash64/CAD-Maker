@@ -40,7 +40,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // bare "TypeError: Failed to fetch" reach the user — say exactly which
     // endpoint failed and how to fix it.
     throw new ApiError(
-      `Cannot reach the SourceCAD backend at ${API_BASE} ` +
+      `Cannot reach the LunaiCAD backend at ${API_BASE} ` +
         `(${init?.method ?? "GET"} ${path}). ` +
         `Check that the backend is running — \`uvicorn app.main:app --port 8000\` ` +
         `from backend/ — and that NEXT_PUBLIC_API_BASE points at it. ` +
@@ -172,7 +172,7 @@ export const api = {
       });
     } catch (e) {
       throw new ApiError(
-        `Cannot reach the SourceCAD backend at ${API_BASE} (POST /api/drawings/interpret). ` +
+        `Cannot reach the LunaiCAD backend at ${API_BASE} (POST /api/drawings/interpret). ` +
           `(${e instanceof Error ? e.message : String(e)})`,
         0
       );
@@ -204,7 +204,7 @@ export const api = {
       });
     } catch (e) {
       throw new ApiError(
-        `Cannot reach the SourceCAD backend at ${API_BASE} (POST /api/drawings/generate). ` +
+        `Cannot reach the LunaiCAD backend at ${API_BASE} (POST /api/drawings/generate). ` +
           `(${e instanceof Error ? e.message : String(e)})`,
         0,
         "POST /api/drawings/generate"
