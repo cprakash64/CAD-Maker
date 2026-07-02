@@ -19,6 +19,9 @@ from app.cad.templates.drill_jig import DrillJigTemplate
 from app.cad.templates.generic_fitted_box import GenericFittedBoxTemplate
 from app.cad.templates.motor_mount import MotorMountTemplate
 from app.cad.templates.phone_holder import PhoneHolderTemplate
+from app.cad.templates.rim import RimTemplate
+from app.cad.templates.tire import TireTemplate
+from app.cad.templates.wheel_assembly import WheelAssemblyTemplate
 from app.cad.templates.flanged_pipe_branch import FlangedPipeBranchTemplate
 from app.cad.templates.gear_pulley import GearPulleyTemplate
 from app.cad.templates.enclosure import EnclosureTemplate
@@ -55,6 +58,9 @@ _TEMPLATES: dict[str, BaseTemplate] = {
         BearingHolderTemplate(),
         GenericFittedBoxTemplate(),
         PhoneHolderTemplate(),
+        TireTemplate(),
+        RimTemplate(),
+        WheelAssemblyTemplate(),
         PipeClampTemplate(),
         DrillJigTemplate(),
         HandleTemplate(),

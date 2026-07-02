@@ -45,9 +45,15 @@ def spec_hash(spec: DesignSpec) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
-def _tessellate(solid: "cq.Workplane", tolerance: float = 0.1) -> PreviewMesh:
+def _tessellate(solid: "cq.Workplane", tolerance: float = 0.1,
+                angular_tolerance: float | None = None) -> PreviewMesh:
     shape = solid.val()
-    vertices, triangles = shape.tessellate(tolerance)
+    # A coarse angular tolerance is what actually caps the triangle count on curved
+    # surfaces (the linear tolerance alone still subdivides curves finely).
+    if angular_tolerance is not None:
+        vertices, triangles = shape.tessellate(tolerance, angular_tolerance)
+    else:
+        vertices, triangles = shape.tessellate(tolerance)
     positions: list[float] = []
     for v in vertices:
         positions.extend((v.x, v.y, v.z))
@@ -125,6 +131,16 @@ def mesh_only(spec: DesignSpec, tolerance: float = 0.2) -> PreviewMesh:
 # validation (valid BRep, single fused body, non-degenerate) before export —
 # a crankshaft with unfused journals/webs must be REJECTED, not downloaded.
 TOPOLOGY_GATED_TYPES = {"inline_4_crankshaft"}
+# Smooth surfaces of revolution (tire / rim / wheel). These are round bodies, so the
+# ANGULAR tolerance is what governs how round they look — a coarse angular deflection
+# renders the circumference as a low-poly polygon. Mesh them with a fine angular
+# tolerance (≈8°) so the crown/sidewall/barrel read as smooth, printable curves.
+_SMOOTH_REVOLVE_TYPES = {"tire", "rim", "wheel_assembly"}
+# STL (download / print): fine. Preview (viewer): a touch lighter but still round.
+_REVOLVE_STL_TOL = 0.1
+_REVOLVE_STL_ANGULAR_TOL = 0.15      # radians (~8.6°) → ~42 facets / turn
+_REVOLVE_PREVIEW_TOL = 0.2
+_REVOLVE_PREVIEW_ANGULAR_TOL = 0.2   # radians (~11.5°) → ~32 facets / turn
 
 
 def generate(spec: DesignSpec) -> GenerationResult:
@@ -145,6 +161,10 @@ def generate(spec: DesignSpec) -> GenerationResult:
     # and tears the surface open, so export the STL (and preview) at the thread
     # tessellation tolerance. STEP is BRep and always carries the modeled thread.
     fine = _has_modeled_thread(spec)
+    # Smooth revolved wheel families need a FINE angular tolerance so the round body
+    # doesn't render as a faceted polygon (the old coarse mesh was the "low-poly
+    # tire" bug). STEP stays exact — it's BRep.
+    smooth = spec.object_type in _SMOOTH_REVOLVE_TYPES
     if fine:
         from app.cad.threads.metric import (
             THREAD_STL_ANGULAR_TOLERANCE,
@@ -152,6 +172,9 @@ def generate(spec: DesignSpec) -> GenerationResult:
         )
         stl_bytes = _export_bytes(solid, ".stl", tolerance=THREAD_STL_TOLERANCE,
                                   angular_tolerance=THREAD_STL_ANGULAR_TOLERANCE)
+    elif smooth:
+        stl_bytes = _export_bytes(solid, ".stl", tolerance=_REVOLVE_STL_TOL,
+                                  angular_tolerance=_REVOLVE_STL_ANGULAR_TOL)
     else:
         stl_bytes = _export_bytes(solid, ".stl")
 
@@ -173,7 +196,8 @@ def generate(spec: DesignSpec) -> GenerationResult:
         spec_hash=spec_hash(spec),
         stl_bytes=stl_bytes,
         step_bytes=_export_bytes(solid, ".step"),
-        preview=_tessellate(solid, tolerance=0.04 if fine else 0.1),
+        preview=_tessellate(solid, tolerance=0.04 if fine else (_REVOLVE_PREVIEW_TOL if smooth else 0.1),
+                            angular_tolerance=(_REVOLVE_PREVIEW_ANGULAR_TOL if smooth else None)),
         bounding_box_mm=bbox,
         features=features,
         volume_mm3=volume_mm3,

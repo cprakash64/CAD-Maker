@@ -849,6 +849,23 @@ function ObjectIntelligenceCard({ oi }: { oi: ObjectIntelligence }) {
   );
 }
 
+const TREAD_STYLE_LABELS: Record<string, string> = {
+  slick: "Slick",
+  street: "Street",
+  all_terrain: "All-terrain",
+  off_road: "Off-road",
+};
+
+// Readable tread label (never the raw internal code), with an "(assumed)" hint when
+// the style fell back to the street default.
+function treadStyleText(detail: PartFamilyDetail): string {
+  const label =
+    detail.tread_style_label ??
+    (detail.tread_style ? TREAD_STYLE_LABELS[detail.tread_style] ?? detail.tread_style : null);
+  if (!label) return "—";
+  return detail.tread_style_source === "assumed" ? `${label} (assumed)` : label;
+}
+
 function PartFamilyDetailCard({ detail }: { detail: PartFamilyDetail }) {
   const fam = detail.family;
   if (fam === "bolt" || fam === "threaded_rod") {
@@ -901,6 +918,67 @@ function PartFamilyDetailCard({ detail }: { detail: PartFamilyDetail }) {
             thread-relief rings), thread fit not validated.
           </p>
         )}
+      </div>
+    );
+  }
+  if (fam === "tire") {
+    return (
+      <div className="card space-y-2 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="label">Tire</h3>
+          <span className="badge-review">Rim: No</span>
+        </div>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+          <Row k="Outer Ø" v={`${detail.outer_diameter_mm} mm (${detail.od_source})`} mono />
+          <Row k="Inner Ø" v={`${detail.inner_diameter_mm} mm (${detail.id_source})`} mono />
+          <Row k="Width" v={`${detail.width_mm} mm (${detail.width_source})`} mono />
+          <Row k="Tread style" v={treadStyleText(detail)} />
+          <Row k="Hollow body" v={detail.hollow ? "Yes" : "No"} />
+          <Row k="Rim included" v={detail.rim_included ? "Yes" : "No"} />
+          <Row k="Material" v={detail.material_hint ?? "rubber"} />
+        </dl>
+        <p className="banner-warn text-[11px] leading-relaxed">
+          Rubber tire only — hollow body, no rim/hub/spokes. Assumed dimensions are
+          marked; provide inner diameter and width for a validated (PASS) fit.
+        </p>
+      </div>
+    );
+  }
+  if (fam === "rim") {
+    return (
+      <div className="card space-y-2 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="label">Wheel rim</h3>
+          <span className="badge-review">Tire: No</span>
+        </div>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+          <Row k="Outer Ø" v={`${detail.outer_diameter_mm} mm`} mono />
+          <Row k="Width" v={`${detail.width_mm} mm`} mono />
+          <Row k="Centre bore" v={`Ø${detail.center_bore_mm} mm`} mono />
+          <Row k="Spokes" v={detail.spoke_style ?? "5-spoke"} />
+          <Row k="Hex hub" v={detail.hex_hub ? "Yes" : "No"} />
+          <Row k="Lug holes" v={String(detail.lug_count ?? 0)} mono />
+          <Row k="Tire included" v={detail.tire_included ? "Yes" : "No"} />
+        </dl>
+      </div>
+    );
+  }
+  if (fam === "wheel_assembly") {
+    return (
+      <div className="card space-y-2 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="label">Wheel assembly</h3>
+          <span className="badge-review">Tire + rim</span>
+        </div>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+          <Row k="Tire OD" v={`${detail.tire_outer_diameter_mm} mm`} mono />
+          <Row k="Tire ID" v={`${detail.tire_inner_diameter_mm} mm`} mono />
+          <Row k="Width" v={`${detail.width_mm} mm`} mono />
+          <Row k="Rim OD" v={`${detail.rim_diameter_mm} mm`} mono />
+          <Row k="Centre bore" v={`Ø${detail.center_bore_mm} mm`} mono />
+          <Row k="Spokes" v={detail.spoke_style ?? "5-spoke"} />
+          <Row k="Tread style" v={treadStyleText(detail)} />
+        </dl>
       </div>
     );
   }

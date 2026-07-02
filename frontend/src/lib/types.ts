@@ -115,6 +115,8 @@ export interface Design {
   device_enclosure_validation?: DeviceEnclosureValidation | null;
   // Object Intelligence: detected object, source type, confidence, dimensions used.
   object_intelligence?: ObjectIntelligence | null;
+  // Requested vs generated feature diff (cutouts, tread, mounting holes, …).
+  feature_contract?: FeatureContract | null;
 }
 
 export interface ObjectIntelligence {
@@ -208,6 +210,27 @@ export interface PartFamilyDetail {
   set_screw_hole_mode?: string;
   placement_strategy?: string;
   threaded_holes?: number;
+  // tire / rim / wheel_assembly (outer_diameter_mm reused from the coupler section)
+  inner_diameter_mm?: number;
+  width_mm?: number;
+  tread_style?: string;            // canonical enum: slick | street | all_terrain | off_road
+  tread_style_label?: string;      // readable UI label: Slick | Street | All-terrain | Off-road
+  tread_style_source?: string;     // "explicit" | "assumed"
+  tread_generated?: boolean;
+  hollow?: boolean;
+  rim_included?: boolean;
+  tire_included?: boolean;
+  material_hint?: string;
+  od_source?: string;
+  id_source?: string;
+  width_source?: string;
+  center_bore_mm?: number;
+  spoke_style?: string;
+  hex_hub?: boolean;
+  lug_count?: number;
+  tire_outer_diameter_mm?: number;
+  tire_inner_diameter_mm?: number;
+  rim_diameter_mm?: number;
   // device enclosure (Raspberry Pi)
   device?: string;
   device_name?: string;

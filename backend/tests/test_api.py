@@ -135,5 +135,6 @@ def test_list_and_templates(client, auth):
     # 8 base + crankshaft + flanged_pipe_branch + gear/pulley + hex_standoff + hex_nut
     # + square_nut + bolt + threaded_rod + shaft_coupler + timing_pulley_gt2
     # + rpi4_enclosure + rpi5_enclosure + board_enclosure + motor_mount
-    # + bearing_holder + generic_fitted_box + phone_holder
-    assert len(t.json()) == 25
+    # + bearing_holder + generic_fitted_box + phone_holder + tire + rim
+    # + wheel_assembly
+    assert len(t.json()) == 28

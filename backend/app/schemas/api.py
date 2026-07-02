@@ -202,6 +202,8 @@ class DesignDTO(BaseModel):
     # Object Intelligence: detected object, source type, confidence, dimensions used,
     # assumptions, generated family, match status, why PASS/REVIEW/CONCEPT.
     object_intelligence: Optional[dict] = None
+    # Requested vs generated feature diff (cutouts, tread, mounting holes, …).
+    feature_contract: Optional[dict] = None
 
 
 class DesignSummaryDTO(BaseModel):

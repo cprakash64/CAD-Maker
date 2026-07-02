@@ -36,6 +36,7 @@ class PartRequest:
 
     requested_family: str
     requested_variant: str | None = None
+    resolved_variant: str | None = None    # the variant actually built (if different)
     # "buildable" -> we have a template; "unsupported_family"/"unsupported_variant"
     # -> recognized but not implemented; None -> not a recognized special family.
     support: str = "buildable"
@@ -44,6 +45,11 @@ class PartRequest:
     missing: list[str] = field(default_factory=list)        # required inputs we had to assume
     unsupported_features: list[str] = field(default_factory=list)
     note: str = ""
+    # Tire/wheel tread style: canonical enum + whether the user asked for it explicitly
+    # ("assumed" means it fell back to the street default). Non-dimension metadata, so
+    # it does NOT force REVIEW on its own.
+    tread_style: str | None = None
+    tread_style_source: str | None = None
 
 
 # --- shared parsing helpers -------------------------------------------------
@@ -112,6 +118,170 @@ def _length(prompt: str) -> float | None:
     return _num(prompt or "", "long", "length")
 
 
+# Canonical tread styles (user-facing) → internal geometry code in
+# app.cad.templates.tire (1 smooth/slick, 3 street, 4 off-road lugs, 5 all-terrain).
+TREAD_STYLES = ("slick", "street", "all_terrain", "off_road")
+TREAD_STYLE_CODE = {"slick": 1, "street": 3, "all_terrain": 5, "off_road": 4}
+
+# Keyword patterns, checked in priority order. STREET is the default when nothing
+# matches — a generic "make a tire" is a normal city tyre, never off-road.
+_TREAD_SLICK = re.compile(
+    r"\bslick\b|\bsmooth\b|no\s+tread|without\s+tread|treadless|racing\s+slick", re.I)
+_TREAD_ALL_TERRAIN = re.compile(
+    r"all[\s-]?terrain|\ba/?t\b|\bhybrid\b|mixed[\s-]?use|\butility\b|"
+    r"light\s+off[\s-]?road|\btrail\b", re.I)
+_TREAD_OFF_ROAD = re.compile(
+    r"off[\s-]?road|\bmud\b|mud[\s-]?terrain|\bm/?t\b|crawler|"
+    r"aggressive|chunky|deep\s+lugs?|\blugs?\b|knobb?y|rugged|tractor", re.I)
+_TREAD_STREET = re.compile(
+    r"\bstreet\b|\bcity\b|\broad\b|normal\s+tire|standard\s+tire|everyday|"
+    r"highway|car\s+tire|performance|circumferential\s+groove", re.I)
+
+
+def _tire_tread_style(t: str) -> tuple[str, bool]:
+    """Classify the requested tread into a canonical style + whether it was EXPLICIT.
+
+    Returns ``(style, explicit)``. ``explicit`` is False only when no keyword matched
+    and we fell back to the STREET default (so callers can surface "tread assumed").
+    Order matters: slick beats a bare "racing"; all-terrain beats off-road so that
+    "light off-road"/"trail" don't read as aggressive; a typo'd "threads" (no
+    aggressive words) simply falls through to street, never off-road."""
+    tl = (t or "").lower()
+    if _TREAD_SLICK.search(tl) and not re.search(r"circumferential\s+groove", tl):
+        return "slick", True
+    if _TREAD_ALL_TERRAIN.search(tl):
+        return "all_terrain", True
+    if _TREAD_OFF_ROAD.search(tl):
+        return "off_road", True
+    if _TREAD_STREET.search(tl):
+        return "street", True
+    return "street", False      # generic tyre -> normal city/street tread
+
+
+def _tire_style_code(t: str) -> int:
+    """Internal geometry code for the classified tread style (street default)."""
+    return TREAD_STYLE_CODE[_tire_tread_style(t)[0]]
+
+
+def _spoke_count(t: str) -> int | None:
+    m = re.search(r"(\d+)[\s-]*spoke", t or "", re.I)
+    return int(m.group(1)) if m else None
+
+
+def _tire_request(t: str, rim_excluded: bool) -> "PartRequest":
+    """Parse a single rubber tire (OD/ID/width/tread style), assuming sensible
+    defaults for anything missing and flagging the assumptions (→ REVIEW)."""
+    od = _num(t, "diameter", "outer diameter", "outside diameter", "outer dia", "od")
+    idia = _num(t, "inner diameter", "inner dia", "id")
+    width = _num(t, "wide", "width", "tread width", "thick")
+    tread, tread_explicit = _tire_tread_style(t)
+    style = TREAD_STYLE_CODE[tread]
+    smooth = style == 1
+    missing: list[str] = []
+    if od is None:
+        # A leading bare size that qualifies the tire ("100 mm off-road tire") is the
+        # OUTER diameter — a human reads it that way. Only accept a "<N> mm ... tire"
+        # run so a later "60 mm inner diameter" can't be grabbed as the OD.
+        m = re.search(r"(\d+(?:\.\d+)?)\s*mm\b[\w\s-]*?\bt[iy]re\b", t, re.I)
+        if m:
+            od = float(m.group(1))
+    if od is None:
+        od = 100.0
+        missing.append("outer diameter (assumed 100mm)")
+    if idia is None:
+        idia = round(od * 0.6, 1)
+        missing.append(f"inner diameter (assumed {idia:g}mm)")
+    if width is None:
+        width = 30.0
+        missing.append("width (assumed 30mm)")
+    params: dict = {"outer_diameter": od, "inner_diameter": idia, "width": width,
+                    "tread_style_code": float(style)}
+    variant = "smooth_tire" if smooth else "treaded_tire"
+    return PartRequest(
+        requested_family="tire", requested_variant="rubber_tire",
+        resolved_variant=variant, support="buildable", object_type="tire",
+        params=params, missing=missing, tread_style=tread,
+        tread_style_source=("explicit" if tread_explicit else "assumed"))
+
+
+def _rim_request(t: str) -> "PartRequest":
+    """Parse a wheel rim (OD/width/bore/spokes), no rubber tire."""
+    od = _num(t, "rim diameter", "diameter", "outer diameter", "od")
+    width = _num(t, "wide", "width")
+    bore = _num(t, "center bore", "centre bore", "bore")
+    solid = bool(re.search(r"solid\s+disc|solid\s+face|disc\s+wheel", t, re.I))
+    hexhub = bool(re.search(r"hex\s*hub|hex\s+bore|\d+\s*mm\s*hex", t, re.I))
+    spokes = _spoke_count(t)
+    missing: list[str] = []
+    if od is None:
+        od = 100.0
+        missing.append("rim diameter (assumed 100mm)")
+    if width is None:
+        width = round(od * 0.3, 1)
+        missing.append(f"width (assumed {width:g}mm)")
+    if bore is None:
+        bore = round(od * 0.2, 1)
+        missing.append(f"center bore (assumed {bore:g}mm)")
+    params: dict = {"rim_diameter": od, "width": width, "center_bore": bore}
+    if solid:
+        params["solid_disc"] = 1.0
+        variant = "solid_disc"
+    else:
+        params["spoke_count"] = float(spokes or 5)
+        if spokes is None:
+            missing.append("spoke count (assumed 5)")
+        variant = f"{int(spokes or 5)}_spoke"
+    if hexhub:
+        params["hex_hub"] = 1.0
+    m = re.search(r"(\d+)\s*(?:lug|bolt hole)", t or "", re.I)
+    if m:
+        params["lug_count"] = float(m.group(1))
+    return PartRequest(
+        requested_family="rim", requested_variant="wheel_rim",
+        resolved_variant=variant, support="buildable", object_type="rim",
+        params=params, missing=missing)
+
+
+def _wheel_assembly_request(t: str) -> "PartRequest":
+    """Parse a tire-on-rim wheel assembly (tire OD/ID/width + rim OD/bore/spokes)."""
+    od = _num(t, "tire od", "tire outer diameter", "outer diameter", "od", "diameter")
+    idia = _num(t, "tire id", "tire inner diameter", "inner diameter", "id")
+    width = _num(t, "wide", "width")
+    rim_od = _num(t, "rim od", "rim diameter", "rim outer diameter")
+    bore = _num(t, "center bore", "centre bore", "hub", "bore")
+    spokes = _spoke_count(t)
+    hexhub = bool(re.search(r"hex\s*hub|\d+\s*mm\s*hex", t, re.I))
+    tread, tread_explicit = _tire_tread_style(t)
+    style = TREAD_STYLE_CODE[tread]
+    missing: list[str] = []
+    if od is None:
+        od = 100.0
+        missing.append("tire outer diameter (assumed 100mm)")
+    if idia is None:
+        idia = round((rim_od or od * 0.6), 1)
+        missing.append(f"tire inner diameter (assumed {idia:g}mm)")
+    if width is None:
+        width = 30.0
+        missing.append("width (assumed 30mm)")
+    if rim_od is None:
+        rim_od = idia
+        missing.append(f"rim diameter (assumed {rim_od:g}mm = tire ID)")
+    if bore is None:
+        bore = round(rim_od * 0.33, 1)
+        missing.append(f"center bore (assumed {bore:g}mm)")
+    params: dict = {"outer_diameter": od, "inner_diameter": idia, "width": width,
+                    "rim_diameter": rim_od, "center_bore": bore,
+                    "spoke_count": float(spokes or 5), "tread_style_code": float(style)}
+    if hexhub:
+        params["hex_hub"] = 1.0
+    return PartRequest(
+        requested_family="wheel_assembly", requested_variant="tire_on_rim",
+        resolved_variant="tire_on_rim", support="buildable",
+        object_type="wheel_assembly", params=params, missing=missing,
+        tread_style=tread,
+        tread_style_source=("explicit" if tread_explicit else "assumed"))
+
+
 # --- variant / family detectors --------------------------------------------
 _NYLOC = re.compile(r"\b(nyloc|nylon[- ]?insert|nylon[- ]?lock|insert lock nut|"
                     r"lock\s*nut)\b", re.I)
@@ -126,6 +296,33 @@ _THREADED_ROD = re.compile(r"\bthreaded\s+rod\b|\bthreaded\s+stud\b|\bstud\b|\ba
 _WASHER = re.compile(r"\bwasher\b", re.I)
 _SHAFT_COUPLER = re.compile(r"\bshaft\s+coupler\b|\bshaft\s+coupling\b|\bcoupler\b|\bcoupling\b", re.I)
 _PULLEY = re.compile(r"\bpulley\b", re.I)
+# Tire / tyre (single rubber part). "wheel assembly" / a rim that is NOT excluded
+# means the user wants an assembly, not the rubber-only tire.
+_TIRE = re.compile(r"\bt[iy]res?\b", re.I)
+# Full-wheel (tire + rim) intent. "matching rim" and "tire and/with/on rim" are
+# assembly evidence even when the word "tire" never appears (e.g. "an off-road
+# wheel assembly ... with a matching rim"). A bare "rim" keyword must NOT be able
+# to override this — that was the production bug (assembly routed to rim-only).
+_WHEEL_ASSEMBLY = re.compile(
+    r"\bwheel\s+assembly\b|\bcar\s+wheel\b|\bfull\s+wheel\b|"
+    r"\bcomplete\s+(?:rc\s+)?(?:car\s+)?wheel\b|"
+    r"\bt[iy]res?\s+(?:and|with|on|\+|&)\s+(?:a\s+|the\s+)?rim\b|"
+    r"\brim\s+and\s+t[iy]res?\b|\bwheel\s+with\s+rim\b|"
+    r"\bwheel\s+with\s+(?:a\s+|an\s+)?t[iy]re\b|\bmatching\s+rim\b", re.I)
+# The rim as the ONLY requested part — an explicit "rim only" / "just the rim" /
+# "wheel rim". This BEATS a loose tire+rim co-mention but LOSES to explicit
+# wheel-assembly intent (which never says "rim only").
+_RIM_ONLY = re.compile(
+    r"\brim\s+only\b|\bonly\s+(?:the\s+|a\s+)?rim\b|\bjust\s+(?:the\s+|a\s+)?rim\b|"
+    r"\bwheel\s+rim\b|\brim\s+alone\b|\brim\s+by\s+itself\b", re.I)
+_NO_RIM = re.compile(
+    r"\bno\s+rim\b|\bwithout\s+(?:a\s+|the\s+)?rim\b|\bdon'?t\s+include\s+(?:the\s+)?rim\b|"
+    r"\bexclude\s+(?:the\s+)?rim\b|\brubber\s+part\b|\brubber[- ]only\b|\bt[iy]re\s+only\b|"
+    r"\bonly\s+(?:the\s+)?rubber\b|\bno\s+(?:rim|hub|spokes?)\b", re.I)
+# The rim as the REQUESTED part: an explicit "rim" (bare "hub"/"spokes" are FEATURES
+# and must not hijack e.g. "coupler with hub"). A "N-spoke wheel"/"alloy wheel" with
+# no tire also reads as a rim.
+_RIM = re.compile(r"\brim\b|\balloy\s+wheel\b|\bwheel\b.{0,20}\bspokes?\b|\bspokes?\b.{0,20}\bwheel\b", re.I)
 _SET_SCREW_CTX = re.compile(r"\bset[- ]?screw\b", re.I)
 # A container/assembly part: when present, a "screw"/"bolt"/"nut" mention is a
 # FEATURE (screw boss, bolt hole, captive nut), not the part the user wants — so
@@ -156,6 +353,30 @@ def detect_part_request(prompt: str) -> PartRequest | None:
     # distinct parts and remain detectable.)
     container = bool(_CONTAINER.search(t))
     feature_only = bool(_FASTENER_FEATURE.search(t))
+
+    # 0) TIRE / RIM / WHEEL ASSEMBLY. Detected FIRST — before the fastener detectors
+    #    (so "tire ... threads only" isn't grabbed as a threaded rod, "thread"→"tread")
+    #    and before the complexity/assembly gate (so "car wheel assembly" / "car tire"
+    #    is never routed to "generate one part at a time" as a whole vehicle). Only a
+    #    prompt asking for a WHOLE car/vehicle/chassis (no tire/rim as the subject)
+    #    reaches the complexity gate.
+    has_tire = bool(_TIRE.search(t))
+    rim_excluded = bool(_NO_RIM.search(t))
+    rim_only = bool(_RIM_ONLY.search(t))
+    has_rim = bool(_RIM.search(t)) and not rim_excluded
+    # Priority: explicit assembly intent (or a genuine tire+rim co-mention) wins over
+    # a bare "rim" keyword, UNLESS the prompt explicitly asks for the rim only. This
+    # is what stops "wheel assembly ... with a matching rim" collapsing to rim-only.
+    wants_assembly = (bool(_WHEEL_ASSEMBLY.search(t)) or (has_tire and has_rim)) \
+        and not rim_only
+    if wants_assembly:
+        return _wheel_assembly_request(t)              # tire + rim together
+    if rim_only:
+        return _rim_request(t)                          # rim only (explicit)
+    if has_tire:
+        return _tire_request(t, rim_excluded)          # rubber tire only
+    if has_rim:
+        return _rim_request(t)                          # rim only (no tire mentioned)
 
     # 1) NYLOC / lock nut — a variant of the hex nut. Recognized but the nylon
     #    insert mechanics are not modeled, so this is an unsupported VARIANT (never

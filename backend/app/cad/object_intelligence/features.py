@@ -50,6 +50,10 @@ REQUIRED_FEATURES = {
     "power_cutout", "mounting_holes",
     # phone-holder structural features
     "cradle", "back_support", "bottom_lip", "cable_notch",
+    # tire / rim / wheel structural features
+    "tire_body", "tread_pattern", "no_rim", "hollow_tire_body", "center_opening",
+    "sidewalls", "bead_lips", "rim_barrel", "center_bore", "bead_seat", "no_tire",
+    "spokes", "solid_disc",
 }
 
 # feature id -> the PORT_CUTOUT_SIZES key it maps to (for builders).

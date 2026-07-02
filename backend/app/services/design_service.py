@@ -96,7 +96,8 @@ EXTERNAL_THREAD_OBJECT_TYPES = frozenset({"bolt", "threaded_rod", "stud", "set_s
 # Object types that legitimately produce more than one body (base + removable lid),
 # so the single-fused-solid trust gate must not flag them as disconnected.
 _MULTIBODY_OBJECT_TYPES = frozenset({
-    "rpi4_enclosure", "rpi5_enclosure", "board_enclosure", "generic_fitted_box"})
+    "rpi4_enclosure", "rpi5_enclosure", "board_enclosure", "generic_fitted_box",
+    "wheel_assembly"})
 
 
 def _spec_bore_mm(spec: DesignSpec) -> float | None:
@@ -191,6 +192,9 @@ _TITLE_BY_OBJECT_TYPE = {
     "bearing_holder": "Bearing holder",
     "generic_fitted_box": "Fitted enclosure",
     "phone_holder": "Phone holder",
+    "tire": "Tire",
+    "rim": "Wheel rim",
+    "wheel_assembly": "Wheel assembly",
     "pipe_clamp": "Pipe clamp",
     "drill_jig": "Drill jig",
     "handle": "Handle / knob",
@@ -210,6 +214,13 @@ def _display_title(design: Design) -> str | None:
     if design.route == "deterministic_hex_standoff":
         return "Hex standoff"
     ot = design.object_type
+    if ot == "tire":
+        dims = (design.spec_json or {}).get("dimensions") or {}
+        try:
+            return "Slick tire" if int(round(float(dims.get("tread_style_code", 3) or 3))) == 1 \
+                else "Treaded tire"
+        except (TypeError, ValueError):
+            return "Treaded tire"
     if ot == "simple_gear_or_pulley":
         dims = (design.spec_json or {}).get("dimensions") or {}
         try:
@@ -688,10 +699,16 @@ def _try_part_family(db: Session, design: Design, prompt: str, request,
         requested_family=request.requested_family,
         resolved_family=request.requested_family,
         requested_variant=request.requested_variant,
-        resolved_variant=request.requested_variant,
+        resolved_variant=(getattr(request, "resolved_variant", None)
+                          or request.requested_variant),
         unsupported_features=unsupported, missing=missing, honesty=honesty)
     semantic["part_family_detail"] = _part_family_detail(
         request, thread_audit, bool(thread_modeled))
+    # Wheel feature contract (tire / rim / wheel_assembly): a missing required
+    # feature (tread, center opening, spokes, …) or a forbidden one (rim when the
+    # user said no rim; tire when rim-only) can never PASS.
+    if request.requested_family in ("tire", "rim", "wheel_assembly"):
+        semantic["feature_contract"] = _wheel_feature_contract(request)
     design.semantic_json = semantic
 
     db.commit()
@@ -786,7 +803,85 @@ def _part_family_detail(request, thread_audit: dict, thread_modeled: bool) -> di
             "has_flanges": True,
             "not_spur_gear": True,
         })
+    elif fam == "tire":
+        style = int(round(float(p.get("tread_style_code", 3) or 3)))
+        tread = getattr(request, "tread_style", None) or _TREAD_CODE_TO_STYLE.get(style, "street")
+        assumed = {m.split(" (")[0] for m in (request.missing or [])}
+        d.update({
+            "outer_diameter_mm": p.get("outer_diameter"),
+            "inner_diameter_mm": p.get("inner_diameter"),
+            "width_mm": p.get("width"),
+            "tread_style": tread,                                # canonical enum
+            "tread_style_label": _TREAD_STYLE_LABEL[tread],     # readable UI label
+            "tread_style_source": getattr(request, "tread_style_source", None) or "explicit",
+            "tread_generated": (style != 1),
+            "hollow": True,
+            "rim_included": False,
+            "material_hint": "rubber",
+            "od_source": ("assumed" if "outer diameter" in assumed else "user-provided"),
+            "id_source": ("assumed" if "inner diameter" in assumed else "user-provided"),
+            "width_source": ("assumed" if "width" in assumed else "user-provided"),
+        })
+    elif fam == "rim":
+        solid = float(p.get("solid_disc", 0) or 0) >= 0.5
+        d.update({
+            "outer_diameter_mm": p.get("rim_diameter"),
+            "width_mm": p.get("width"),
+            "center_bore_mm": p.get("center_bore"),
+            "spoke_style": ("solid disc" if solid else f"{int(p.get('spoke_count', 5) or 5)}-spoke"),
+            "hex_hub": float(p.get("hex_hub", 0) or 0) >= 0.5,
+            "lug_count": int(round(float(p.get("lug_count", 0) or 0))),
+            "tire_included": False,
+            "material_hint": "aluminum",
+        })
+    elif fam == "wheel_assembly":
+        style = int(round(float(p.get("tread_style_code", 3) or 3)))
+        tread = getattr(request, "tread_style", None) or _TREAD_CODE_TO_STYLE.get(style, "street")
+        d.update({
+            "tire_outer_diameter_mm": p.get("outer_diameter"),
+            "tire_inner_diameter_mm": p.get("inner_diameter"),
+            "width_mm": p.get("width"),
+            "rim_diameter_mm": p.get("rim_diameter"),
+            "center_bore_mm": p.get("center_bore"),
+            "spoke_style": f"{int(p.get('spoke_count', 5) or 5)}-spoke",
+            "tread_style": tread,                               # canonical enum
+            "tread_style_label": _TREAD_STYLE_LABEL[tread],    # readable UI label
+            "tread_style_source": getattr(request, "tread_style_source", None) or "explicit",
+            "tire_included": True,
+            "rim_included": True,
+        })
     return d
+
+
+# Canonical tread styles ⇄ internal geometry code ⇄ readable UI label.
+_TREAD_CODE_TO_STYLE = {1: "slick", 2: "slick", 3: "street", 4: "off_road",
+                        5: "all_terrain"}
+_TREAD_STYLE_LABEL = {"slick": "Slick", "street": "Street",
+                      "all_terrain": "All-terrain", "off_road": "Off-road"}
+
+
+def _wheel_feature_contract(request) -> dict:
+    """Feature diff for tire / rim / wheel_assembly. A missing required feature (or a
+    forbidden one, e.g. a rim when the user said no rim) blocks PASS."""
+    from app.cad.object_intelligence.features import build_feature_contract
+
+    fam = request.requested_family
+    p = request.params
+    if fam == "tire":
+        smooth = int(round(float(p.get("tread_style_code", 3) or 3))) == 1
+        req = ["hollow_tire_body", "center_opening", "sidewalls", "bead_lips", "no_rim"]
+        req += [] if smooth else ["tread_pattern"]
+        gen = list(req)   # the tire template builds all of these by construction
+        return build_feature_contract(req, gen)
+    if fam == "rim":
+        req = ["rim_barrel", "center_bore", "bead_seat", "no_tire"]
+        req += ["solid_disc"] if float(p.get("solid_disc", 0) or 0) >= 0.5 else ["spokes"]
+        return build_feature_contract(req, list(req))
+    # wheel_assembly
+    smooth = int(round(float(p.get("tread_style_code", 3) or 3))) == 1
+    req = ["hollow_tire_body", "center_opening", "rim_barrel", "spokes", "center_bore"]
+    req += [] if smooth else ["tread_pattern"]
+    return build_feature_contract(req, list(req))
 
 
 def _store_unsupported_part(db: Session, design: Design, request,

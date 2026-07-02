@@ -12,6 +12,10 @@ function prettyLabel(key: string): string {
   return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Internal-only parameters that should never appear as a raw numeric editor — the
+// tread style is chosen from the prompt and shown as a readable label elsewhere.
+const HIDDEN_PARAMS = new Set(["tread_style_code", "tread_depth"]);
+
 export default function ParameterSidebar({
   parameters,
   onRegenerate,
@@ -26,7 +30,7 @@ export default function ParameterSidebar({
     setDirty(false);
   }, [parameters]);
 
-  const keys = Object.keys(values);
+  const keys = Object.keys(values).filter((k) => !HIDDEN_PARAMS.has(k));
 
   return (
     <div className="card p-4">
