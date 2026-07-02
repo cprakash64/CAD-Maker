@@ -1,99 +1,398 @@
-# SourceCAD AI Part Studio
+<div align="center">
 
-Turn plain-English prompts into **editable, manufacturable, exportable** CAD
-parts — brackets, enclosures, mounts, adapters, spacers, clamps, knobs and drill
-jigs. This is parametric mechanical CAD, not decorative text-to-3D meshes.
+# LunaiCAD
 
-**v0.2** sharpens three hero templates (mounting bracket, electronics enclosure,
-drill jig / adapter plate) into demo-ready parts — rounded corners, finished
-edges, real screw bosses and lids, and clearance / counterbore / countersink
-holes — plus plain-English edits ("make it wider", "move the holes farther
-apart"), a generated explanation of every part, and richer manufacturability
-checks.
+### Plain-English CAD generation for real, editable, manufacturable parts
 
-**v0.3 (private beta)** adds email/password **auth** with strict per-user
-isolation, a first-class **OpenAI provider** (Responses API + Structured
-Outputs), an **S3-compatible storage** backend with owner-checked downloads, a
-**feedback** system, a 200+ prompt **eval harness** (`scripts/run_eval.py`), and
-structured **observability** logging.
+Turn prompts, sketches, and 2D drawing images into parametric CAD models with validated geometry, manufacturability feedback, and export-ready STL/STEP files.
 
-**v0.3.5 (drawing intelligence)** adds a studio **view toolbar** + PNG capture,
-**2D drawing views** (top/front/right/left/iso as PNG & SVG with template
-dimensions, rendered from the real model), **Drawing-to-CAD Assist** (upload a 2D
-drawing → OpenAI vision extracts a validated `DrawingInterpretationSpec` you
-confirm before generation), **point-and-prompt localized editing** (select a
-hole/edge/face and edit just that feature), a one-click **CAD Package** download
-(STEP + STL + DesignSpec + manufacturing report + drawing views), import docs,
-and an advanced **inline-4 crankshaft** template.
+[![Status](https://img.shields.io/badge/status-private%20beta-f6c453)](#status)
+[![CAD](https://img.shields.io/badge/CAD-CadQuery%20%2B%20OpenCascade-2f81f7)](#technology-stack)
+[![Frontend](https://img.shields.io/badge/frontend-Next.js%20%2B%20Three.js-111827)](#technology-stack)
+[![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20Pydantic-009688)](#technology-stack)
+[![Exports](https://img.shields.io/badge/exports-STL%20%2B%20STEP-success)](#exports)
+[![Safety](https://img.shields.io/badge/safety-strict%20JSON%2C%20no%20LLM%20code-critical)](#safety-model)
 
-**v0.3.6 (accuracy + interaction)** fixes the studio **view toolbar** + PNG
-capture, adds **circle-to-edit** (draw a circle over a hole/edge/flange/face and
-edit just that feature, resolved via stable feature IDs), makes **Drawing-to-CAD**
-refuse to map complex unknown drawings to brackets (0.75 confidence gate +
-"correct interpretation" hint + template override), adds a trusted **feature-graph
-interpreter** and **ComplexCADPlan** routing for long/complex prompts, and adds
-`flanged_pipe_branch` + `simple_gear_or_pulley` templates.
+</div>
 
-**v0.4-GEN (general CAD generation engine)** routes each prompt to the best
-strategy — precision template → flexible feature graph → general planner /
-restricted SCAD DSL → clarification — so a much wider range of plain-English
-prompts produces real CAD. It adds tolerant schema coercion (numeric strings,
-countersink-angle repair), feature-graph v2 ops (tube/counterbore/slot/…), new
-parts (flange plate, shaft collar, bearing housing, pipe elbow), a self-repair
-loop (gear teeth / hex / bore), and a 150-prompt regression benchmark. The SCAD
-fallback runs as a sandboxed, statically-linted DSL (no include/import/file/shell,
-timeout, temp-dir) and is STL-only; STEP is offered only for precision-template
-and feature-graph models (never faked).
+---
 
-**v0.3.8 (generate-first)** makes the app build a reasonable first draft whenever
-the prompt has enough info — missing *non-critical* details use documented
-template defaults (surfaced as assumptions) instead of over-clarifying. Fixes
-crankshaft routing (advanced types were missing from the OpenAI schema/prompt),
-the OpenAI drawing-image path (data-URL + `detail:high`, real error surfacing,
-hint fallback), and replaces "Something went wrong" with real backend errors plus
-a "Generate with defaults" path. See [docs/CHANGELOG.md](docs/CHANGELOG.md) and
-[docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md).
+## Table of contents
 
-## How it works (and why it's safe)
+- [What is LunaiCAD?](#what-is-lunaicad)
+- [Status](#status)
+- [Why LunaiCAD is different](#why-lunaicad-is-different)
+- [Core capabilities](#core-capabilities)
+- [Safety model](#safety-model)
+- [Validation and manufacturability](#validation-and-manufacturability)
+- [Exports](#exports)
+- [Product UI](#product-ui)
+- [Technology stack](#technology-stack)
+- [Local setup](#local-setup)
+- [Environment variables](#environment-variables)
+- [API overview](#api-overview)
+- [Evaluation and tests](#evaluation-and-tests)
+- [Deployment](#deployment)
+- [Project layout](#project-layout)
+- [Honest limitations](#honest-limitations)
+- [Example prompts](#example-prompts)
 
+---
+
+## What is LunaiCAD?
+
+LunaiCAD is a prompt-first CAD studio that converts natural language into structured mechanical CAD. It is built for parts that should be editable, measurable, exportable, and closer to real manufacturing workflows than decorative text-to-3D meshes.
+
+Instead of asking an LLM to write CAD code, LunaiCAD asks the model for strict JSON design intent, validates that intent, and then builds geometry with trusted local CAD generators.
+
+```text
+Prompt / Drawing
+      |
+      v
+LLM structured output or deterministic planner
+      |
+      v
+Strict JSON schema + Pydantic validation
+      |
+      v
+Trusted CadQuery / OpenCascade geometry builder
+      |
+      v
+Validation + manufacturability checks
+      |
+      v
+3D preview + STL / STEP / CAD package export
 ```
-prompt ──▶ LLM ──▶ strict JSON spec ──▶ Pydantic validation ──▶ trusted
-                    (data, never code)                          template generator (CadQuery)
-                                                                      │
-                              preview mesh + STL + STEP ◀────────────┘
-                                                                      │
-                                          manufacturability checks ◀──┘
+
+---
+
+## Status
+
+**Current product name:** LunaiCAD  
+**Current stage:** Private beta / production-readiness pass  
+**Recent internal version reference:** `v0.7.4-ACCURATE`  
+**Primary workflow:** Prompt-first CAD generation with editable parameters, feature-aware edits, manufacturability checks, and export-ready CAD files.
+
+Recent changes include:
+
+| Area | Latest state |
+| --- | --- |
+| Branding | Renamed from CAD Maker / SourceCAD AI Part Studio to **LunaiCAD** across visible product UI. |
+| UI | Prompt-first graphite/champagne interface, system light/dark mode, improved workspace, collapsible sidebar, top actions for Share, New part, and Export. |
+| Viewer | Interactive 3D preview with top/front/left/right/isometric views, fit controls, PNG capture, ruler/measurement mode, and clearer dark-mode grid lines. |
+| Export | Beautiful export menu for STL and STEP; concept exports are clearly labelled as concept geometry. |
+| CAD engine | Feature-graph generation is the primary engine, with legacy precision templates as a safe fallback. |
+| Safety | LLM outputs data only, never executable CAD code. Validation, recovery, and critical-failure handling are built in. |
+| Families | Brackets, enclosures, adapters, spacers, clamps, flanges, pipe parts, gears/pulleys, crankshafts, concept assemblies, tires, rims, and wheel assemblies. |
+| Expectations | Validated parts and concept assemblies are separated with honest status badges, export copy, and review notices. |
+| Deployment | Designed for VPS deployment with Nginx, systemd services, frontend/backend separation, and startup safety checks. |
+
+---
+
+## Why LunaiCAD is different
+
+Most text-to-3D tools create decorative meshes. LunaiCAD focuses on mechanical intent.
+
+| LunaiCAD principle | What it means |
+| --- | --- |
+| Parametric first | Dimensions, holes, walls, bosses, slots, and features are represented as structured parameters. |
+| Geometry is trusted | CAD is generated by local audited code, not arbitrary LLM-generated scripts. |
+| STEP is real | STEP is only offered when the underlying generator supports it. STL-only fallbacks are never disguised as STEP. |
+| Safety is visible | Critical failures block exports; warnings are shown clearly; concept assemblies are labelled honestly. |
+| Generate first | When non-critical details are missing, LunaiCAD uses documented assumptions instead of over-clarifying. |
+| Edit after generation | Users can refine dimensions, move holes, add fillets/chamfers, and edit selected features in plain English. |
+
+---
+
+## Core capabilities
+
+### 1. Plain-English to CAD
+
+Example prompts:
+
+```text
+Create a wall-mounted bracket for a 25 mm pipe with two M6 screw holes, 5 mm thick, 80 mm wide.
 ```
 
-The LLM **only** emits a JSON design spec. It never produces executable code.
-The spec is validated against a strict Pydantic schema (units, object type,
-dimensions, holes) before any geometry is built by audited local template
-functions. Every export is verified to exist and be non-empty.
+```text
+Make a vented electronics enclosure with a removable lid, four screw bosses, and 3 mm wall thickness.
+```
 
-## Stack
+```text
+Create an off-road wheel assembly with a matching rim and aggressive tire tread.
+```
 
-| Layer        | Choice                                                    |
-| ------------ | --------------------------------------------------------- |
-| Frontend     | Next.js (App Router) + TypeScript (strict) + Tailwind     |
-| 3D preview   | Three.js via React Three Fiber + drei                     |
-| Backend      | Python FastAPI                                            |
-| CAD kernel   | CadQuery (OpenCascade)                                    |
-| Persistence  | SQLAlchemy — SQLite in dev, Postgres-ready via `DATABASE_URL` |
-| Storage      | Local filesystem in dev, S3-swappable `Storage` interface |
-| LLM          | Provider abstraction: `mock` (offline), `anthropic`, `openai` |
-| Exports      | STL + STEP                                                |
+LunaiCAD routes each prompt through the best available strategy:
 
-By default `LLM_PROVIDER=mock` — a deterministic, offline prompt parser — so the
-whole app runs and all tests pass **with no API keys and no cost**.
+1. Precision template
+2. Feature graph
+3. General planner / restricted fallback
+4. Clarification only when a critical dimension or intent is missing
 
-## Prerequisites
+---
 
-- Python 3.11 (CadQuery wheels). On macOS: `brew install python@3.11`.
-- Node 18+ and npm.
+### 2. Feature-graph CAD engine
 
-## Setup & run
+The primary engine compiles prompts into a strict parametric `CadPlan`.
 
-### 1. Backend
+```text
+Prompt
+  -> CadPlan JSON
+  -> deterministic CadQuery compiler
+  -> STL + STEP export
+  -> geometric validation
+  -> optional repair pass
+  -> manufacturability report
+```
+
+Supported feature primitives include:
+
+- Plates, boxes, shells, rectangular walls, circular flanges, pipes, pipe spools
+- Bosses, ribs, gussets, handles, collars, bearing blocks
+- Holes, rectangular hole patterns, circular hole patterns, slots
+- Counterbores, countersinks, chamfers, fillets, grooves
+- Boolean union/subtract operations
+- Mirrors and repeated patterns
+
+Important implementation files:
+
+```text
+backend/app/cad/plan/schema.py        # CadPlan schema
+backend/app/cad/plan/compiler.py      # trusted geometry compiler
+backend/app/cad/plan/validate.py      # geometric validation
+backend/app/cad/plan/deterministic.py # offline planner for common families
+```
+
+---
+
+### 3. CAD families and capability registry
+
+LunaiCAD uses a central family registry so the app can be honest about what it can generate well.
+
+Every family has:
+
+- Maturity: `production_ready`, `beta`, `concept`, or `unsupported`
+- Required dimensions
+- Default assumptions
+- Example prompts
+- Known limitations
+- Generation strategy
+- Whether the system can generate now or should clarify/decompose
+
+Relevant files:
+
+```text
+backend/app/cad/families.py
+backend/app/cad/classification.py
+backend/tests/data/golden_prompts.json
+```
+
+Browse the runtime catalog:
+
+```http
+GET /api/capabilities
+```
+
+---
+
+### 4. Wheel, rim, and tire generation
+
+LunaiCAD includes dedicated support for tire, rim, and complete wheel assembly families.
+
+Current intent rules:
+
+| User asks for | Default behavior |
+| --- | --- |
+| `a tire` | Standard city/road tire profile with normal tread. |
+| `off-road tire` | Larger, more aggressive tread blocks. |
+| `racing tire` | Cleaner, smoother performance-style tread. |
+| `wheel assembly` | Tire + rim generated as a matched assembly. |
+| `aggressive tread` | Only used when explicitly requested. |
+
+Recommended tread styles for the family:
+
+| Style | Best for | Visual behavior |
+| --- | --- | --- |
+| `city` | Default tire prompts | Subtle grooves, realistic road-tire look. |
+| `sport` | Racing/performance prompts | Smooth sidewall, shallow directional grooves. |
+| `all_terrain` | SUV/utility prompts | Moderate repeating blocks. |
+| `off_road` | Explicit aggressive prompts | Deep, chunky tread blocks. |
+
+---
+
+### 5. Drawing-to-CAD assist
+
+LunaiCAD can interpret uploaded 2D drawing images and convert them into validated CAD intent.
+
+Flow:
+
+```text
+2D drawing image
+  -> vision interpretation
+  -> DrawingInterpretationSpec
+  -> confidence gate
+  -> user confirmation or correction
+  -> generated CAD model
+```
+
+The system avoids forcing unknown drawings into the wrong template. If confidence is too low, it asks for correction or a template override instead of guessing.
+
+---
+
+### 6. Feature-aware editing
+
+After a model is generated, users can edit it using plain English.
+
+Examples:
+
+```text
+Make it 20 mm wider.
+Move the holes farther apart.
+Make the wall thickness 4 mm.
+Add rounded edges.
+Change the bore to 12 mm.
+Make the tire tread less aggressive.
+```
+
+Supported edit modes:
+
+| Edit mode | Description |
+| --- | --- |
+| Parameter edit | Modify exposed dimensions from the sidebar. |
+| Plain-English edit | Apply structured `DesignModification` to the full part. |
+| Localized edit | Edit a selected hole, face, edge, flange, or feature. |
+| Circle-to-edit | Draw a circle/lasso over a feature and edit only that resolved feature. |
+
+---
+
+## Safety model
+
+LunaiCAD is designed around one core rule:
+
+> The LLM can describe design intent, but it never executes CAD code.
+
+```text
+LLM response
+  -> strict JSON schema
+  -> Pydantic validation
+  -> deterministic generator
+  -> export existence check
+  -> mesh / topology / manufacturability checks
+```
+
+Safety layers:
+
+| Layer | Purpose |
+| --- | --- |
+| Structured outputs | Model returns schema-constrained data, not code. |
+| Pydantic validation | Rejects impossible units, dimensions, object types, and malformed features. |
+| Trusted generators | Local CadQuery/OpenCascade functions build geometry. |
+| Export verification | STL/STEP must exist and be non-empty. |
+| Critical checks | Non-watertight, disconnected, missing holes, or invalid geometry can block export. |
+| Recovery pass | One repair attempt is allowed for critical geometry failures. |
+| Honest concept mode | Assemblies and concept parts are labelled as requiring engineering review. |
+
+---
+
+## Validation and manufacturability
+
+LunaiCAD checks generated designs for practical issues before export.
+
+Checks include:
+
+- Minimum wall thickness
+- Hole diameter validity
+- Hole-to-edge distance
+- Hole-to-hole spacing
+- Through-hole count verification
+- Counterbore and countersink validity
+- Fillet/chamfer resolvability
+- Impossible or negative dimensions
+- Non-watertight or non-manifold meshes
+- Disconnected bodies
+- Sub-mm 3D-printing risks
+- Tall slender standoff risks
+- Enclosure print-orientation notes
+
+Severity model:
+
+| Severity | Meaning |
+| --- | --- |
+| `pass` | Geometry and checks passed. |
+| `warning` | Export allowed, but review recommended. |
+| `critical_failure` | Export blocked or clearly marked until repaired. |
+| `concept` | Concept geometry only; engineering review required. |
+
+---
+
+## Exports
+
+LunaiCAD supports:
+
+| Export | Status | Notes |
+| --- | --- | --- |
+| STL | Supported | Best for 3D printing and mesh preview. |
+| STEP | Supported where generator supports solid CAD | Never faked for STL-only fallback paths. |
+| PNG | Supported | Viewer capture and generated drawing views. |
+| SVG | Supported | 2D drawing views where available. |
+| CAD package ZIP | Supported | Includes model files, spec, report, and drawing views. |
+
+Export routes are owner-checked and can stream local files or redirect to short-lived signed S3 URLs in production.
+
+---
+
+## Product UI
+
+Current main user flow:
+
+1. Open LunaiCAD.
+2. Click **New part**.
+3. Describe the part in plain English.
+4. Review assumptions and manufacturability checks.
+5. Use the 3D workspace to inspect, measure, and refine.
+6. Export STL/STEP.
+
+Workspace features:
+
+- Interactive 3D CAD viewer
+- Top/front/right/left/isometric view buttons
+- Fit-to-view and PNG capture
+- Ruler/measurement mode
+- Collapsible parameter sidebar
+- Light/dark theme support
+- Share, New part, and Export actions
+- Export dropdown with STL and STEP options
+- Feature-aware edit interactions
+
+---
+
+## Technology stack
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | Next.js App Router, TypeScript, Tailwind CSS |
+| 3D viewer | Three.js, React Three Fiber, drei |
+| Backend | Python, FastAPI, Pydantic |
+| CAD kernel | CadQuery, OpenCascade |
+| Database | SQLAlchemy, SQLite for local/beta, Postgres-ready through `DATABASE_URL` |
+| Auth | Email/password, JWT bearer tokens, per-user isolation |
+| Storage | Local filesystem in dev, S3-compatible storage in production |
+| LLM providers | Mock/offline, OpenAI, Anthropic provider abstraction |
+| Observability | Structured JSON logs, request timing, scrubbed secrets |
+| Deployment | Nginx reverse proxy, systemd services, VPS-ready |
+
+---
+
+## Local setup
+
+### Prerequisites
+
+- Python 3.11 for CadQuery wheels
+- Node.js 20.9+ recommended for the current Next.js frontend
+- npm
+- Optional: PostgreSQL for production-like local testing
+
+### Backend
 
 ```bash
 cd backend
@@ -101,261 +400,290 @@ python3.11 -m venv .venv
 .venv/bin/python -m pip install -U pip
 .venv/bin/python -m pip install -r requirements.txt
 
-# optional: seed some example parts
+# optional seed data
 .venv/bin/python -m scripts.seed
 
-# run the API (http://127.0.0.1:8000, docs at /docs) — from the repo root:
+# from repo root
 bash scripts/dev.sh backend
 ```
 
-> **Why the script (and not a bare `uvicorn --reload`)?** It restricts the
-> reloader to `backend/app` and excludes `.venv`, `__pycache__`, `storage_data`
-> (generated STEP/STL), `cadmaker.db`, test/eval artifacts, etc. Watching the
-> whole backend directory makes WatchFiles restart the server whenever `.venv`
-> changes or generated files land — killing in-flight requests, which the
-> browser shows as `TypeError: Failed to fetch`.
->
-> Two uvicorn gotchas the script handles (don't hand-roll this): uvicorn always
-> watches the *current working directory* tree even with `--reload-dir app`,
-> and a directory `--reload-exclude` only works as an **absolute path to an
-> existing directory** — relative names and `".venv/*"` globs silently fail to
-> match deep changes. See `scripts/dev.sh` for the exact flags.
+Backend runs at:
 
-### 2. Frontend
+```text
+http://127.0.0.1:8000
+```
+
+API docs:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+### Frontend
 
 ```bash
 cd frontend
 npm install
-cp .env.local.example .env.local      # points at http://localhost:8000
-npm run dev                            # http://localhost:3000
+cp .env.local.example .env.local
+npm run dev
 ```
 
-(Or run both at once with `bash scripts/dev.sh` from the repo root.)
+Frontend runs at:
 
-Once both are up, `backend/.venv/bin/python -m scripts.smoke_local_dev` checks
-the whole browser path: health, auth, plain-English generation, STEP+STL
-downloads.
+```text
+http://localhost:3000
+```
 
-Open http://localhost:3000, click **New design**, and try:
-
-> Wall-mounted bracket for a 25 mm pipe with two M6 screw holes, 5 mm thick, 80 mm wide.
-
-Edit the parameters in the sidebar to regenerate the model instantly, review the
-manufacturability panel, and download STL/STEP.
-
-### Using a real LLM (optional)
-
-Set in `backend/.env` (never commit real keys):
+### Run both
 
 ```bash
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-# or
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-...
+bash scripts/dev.sh
 ```
 
-## Plain-English → CAD feature-graph engine (primary)
-
-`CAD_ENGINE=feature_graph` (the default) compiles prompts into a **CadPlan** — a
-strict, parametric feature graph — instead of routing the whole prompt to a fixed
-template. The pipeline:
-
-```
-prompt → CadPlan (strict JSON, never code) → deterministic CadQuery compile
-       → STEP + STL → validate (bbox / hole count / through-holes cut / exports)
-       → one LLM repair pass → clarify only if a critical dimension is missing
-```
-
-- **Schema** `app/cad/plan/schema.py` — ~24 primitive feature `kind`s (box, plate,
-  `circular_flange`, pipe, `pipe_spool`, `rectangular_wall`, boss, rib, gusset,
-  `hole`, `hole_pattern_rect/circle`, slot, `v_groove`, countersink, counterbore,
-  fillet, chamfer, shell, mirror, union, subtract). Machine fields are short
-  enums; human text lives in a separate `description` (so a long string can never
-  overflow an enum-like field).
-- **Compiler** `app/cad/plan/compiler.py` — trusted dispatch on `kind` (no eval,
-  no LLM code executed); composes primitives, cuts holes as real subtractive ops.
-- **Validate** `app/cad/plan/validate.py` — reuses the mesh genus
-  (`analyze_stl`) to *geometrically* prove through-holes were actually cut.
-- **Planner** — OpenAI Responses + Structured Outputs (`plan_cad`,
-  `CAD_PLAN_SCHEMA`); an offline deterministic planner (`app/cad/plan/deterministic.py`)
-  covers the common families so the engine + evals run with no API key.
-
-Env: `CAD_ENGINE=feature_graph|legacy`, `CAD_LLM_PROVIDER` (defaults to
-`LLM_PROVIDER`), `CAD_LLM_MODEL=gpt-5.5` (graceful `gpt-5.1` → `gpt-4.1`
-fallback). Examples that now compose primitives rather than misclassifying:
-a **blind flange** → a circular flange (not a rectangular adapter plate); a
-**straight pipe spool** → pipe + two end flanges (not a tee); a **U-bracket** →
-base + two side walls (not an enclosure); a **bearing block** builds (no schema
-crash).
-
-Run the 10-prompt eval:
+### Smoke test
 
 ```bash
-cd backend && python -m scripts.run_cad_evals --provider mock      # offline
-LLM_PROVIDER=openai CAD_LLM_MODEL=gpt-5.5 python -m scripts.run_cad_evals --provider openai
-# or: cd frontend && npm run test:cad
+backend/.venv/bin/python -m scripts.smoke_local_dev
 ```
 
-## Part templates (legacy fallback)
+---
 
-When the feature-graph engine doesn't recognize a part, generation falls back to
-the legacy template pipeline: `rectangular_bracket`, `l_bracket`, `enclosure`
-(box + lid), `spacer`/standoff, `pipe_clamp`, `drill_jig`, `handle`/knob,
-`adapter_plate`. These also back parameter-editing and drawing-to-CAD. Browse
-them at `GET /api/templates`. (Kept as a safety net + UI examples, not as the
-primary generation path.)
+## Environment variables
 
-## CAD families & capability registry
+### Backend
 
-To scale across many CAD types (not one hardcoded example), the backend keeps a
-single **family registry** ([`backend/app/cad/families.py`](backend/app/cad/families.py))
-that every supported part/assembly family is declared in — with its honest
-**maturity** (`production_ready` / `beta` / `concept` / `unsupported`), required
-dimensions, default assumptions, example prompts, and **known limitations** (no
-fake accuracy claims). A deterministic, offline **classifier**
-([`backend/app/cad/classification.py`](backend/app/cad/classification.py)) runs
-before generation and tags every design with a structured `classification`
-block (family, confidence, design mode, complexity, generation strategy,
-`can_generate_now`, missing inputs, assumptions, limitations).
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `mock`, `openai`, `anthropic` | Main prompt parser provider. |
+| `OPENAI_API_KEY` | `sk-...` | Required when using OpenAI provider. |
+| `ANTHROPIC_API_KEY` | `sk-ant-...` | Required when using Anthropic provider. |
+| `OPENAI_MODEL` | `gpt-5.5` | OpenAI model, with graceful fallback where configured. |
+| `CAD_ENGINE` | `feature_graph` | Primary CAD engine. |
+| `CAD_LLM_PROVIDER` | `openai` | Optional CAD planner provider override. |
+| `CAD_LLM_MODEL` | `gpt-5.5` | CAD planner model. |
+| `DATABASE_URL` | `postgresql+psycopg://...` | Production database connection. |
+| `JWT_SECRET` | long random secret | Required for secure auth. |
+| `STORAGE_BACKEND` | `local` or `s3` | File storage backend. |
+| `S3_BUCKET` | bucket name | Required when using S3 storage. |
+| `CORS_ORIGINS` | `https://your-domain.com` | Allowed frontend origins. |
+| `PUBLIC_BASE_URL` | `https://your-domain.com` | Public app URL. |
 
-Browse the live catalog at `GET /api/capabilities`. Full details — maturity
-meanings, what "validated" and "concept assembly" mean, why some prompts ask for
-decomposition/clarification, and how to add a new family — are in
-[docs/CAD_FAMILIES.md](docs/CAD_FAMILIES.md). The
-[golden prompt benchmark](backend/tests/data/golden_prompts.json) pins routing
-for 35 prompts across these families.
+Production startup validation should reject unsafe settings such as mock LLM in production, missing provider keys, default/short JWT secrets, unset database URLs, localhost CORS in production, or incomplete S3 config.
 
-## API
+---
 
-| Method | Route                          | Purpose                                   |
-| ------ | ------------------------------ | ----------------------------------------- |
-| POST   | `/api/designs/create`          | prompt → spec → geometry (or clarification) |
-| POST   | `/api/auth/signup` · `/login` · `GET /me` | email/password auth → JWT bearer token |
-| POST   | `/api/designs/{id}/regenerate` | deterministic rebuild from edited params  |
-| POST   | `/api/designs/{id}/modify`     | plain-English edit → DesignModification → rebuild |
-| GET    | `/api/designs/{id}/files/{fmt}`| owner-checked STL/STEP download (local stream / S3 redirect) |
-| POST   | `/api/designs/{id}/feedback`   | thumbs up/down + issue categories + comment |
-| GET    | `/api/designs/{id}/views/{view}` | drawing view (top/front/right/left/iso) as `?fmt=png\|svg` |
-| GET    | `/api/designs/{id}/package`    | full CAD package ZIP (STEP/STL/spec/report/drawings) |
-| POST   | `/api/designs/{id}/localized-edit` | edit only a selected hole/edge/face/feature |
-| POST   | `/api/designs/{id}/circle-edit` | edit a feature resolved from a circle/lasso selection |
-| POST   | `/api/drawings/interpret` · `/confirm` | 2D drawing image (+hint) → interpretation → (confirmed) design |
-| POST   | `/api/designs/{id}/export`     | ensure + return STL/STEP URLs             |
-| POST   | `/api/designs/{id}/checks`     | re-run manufacturability checks           |
-| GET    | `/api/designs/{id}`            | full design (spec, preview, exports, checks) |
-| GET    | `/api/designs`                 | list design summaries                     |
-| GET    | `/api/templates`               | template catalog + parameter ranges       |
-| GET    | `/api/capabilities`            | CAD family catalog: maturity, examples, limitations |
+## API overview
 
-## Manufacturability checks
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/designs/create` | Prompt to CAD model or clarification. |
+| `POST` | `/api/auth/signup` | Create user account. |
+| `POST` | `/api/auth/login` | Login and receive JWT token. |
+| `GET` | `/api/auth/me` | Read current user. |
+| `GET` | `/api/designs` | List user design summaries. |
+| `GET` | `/api/designs/{id}` | Read full design. |
+| `POST` | `/api/designs/{id}/regenerate` | Rebuild from edited parameters. |
+| `POST` | `/api/designs/{id}/modify` | Plain-English modification. |
+| `POST` | `/api/designs/{id}/localized-edit` | Edit selected feature. |
+| `POST` | `/api/designs/{id}/circle-edit` | Edit feature resolved from lasso/circle selection. |
+| `GET` | `/api/designs/{id}/files/{fmt}` | Owner-checked STL/STEP download. |
+| `POST` | `/api/designs/{id}/export` | Ensure and return export URLs. |
+| `POST` | `/api/designs/{id}/checks` | Re-run manufacturability checks. |
+| `GET` | `/api/designs/{id}/views/{view}` | Drawing view as PNG/SVG. |
+| `GET` | `/api/designs/{id}/package` | Full CAD package ZIP. |
+| `POST` | `/api/designs/{id}/feedback` | User feedback and issue categories. |
+| `POST` | `/api/drawings/interpret` | Interpret uploaded 2D drawing. |
+| `POST` | `/api/drawings/confirm` | Confirm drawing interpretation and generate CAD. |
+| `GET` | `/api/templates` | Legacy template catalog. |
+| `GET` | `/api/capabilities` | Family maturity, examples, and limitations. |
 
-Minimum wall/thickness (method-aware), hole diameter validity, hole-to-edge
-distance, **hole-to-hole spacing**, **counterbore/countersink validity**,
-fillet-radius resolvability, impossible/negative dimensions (rejected at
-validation), and 3D-printing risks (sub-mm features, tall slender standoffs,
-counterbore bridging, enclosure print orientation). A material/method assumption
-is always surfaced so the user can correct it.
+---
 
-## Editing parts in plain English
+## Evaluation and tests
 
-After generating, type an edit like *"make it wider"*, *"move the holes farther
-apart"*, *"make the wall thickness 4 mm"* or *"add rounded edges"*. The LLM
-returns a strict **DesignModification** (data, never code); we apply it
-deterministically and re-validate. Ambiguous edits ("make it fly") return a
-clarification instead of guessing.
+### Backend tests
 
-## Accounts, privacy & storage
+```bash
+cd backend
+.venv/bin/python -m pytest
+```
 
-- **Auth**: email/password → JWT bearer token (`localStorage` on the web). Every
-  design route requires a token; a design that isn't yours returns **404** (no
-  existence leak). Projects, designs, exports and feedback are all user-scoped.
-- **Storage**: `STORAGE_BACKEND=local` (dev) or `s3` (prod, S3/MinIO/R2). CAD
-  files are **never** served from a public path — downloads go through an
-  owner-checked API route that streams from local disk or redirects to a
-  short-lived S3 presigned URL.
-- **LLM providers**: `LLM_PROVIDER=mock|anthropic|openai`. The OpenAI provider
-  uses the **Responses API with Structured Outputs** (JSON schema) and supports
-  `parse_prompt_to_design_spec`, `parse_modification`,
-  `generate_clarification_question`, `generate_explanation`, and retry-once
-  `repair`. `openai`/`boto3` are optional runtime deps (lazily imported); the
-  app and the full test suite run on the offline `mock` provider with no keys.
+### Full verification
 
-## Evaluation harness
+```bash
+bash scripts/verify.sh
+```
+
+### Prompt evaluation
 
 ```bash
 cd backend
 .venv/bin/python -m scripts.run_eval --provider mock --limit 200
-.venv/bin/python -m scripts.run_eval --provider openai --limit 50   # needs OPENAI_API_KEY
+.venv/bin/python -m scripts.run_eval --provider openai --limit 50
 ```
 
-Runs 200+ prompts (`tests/data/eval_prompts.json`) through the production safety
-pipeline and writes JSON + CSV reports to `backend/eval_reports/`, scoring
-`valid_json`, `correct_template`, `model_or_clarification`, `export_success`,
-`dangerous_prompt_blocked_or_clarified`, `latency_ms`, and `estimated_cost`.
-Regenerate the dataset with `python -m scripts.build_eval_dataset`.
-
-## Observability
-
-Structured JSON events (`app/observability.py`) for prompt parsing, geometry
-generation latency, provider used, and validation / CAD / export failures, plus
-an `X-Response-Time-ms` header. Secrets (API keys, passwords, tokens) are scrubbed
-from every log payload and never sent to the frontend.
-
-## Prompt benchmark
-
-`backend/tests/data/benchmark_prompts.json` holds 60 categorized prompts (clear,
-vague, ambiguous, invalid, manufacturing, modification, and per-template). The
-suite asserts every prompt yields a valid model **or** a useful clarification
-(never a crash) — currently **100%**, against an 80% target — plus correct
-template routing and that exported STEP files re-import cleanly through
-OpenCascade (FreeCAD's kernel).
-
-## Tests & verification
+### CAD evals
 
 ```bash
-# backend unit + integration tests
-cd backend && .venv/bin/python -m pytest
-
-# one-shot: backend tests + STL/STEP generation + frontend build
-bash scripts/verify.sh
+cd backend
+python -m scripts.run_cad_evals --provider mock
+LLM_PROVIDER=openai CAD_LLM_MODEL=gpt-5.5 python -m scripts.run_cad_evals --provider openai
 ```
 
-The suite covers prompt parsing, spec validation, every CAD template (each must
-export non-empty STL **and** STEP), deterministic regeneration (same spec → same
-file; changed params → different valid file), manufacturability warnings, and
-the full HTTP flow.
+### Frontend CAD test shortcut
+
+```bash
+cd frontend
+npm run test:cad
+```
+
+The verification suite is designed to cover:
+
+- Prompt parsing
+- Schema validation
+- CAD generation
+- STL/STEP export existence
+- OpenCascade STEP re-import where applicable
+- Auth and owner isolation
+- Manufacturability checks
+- Recovery pipeline
+- API route behavior
+- Frontend build and route checks
+
+---
+
+## Deployment
+
+LunaiCAD is designed for a VPS deployment with separate backend and frontend services.
+
+Recommended production topology:
+
+```text
+User browser
+  -> Cloudflare / DNS
+  -> Nginx reverse proxy
+  -> Next.js frontend service
+  -> FastAPI backend service
+  -> database + CAD storage
+```
+
+Service examples:
+
+```bash
+sudo systemctl status lunaicad-backend --no-pager
+sudo systemctl status lunaicad-frontend --no-pager
+```
+
+Health checks:
+
+```bash
+curl -m 5 http://127.0.0.1:8010/health
+curl -m 5 -I http://127.0.0.1:3010
+```
+
+Production checklist:
+
+- Use strong `JWT_SECRET`.
+- Use real `DATABASE_URL`.
+- Disable dev mode.
+- Configure production `CORS_ORIGINS` and `PUBLIC_BASE_URL`.
+- Use OpenAI/Anthropic provider keys only through environment variables.
+- Do not commit `.env` files.
+- Use S3-compatible storage for durable CAD exports if needed.
+- Run backend tests, frontend typecheck, frontend build, route checks, and secrets scan before deploy.
+
+---
 
 ## Project layout
 
-```
+```text
 backend/
   app/
-    schemas/design_spec.py   # strict LLM↔CAD contract (Pydantic)
-    llm/                     # provider abstraction: mock | anthropic | openai
-    parsing/                 # prompt → validated ParseResult
-    cad/                     # base + registry + templates/ (trusted generators)
-    manufacturability/       # checks
-    export/                  # build geometry, STL/STEP bytes, preview mesh
-    storage/                 # local FS now, S3-swappable
-    services/                # orchestration (prompt→spec→geometry→persist)
-    routers/                 # FastAPI routes
-  tests/                     # pytest suite
-  scripts/seed.py            # example designs
+    cad/
+      families.py              # CAD family registry
+      classification.py        # prompt family classifier
+      plan/                    # feature-graph schema, compiler, validation
+      templates/               # trusted template generators
+    export/                    # STL/STEP generation and preview data
+    llm/                       # provider abstraction
+    manufacturability/         # validation and warning checks
+    parsing/                   # prompt to structured design intent
+    routers/                   # FastAPI API routes
+    schemas/                   # strict API and LLM contracts
+    services/                  # orchestration layer
+    storage/                   # local and S3-compatible file storage
+  tests/
+  scripts/
 frontend/
-  src/app/                   # landing, dashboard, new, studio/[id]
-  src/components/            # Viewer3D, ParameterSidebar, ChecksPanel
-  src/lib/                   # api client + types
-scripts/verify.sh           # end-to-end verification
+  src/app/                     # landing, dashboard, new part, studio routes
+  src/components/              # viewer, sidebars, checks, export UI
+  src/lib/                     # API client and shared types
+scripts/
+  dev.sh
+  verify.sh
 ```
 
-## Production notes / remaining risks
+---
 
-- **Auth** is modeled (`User`) but not wired into routes yet — designs are
-  currently unauthenticated. Add login + per-user scoping before deploying.
-- **Storage**: implement an `S3Storage(Storage)` and return signed URLs; the
-  interface is already in place.
-- **Jobs**: generation is synchronous (fast for these templates). Move to a task
-  queue only if heavier parts/assemblies are added.
-- CadQuery requires Python 3.11; 3.13 wheels may lag.
+## Honest limitations
+
+LunaiCAD is powerful, but it is not a replacement for engineering review.
+
+- Concept assemblies are not structurally certified.
+- Generated parts may need tolerance, material, load, and manufacturing review.
+- Complex assemblies may be routed as concepts or decomposed into simpler parts.
+- Some fallback paths may be STL-only.
+- Drawing interpretation depends on image quality and visible dimensions.
+- STEP export is only offered when the generator can produce true solid geometry.
+
+---
+
+## Example prompts
+
+```text
+Create a 90 degree L-bracket, 100 mm by 60 mm, 5 mm thick, with two M6 holes on each leg.
 ```
+
+```text
+Create a circular blind flange for a 50 mm pipe, 12 mm thick, with 8 bolt holes on a 90 mm bolt circle.
+```
+
+```text
+Make a rectangular electronics enclosure, 120 x 80 x 35 mm, with a removable lid, four screw bosses, and side vents.
+```
+
+```text
+Create a straight pipe spool with two end flanges, 40 mm pipe diameter, 160 mm long, and 6 bolt holes per flange.
+```
+
+```text
+Create a city tire with subtle tread and a matching five-spoke rim.
+```
+
+```text
+Create an off-road wheel assembly with chunky tread blocks and a rugged rim.
+```
+
+```text
+Make this tire tread less aggressive and more like a normal road tire.
+```
+
+---
+
+## Name history
+
+This project was previously referred to as **CAD Maker** and **SourceCAD AI Part Studio** during development. The current product name and visible brand is **LunaiCAD**.
+
+---
+
+## License
+
+Private repository / internal beta unless a license is added.
+
+---
+
+<div align="center">
+
+**LunaiCAD** - CAD from words, drawings, and intent.
+
+</div>
