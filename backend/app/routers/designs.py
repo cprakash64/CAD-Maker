@@ -171,6 +171,9 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         part_family_detail=(design.semantic_json or {}).get("part_family_detail"),
         device_enclosure_validation=(design.semantic_json or {}).get("device_enclosure_validation"),
         object_intelligence=(design.semantic_json or {}).get("object_intelligence"),
+        drawing_fidelity=(design.semantic_json or {}).get("drawing_fidelity"),
+        pipe_branch_detail=(design.semantic_json or {}).get("pipe_branch_detail"),
+        sketch_ir=(design.semantic_json or {}).get("sketch_ir"),
         feature_contract=(design.semantic_json or {}).get("feature_contract"),
         presentation=design_service.presentation_descriptor(design),
     )

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Simple adapter plate: 80x60mm outline, 5mm corner radius, four Ø6mm
+     mounting holes inset 10mm from each corner, Ø20mm center bore. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="80mm" height="60mm" viewBox="0 0 80 60">
+  <rect x="0" y="0" width="80" height="60" rx="5" fill="none" stroke="black" stroke-width="0.5"/>
+  <circle cx="10" cy="10" r="3" fill="none" stroke="black" stroke-width="0.35"/>
+  <circle cx="70" cy="10" r="3" fill="none" stroke="black" stroke-width="0.35"/>
+  <circle cx="10" cy="50" r="3" fill="none" stroke="black" stroke-width="0.35"/>
+  <circle cx="70" cy="50" r="3" fill="none" stroke="black" stroke-width="0.35"/>
+  <circle cx="40" cy="30" r="10" fill="none" stroke="black" stroke-width="0.5"/>
+</svg>

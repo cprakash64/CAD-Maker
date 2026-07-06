@@ -1,0 +1,233 @@
+{
+  "units": "mm",
+  "source": "drawing_fallback",
+  "confidence": 0.55,
+  "scale": {
+    "px_per_mm": 7.35,
+    "source_dimension_label": null,
+    "estimated": true
+  },
+  "outer_profiles": [
+    {
+      "id": "outer_1",
+      "kind": "rounded_rectangle",
+      "vertices": [
+        [
+          -43.197,
+          32.177
+        ],
+        [
+          -45.238,
+          31.633
+        ],
+        [
+          -47.279,
+          30.408
+        ],
+        [
+          -48.912,
+          28.503
+        ],
+        [
+          -50.0,
+          25.374
+        ],
+        [
+          -50.0,
+          -25.51
+        ],
+        [
+          -49.456,
+          -27.551
+        ],
+        [
+          -48.231,
+          -29.592
+        ],
+        [
+          -46.327,
+          -31.224
+        ],
+        [
+          -43.197,
+          -32.313
+        ],
+        [
+          43.061,
+          -32.313
+        ],
+        [
+          45.102,
+          -31.769
+        ],
+        [
+          47.143,
+          -30.544
+        ],
+        [
+          48.776,
+          -28.639
+        ],
+        [
+          49.864,
+          -25.51
+        ],
+        [
+          49.864,
+          25.374
+        ],
+        [
+          48.776,
+          28.503
+        ],
+        [
+          48.095,
+          29.456
+        ],
+        [
+          46.19,
+          31.088
+        ],
+        [
+          43.061,
+          32.177
+        ],
+        [
+          -43.061,
+          32.177
+        ]
+      ],
+      "arcs": [],
+      "fillets": [],
+      "bbox_mm": {
+        "w": 100.0,
+        "h": 64.626
+      },
+      "corner_radius_mm": 3.245,
+      "confidence": 0.7
+    }
+  ],
+  "cut_features": [
+    {
+      "id": "cut_1",
+      "kind": "circular_hole",
+      "center": [
+        -0.068,
+        16.259
+      ],
+      "diameter_mm": 12.925,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    },
+    {
+      "id": "cut_2",
+      "kind": "rectangular_slot",
+      "center": [
+        -0.068,
+        -14.354
+      ],
+      "diameter_mm": null,
+      "radius_mm": null,
+      "width_mm": 12.925,
+      "height_mm": 11.565,
+      "angle_deg": 0.0,
+      "vertices": [
+        [
+          -6.463,
+          -8.639
+        ],
+        [
+          -6.463,
+          -20.068
+        ],
+        [
+          6.327,
+          -20.068
+        ],
+        [
+          6.327,
+          -8.639
+        ],
+        [
+          -6.327,
+          -8.639
+        ]
+      ],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.6
+    }
+  ],
+  "additive_features": [],
+  "nested_features": [
+    {
+      "id": "nested_3",
+      "kind": "counterbore",
+      "center": [
+        -35.442,
+        17.619
+      ],
+      "outer_diameter_mm": 10.204,
+      "inner_diameter_mm": 4.218,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "nested_4",
+      "kind": "counterbore",
+      "center": [
+        35.306,
+        17.619
+      ],
+      "outer_diameter_mm": 10.204,
+      "inner_diameter_mm": 4.218,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "nested_5",
+      "kind": "counterbore",
+      "center": [
+        -35.442,
+        -17.755
+      ],
+      "outer_diameter_mm": 10.204,
+      "inner_diameter_mm": 4.218,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "nested_6",
+      "kind": "counterbore",
+      "center": [
+        35.306,
+        -17.755
+      ],
+      "outer_diameter_mm": 10.204,
+      "inner_diameter_mm": 4.218,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    }
+  ],
+  "construction_entities": [],
+  "dimensions": [],
+  "default_thickness_mm": 6.0,
+  "assumptions": [
+    "No legible overall dimension \u2014 scaled to a 100mm envelope"
+  ],
+  "warnings": [
+    "Dimensions estimated from drawing image; verify before manufacturing."
+  ]
+}

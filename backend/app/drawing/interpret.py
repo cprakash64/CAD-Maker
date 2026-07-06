@@ -25,12 +25,20 @@ def interpret_image(
     media_type: str = "image/png",
     provider: LLMProvider | None = None,
     hint: str | None = None,
+    budget_seconds: float | None = None,
 ) -> DrawingInterpretationSpec:
     from app.config import settings
     from app.drawing.hint_classifier import hint_is_usable, interpret_from_hint
     from app.observability import log_event
 
     provider = provider or get_provider()
+    # Mixed-layout sheets: drop rendered isometric previews so the model reads
+    # dimensions from the technical (orthographic/section) views only.
+    segment_notes: list[str] = []
+    if media_type.startswith("image/") and "svg" not in media_type:
+        from app.drawing.segment import prioritize_technical_views
+
+        image_bytes, segment_notes = prioritize_technical_views(image_bytes)
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
     log_event(
         "drawing_interpret_request",
@@ -42,15 +50,56 @@ def interpret_image(
 
     raw: dict | None = None
     provider_error: str | None = None
+    # "unsupported" = the provider fundamentally can't see images (the explicit
+    # dev workaround may classify from the hint); "outage" = the provider SHOULD
+    # have read the image but failed (timeout/unavailable) — in that case we
+    # must NEVER fabricate a part from the hint text: the result would be
+    # unrelated to the uploaded drawing.
+    provider_failure: str | None = None
     try:
-        raw = provider.interpret_drawing(image_b64, media_type, hint)
+        # Bounded: the vision fallback chain shares ONE budget, so an
+        # unreachable/slow model can never stack timeouts for minutes. The
+        # budget bounds ONLY this provider call chain — never the whole job
+        # (the deterministic fallback runs after it regardless). Callers
+        # with deterministic evidence pass an even shorter budget — vision is
+        # then only a dimension-quality upgrade, never worth a long wait.
+        from app.llm.budget import budget_expired, generation_budget
+
+        with generation_budget(budget_seconds
+                               or settings.drawing_provider_timeout_seconds):
+            try:
+                raw = provider.interpret_drawing(image_b64, media_type, hint)
+            except NotImplementedError:
+                raise
+            except Exception as first_exc:  # noqa: BLE001 - one bounded retry
+                # Retry once with a COMPRESSED image (smaller payload, faster
+                # read) when configured and the budget hasn't run out.
+                if settings.drawing_provider_retries <= 0 or budget_expired():
+                    raise
+                from app.drawing.preprocess import compress_for_retry
+
+                log_event("drawing_provider_retry",
+                          error_type=type(first_exc).__name__)
+                small_b64 = base64.b64encode(
+                    compress_for_retry(image_bytes)).decode("ascii")
+                raw = provider.interpret_drawing(small_b64, "image/png", hint)
     except NotImplementedError:
+        provider_failure = "unsupported"
         provider_error = (
             "This provider can't read drawings. Set LLM_PROVIDER=openai with an "
             "API key for image understanding."
         )
     except Exception as exc:  # noqa: BLE001 - surface, don't swallow
+        # A CAPABILITY refusal ("model does not support image input") is the
+        # documented text-workaround case, like NotImplementedError. Anything
+        # else (timeout, 5xx, budget exhausted) is a transient OUTAGE.
+        msg = str(exc).lower()
+        capability = "support" in msg and ("image" in msg or "vision" in msg)
+        provider_failure = "unsupported" if capability else "outage"
         provider_error = f"Provider error while reading the drawing: {exc}"
+        if provider_failure == "outage" and any(
+                t in msg for t in ("timeout", "timed out", "took too long")):
+            log_event("drawing_provider_timeout", detail=str(exc)[:200])
         log_event("drawing_provider_error", error_type=type(exc).__name__, detail=str(exc)[:300])
 
     interp: DrawingInterpretationSpec | None = None
@@ -72,10 +121,14 @@ def interpret_image(
                 provider_error = provider_error or f"Partial interpretation ({_first_error(exc)})."
                 log_event("drawing_validation_error", detail=_first_error(exc))
 
-    # Hint fallback / merge: a usable correction hint should let generation
-    # proceed even if the image path was weak or failed.
-    if hint_is_usable(hint):
+    # Hint fallback / merge: a usable correction hint may guide classification —
+    # but ONLY when the image was actually read (or the provider can't see
+    # images at all: the explicit dev workaround). A provider OUTAGE (timeout /
+    # unavailable) must surface as a failure: fabricating CAD from the hint
+    # text alone produces a part unrelated to the uploaded drawing.
+    if hint_is_usable(hint) and provider_failure != "outage":
         hint_interp = interpret_from_hint(hint)
+        hint_interp.interp_source = "hint"
         if interp is None or not interp.is_actionable():
             if provider_error and not hint_interp.provider_error:
                 hint_interp.provider_error = provider_error
@@ -86,6 +139,9 @@ def interpret_image(
     if interp is not None:
         if provider_error:
             interp.provider_error = provider_error
+        for note in segment_notes:
+            interp.assumptions.append(
+                DrawingAssumption(field="views", assumption=note))
         return interp
 
     # No usable result and no hint -> surface the real error (never silent 0%).

@@ -18,6 +18,7 @@ and surfaced, but it never blocks a compiled model.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from app.cad.plan.compiler import CadPlanResult
@@ -206,4 +207,100 @@ def validate(
             actual=f"min hole Ø{pr['min_hole_diameter_mm']}mm",
         ))
 
+    # --- FAMILY-SPECIFIC FAITHFULNESS (geometry-probed) --------------------
+    # A model that is watertight but not faithful to its family anatomy must
+    # NOT pass: probe checks run on the actual solid and their failures are
+    # merged into the report's validation status as critical failures. This
+    # runs for EVERY route (LLM plan, deterministic fallback, direct drawing
+    # build), so a generic "acceptable" fallback can never be marked PASS.
+    _apply_family_checks(plan, result, report)
+
     return report
+
+
+def _apply_family_checks(plan: CadPlan, result: CadPlanResult,
+                         report: ValidationReport) -> None:
+    from app.cad.pipe_branch import PIPE_BRANCH_TYPES, validate_pipe_branch
+
+    if plan.object_type in PIPE_BRANCH_TYPES:
+        try:
+            checks = validate_pipe_branch(plan, result)
+        except Exception as exc:  # noqa: BLE001 - a validator crash must not kill the build
+            checks = [Check(name="pipe_branch_validation", passed=False,
+                            severity="critical", expected="family validation to run",
+                            actual=f"validator error: {exc}")]
+    elif plan.object_type == "profile_extrusion":
+        checks = _validate_profile_extrusion(plan, result)
+    else:
+        return
+    report.checks.extend(checks)
+    failures = [c for c in checks if not c.passed]
+    if not failures or not report.dimension_report:
+        return
+    validation = report.dimension_report.setdefault("validation", {})
+    crit = list(validation.get("critical_failures") or [])
+    crit += [f"Not drawing-faithful — {c.name.replace('_', ' ')}: "
+             f"expected {c.expected}, got {c.actual}" for c in failures]
+    validation["critical_failures"] = crit
+    validation["status"] = "critical_failure"
+    report.dimension_report["within_tolerance"] = False
+
+
+def _validate_profile_extrusion(plan: CadPlan, result: CadPlanResult) -> list[Check]:
+    """A profile extrusion must BE the drawing's outline: exactly the holes the
+    drawing shows (usually zero), and a solid whose volume matches the traced
+    polygon × depth — a rectangle substituted for a stepped outline fails the
+    volume check by construction."""
+    checks: list[Check] = []
+    expected_holes = int(plan.expected.hole_count or 0)
+    checks.append(Check(
+        name="no_invented_holes", passed=result.hole_count == expected_holes,
+        severity="critical",
+        expected=f"{expected_holes} holes (as traced from the source drawing)",
+        actual=f"{result.hole_count} holes cut",
+    ))
+    feature = next((f for f in plan.features
+                    if f.kind.value == "extruded_profile" and f.profile), None)
+    if feature is None:
+        checks.append(Check(
+            name="profile_outline_preserved", passed=False, severity="critical",
+            expected="an extruded_profile feature carrying the traced outline",
+            actual="no profile feature in the plan",
+        ))
+        return checks
+    pts = [(p[0], p[1]) for p in feature.profile]
+    n = len(pts)
+    area = abs(sum(pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1]
+                   for i in range(n))) / 2.0
+    thickness = feature.p("thickness", 6.0, "depth", "height")
+    expected_vol = area * thickness
+    # Drawn holes remove material: subtract each cut's cross-section × depth so
+    # the outline-preservation volume check stays meaningful with holes present.
+    for f in plan.features:
+        if not f.is_subtractive:
+            continue
+        if f.kind.value == "hole":
+            d = f.p("diameter", 0.0, "dia", "d")
+            if d > 0:
+                expected_vol -= math.pi * (d / 2.0) ** 2 * thickness
+        elif f.kind.value == "polygon_cut" and f.profile:
+            pp = [(p[0], p[1]) for p in f.profile]
+            m = len(pp)
+            hole_area = abs(sum(pp[i][0] * pp[(i + 1) % m][1]
+                                - pp[(i + 1) % m][0] * pp[i][1]
+                                for i in range(m))) / 2.0
+            expected_vol -= hole_area * thickness
+    expected_vol = max(expected_vol, 0.0)
+    measured_vol = 0.0
+    try:
+        measured_vol = float(result.solid.val().Volume())
+    except Exception:  # noqa: BLE001 - volume measurement is belt-and-braces
+        pass
+    ok = expected_vol > 0 and abs(measured_vol - expected_vol) <= 0.1 * expected_vol
+    checks.append(Check(
+        name="profile_outline_preserved", passed=ok, severity="critical",
+        expected=f"~{expected_vol:.0f}mm³ (traced outline × {thickness:g}mm)",
+        actual=f"{measured_vol:.0f}mm³"
+               + ("" if ok else " — the outline was not preserved (rectangle substitution?)"),
+    ))
+    return checks

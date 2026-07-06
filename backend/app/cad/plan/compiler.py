@@ -107,12 +107,28 @@ def _build_cylinder(f: Feature) -> cq.Workplane:
     return _orient(_cyl(dia, f.p("height", 10, "length", "thickness"), _pos(f)), f.axis)
 
 
+def _build_extruded_profile(f: Feature) -> cq.Workplane:
+    """Closed 2D polygon (from a drawing's traced outline) extruded to depth.
+    The profile is authoritative: no holes, bosses, or patterns are invented."""
+    pts = [(float(p[0]), float(p[1])) for p in (f.profile or []) if len(p) >= 2]
+    if len(pts) < 3:
+        raise CadGenerationError("extruded_profile needs a closed polygon (>=3 points)")
+    thickness = _require(f.p("thickness", 6.0, "depth", "height"), "profile thickness")
+    if pts[0] == pts[-1]:
+        pts = pts[:-1]
+    wp = cq.Workplane("XY").polyline(pts).close().extrude(thickness)
+    x, y, z = _pos(f)
+    return wp.translate((x, y, z))
+
+
 def _build_boss(f: Feature) -> cq.Workplane:
     dia = _dia(f, "diameter", "od", "outer_diameter", default=20)
     return _cyl(dia, f.p("height", 10, "length", "thickness"), _pos(f))
 
 
-def _build_pipe(f: Feature) -> cq.Workplane:
+def _pipe_params(f: Feature) -> tuple[float, float, float]:
+    """(od, bore, length) for a pipe feature, deriving the bore from the wall
+    thickness (or a sensible default) when it isn't given explicitly."""
     od = _dia(f, "od", "outer_diameter", "diameter", default=40)
     bore = _dia(f, "id", "bore", "inner_diameter")
     wall = f.p("wall", 0, "wall_thickness", "thickness")
@@ -123,9 +139,31 @@ def _build_pipe(f: Feature) -> cq.Workplane:
     length = _require(f.p("length", 50, "height", "h"), "pipe length")
     if bore >= od:
         raise CadGenerationError("pipe bore must be smaller than outer diameter")
+    return od, bore, length
+
+
+def _build_pipe(f: Feature) -> cq.Workplane:
+    od, bore, length = _pipe_params(f)
     x, y, z = _pos(f)
     tube = cq.Workplane("XY").circle(od / 2).circle(bore / 2).extrude(length)
     return _orient(tube, f.axis).translate((x, y, z))
+
+
+def _build_pipe_solid(f: Feature) -> tuple[cq.Workplane, cq.Workplane]:
+    """(outer solid, bore cut tool) for an ADDITIVE pipe.
+
+    The bore is cut AFTER all additive features are unioned (deferred), so two
+    intersecting pipes (a tee/branch) get a CONTINUOUS internal passage: uniting
+    pre-hollowed tubes leaves the first pipe's wall sealing the second pipe's
+    mouth. The bore tool spans the pipe's own length only, so it never tunnels
+    out the far side of a body it merely touches."""
+    od, bore, length = _pipe_params(f)
+    x, y, z = _pos(f)
+    outer = _orient(cq.Workplane("XY").circle(od / 2).extrude(length), f.axis) \
+        .translate((x, y, z))
+    tool = _orient(cq.Workplane("XY").circle(bore / 2).extrude(length), f.axis) \
+        .translate((x, y, z))
+    return outer, tool
 
 
 def _flange_disc(od: float, thk: float, pcd: float, bolt_count: int, bolt_dia: float,
@@ -148,20 +186,46 @@ def _flange_disc(od: float, thk: float, pcd: float, bolt_count: int, bolt_dia: f
     return disc, holes
 
 
-def _build_circular_flange(f: Feature) -> tuple[cq.Workplane, int, int]:
+def _build_circular_flange(f: Feature) -> tuple[cq.Workplane, list[cq.Workplane], int, int]:
+    """(solid disc, deferred cut tools, holes, through-holes).
+
+    Bolt holes and the center bore are returned as DEFERRED tools cut after all
+    additive geometry is unioned: cut-before-union lets a later solid (e.g. the
+    pipe a bolt hole grazes) refill part of the hole, leaving it partially
+    blocked. The tools span only the flange thickness (+ε), so they pierce the
+    flange — and any wall it grazes — without grooving distant geometry."""
     od = _dia(f, "od", "outer_diameter", "flange_od", default=100)
     thk = f.p("thickness", 12, "flange_thickness", "height")
     pcd = _dia(f, "pcd", "bolt_circle_diameter", "bolt_circle")
     bolt_count = int(f.p("bolt_count", 0, "holes", "count", "bolt_holes"))
     bolt_dia = _dia(f, "bolt_diameter", "hole_diameter", "bolt_dia")
     bore = _dia(f, "bore", "center_bore", "id", "inner_diameter")
-    solid, bolt_holes = _flange_disc(od, thk, pcd, bolt_count, bolt_dia, bore)
-    solid = _orient(solid, f.axis).translate(_pos(f))
+    _require(od, "flange OD")
+    _require(thk, "flange thickness")
+
+    disc = cq.Workplane("XY").circle(od / 2).extrude(thk)
+    tools: list[cq.Workplane] = []
+    eps = 0.5
+    bolt_holes = 0
+    if bolt_count > 0 and bolt_dia > 0 and pcd > 0:
+        for k in range(bolt_count):
+            ang = 2 * math.pi * k / bolt_count
+            hx, hy = (pcd / 2) * math.cos(ang), (pcd / 2) * math.sin(ang)
+            tools.append(cq.Workplane("XY").circle(bolt_dia / 2)
+                         .extrude(thk + 2 * eps).translate((hx, hy, -eps)))
+            bolt_holes += 1
+    if bore > 0:
+        tools.append(cq.Workplane("XY").circle(bore / 2)
+                     .extrude(thk + 2 * eps).translate((0, 0, -eps)))
+
+    at = _pos(f)
+    solid = _orient(disc, f.axis).translate(at)
+    tools = [_orient(t, f.axis).translate(at) for t in tools]
     # The center bore is itself a hole. Total holes = bolt holes + center bore,
     # and all of them are through, so hole_count == through_hole_count (never the
     # impossible "fewer holes than through-holes").
     total = bolt_holes + (1 if bore > 0 else 0)
-    return solid, total, total
+    return solid, tools, total, total
 
 
 def _build_pipe_spool(f: Feature) -> tuple[cq.Workplane, int, int]:
@@ -246,6 +310,34 @@ def _hole_tool(f: Feature, base: cq.Workplane) -> tuple[cq.Workplane, int]:
     return _blind_tool(dia, depth, top, _pos(f), f.axis), 0
 
 
+def _polygon_cut_tool(f: Feature, base: cq.Workplane) -> tuple[cq.Workplane, int]:
+    """Cut a hole with the EXACT traced polygon shape (hexagon / rectangle /
+    slot / arbitrary polygon) — never approximated to a circle. The polygon
+    (mm, y-up, already at its drawn position) is extruded through the whole body
+    on the feature's axis. ``at`` offsets it (defaults to the polygon's own
+    coordinates being absolute)."""
+    pts = [(float(p[0]), float(p[1])) for p in (f.profile or []) if len(p) >= 2]
+    if len(pts) < 3:
+        raise CadGenerationError("polygon_cut needs a closed polygon (>=3 points)")
+    if pts[0] == pts[-1]:
+        pts = pts[:-1]
+    if len(pts) < 3:
+        raise CadGenerationError("polygon_cut needs a closed polygon (>=3 points)")
+    x, y, z = _pos(f)
+    # BLIND recess (a dark internal channel / recess, NOT a through cut): extrude
+    # only ``recess_depth`` down from the top face so the part keeps a floor —
+    # this is what stops a recessed key from becoming one solid silhouette.
+    depth = f.p("recess_depth", 0, "depth")
+    if depth > 0 and not f.through:
+        top = f.p("top_z", 0, "thickness")
+        tool = (cq.Workplane("XY").polyline(pts).close()
+                .extrude(depth + 0.05).translate((0, 0, top - depth)))
+        return _orient(tool, f.axis).translate((x, y, z)), 0
+    tool = (cq.Workplane("XY").polyline(pts).close()
+            .extrude(_BIG).translate((0, 0, -_BIG / 2)))
+    return _orient(tool, f.axis).translate((x, y, z)), 1
+
+
 def _rect_pattern(f: Feature, base: cq.Workplane) -> tuple[cq.Workplane, int, int]:
     dia = _require(_dia(f, "diameter", "hole_diameter", default=0), "pattern hole diameter")
     nx = int(f.p("nx", 2, "cols"))
@@ -320,16 +412,51 @@ def _rect_cut_tool(f: Feature, base: cq.Workplane) -> cq.Workplane:
     return cq.Workplane("XY").box(w, d, _BIG, centered=(True, True, True)).translate((x, y, z))
 
 
+def generate_concentric_hole_group(base: cq.Workplane, f: Feature,
+                                   thickness: float) -> tuple[cq.Workplane, int]:
+    """ONE concentric hole group → ONE cut tool (the caller subtracts it once).
+
+    The smallest circle is the through-hole; each larger circle is a shallow,
+    concentric counterbore/ring recess cut from the top face (never a second
+    through-hole). Every ring shares the through-hole's centre, so a 3-ring stack
+    renders as a clean stepped counterbore instead of inconsistent independent
+    holes. Depths honor the explicit ``counterbore_depth``/``outer_ring_depth``
+    (the drawing path passes a deterministic min(t*0.35, 1.5mm)); a plain
+    counterbore keeps its historical default recess. Returns (tool, 1)."""
+    dia = _require(_dia(f, "diameter", "d", default=0), "through-hole diameter")
+    x, y, z = _pos(f)
+    top = _top_z(base)
+    tool = _through_tool(dia, (x, y, z))                 # the single through-hole
+
+    # Default recess matches the historical plain-counterbore behaviour so
+    # non-drawing counterbores are unchanged.
+    ring_d = _dia(f, "counterbore_diameter", "cap_diameter", default=dia * 1.8)
+    ring_depth = f.p("counterbore_depth", max(1.0, dia * 0.5), "cap_depth")
+    ring_depth = min(ring_depth, max(0.2, thickness * 0.8))  # never a through-cut
+    outer_d = _dia(f, "outer_ring_diameter", default=0)      # 3-ring stacks only
+    outer_depth = min(f.p("outer_ring_depth", round(ring_depth * 0.5, 3)), ring_depth)
+
+    # Stepped recesses: widest (outer) shallowest → narrower (ring) deeper, both
+    # concentric with the through-hole.
+    steps: list[tuple[float, float]] = []
+    if outer_d > ring_d:
+        steps.append((outer_d, outer_depth))             # outer boss/lobe ring
+    if ring_d > dia:
+        steps.append((ring_d, ring_depth))               # counterbore recess
+    for cap_d, cap_depth in steps:
+        cap = (cq.Workplane("XY").circle(cap_d / 2).extrude(cap_depth)
+               .translate((x, y, top - cap_depth)))
+        tool = tool.union(cap)
+    return tool, 1
+
+
 def _csk_cbore_tools(f: Feature, base: cq.Workplane) -> tuple[cq.Workplane, int]:
+    if f.kind == FeatureKind.counterbore:
+        return generate_concentric_hole_group(base, f, base.val().BoundingBox().zlen)
     dia = _require(_dia(f, "diameter", "d", default=0), "hole diameter")
     x, y, z = _pos(f)
     top = _top_z(base)
     shaft = _through_tool(dia, (x, y, z))
-    if f.kind == FeatureKind.counterbore:
-        cap_d = _dia(f, "counterbore_diameter", "cap_diameter", default=dia * 1.8)
-        cap_depth = f.p("counterbore_depth", max(1.0, dia * 0.5), "cap_depth")
-        cap = cq.Workplane("XY").circle(cap_d / 2).extrude(cap_depth).translate((x, y, top - cap_depth))
-        return shaft.union(cap), 1
     cap_d = _dia(f, "countersink_diameter", "cap_diameter", default=dia * 2)
     cap_depth = max(1.0, (cap_d - dia) / 2)
     cone = (cq.Workplane("XY").circle(dia / 2).workplane(offset=cap_depth).circle(cap_d / 2)
@@ -391,6 +518,10 @@ def compile_cad_plan(plan: CadPlan) -> CadPlanResult:
     solids: dict[str, cq.Workplane] = {}
     warnings: list[str] = []
     feature_meta: list[dict] = []
+    # Pipe bores cut AFTER all additive geometry is unioned, so intersecting
+    # pipes (tee/branch) share a continuous internal passage instead of the
+    # first pipe's wall sealing the second pipe's mouth.
+    deferred_bores: list[cq.Workplane] = []
     hole_count = 0
     through_count = 0
 
@@ -402,9 +533,12 @@ def compile_cad_plan(plan: CadPlan) -> CadPlanResult:
         if f.kind in (FeatureKind.box, FeatureKind.plate, FeatureKind.rectangular_wall,
                       FeatureKind.cylinder, FeatureKind.boss, FeatureKind.pipe,
                       FeatureKind.rib, FeatureKind.gusset, FeatureKind.pipe_elbow,
-                      FeatureKind.circular_flange, FeatureKind.pipe_spool):
+                      FeatureKind.circular_flange, FeatureKind.pipe_spool,
+                      FeatureKind.extruded_profile):
             if f.kind in (FeatureKind.box, FeatureKind.plate):
                 added_solid = _build_box(f) if f.kind == FeatureKind.box else _build_plate(f)
+            elif f.kind == FeatureKind.extruded_profile:
+                added_solid = _build_extruded_profile(f)
             elif f.kind == FeatureKind.rectangular_wall:
                 added_solid = _build_rect_wall(f)
             elif f.kind == FeatureKind.cylinder:
@@ -412,19 +546,27 @@ def compile_cad_plan(plan: CadPlan) -> CadPlanResult:
             elif f.kind == FeatureKind.boss:
                 added_solid = _build_boss(f)
             elif f.kind == FeatureKind.pipe:
-                added_solid = _build_pipe(f)
+                if f.op == "cut":
+                    added_solid = _build_pipe(f)  # legacy: cut a tube-shaped tool
+                else:
+                    added_solid, bore_tool = _build_pipe_solid(f)
+                    deferred_bores.append(bore_tool)
             elif f.kind == FeatureKind.rib:
                 added_solid = _build_rib(f)
             elif f.kind == FeatureKind.gusset:
                 added_solid = _build_gusset(f)
             elif f.kind == FeatureKind.circular_flange:
-                added_solid, f_holes, f_through = _build_circular_flange(f)
+                added_solid, flange_tools, f_holes, f_through = _build_circular_flange(f)
+                deferred_bores.extend(flange_tools)
             elif f.kind == FeatureKind.pipe_spool:
                 added_solid, f_holes, f_through = _build_pipe_spool(f)
             elif f.kind == FeatureKind.pipe_elbow:
                 added_solid, f_holes, f_through = _build_pipe_elbow(f, warnings)
         elif f.kind == FeatureKind.hole:
             cut_tool, f_through = _hole_tool(f, _need(base, f))
+            f_holes = 1
+        elif f.kind == FeatureKind.polygon_cut:
+            cut_tool, f_through = _polygon_cut_tool(f, _need(base, f))
             f_holes = 1
         elif f.kind == FeatureKind.hole_pattern_rect:
             cut_tool, f_holes, f_through = _rect_pattern(f, _need(base, f))
@@ -499,6 +641,11 @@ def compile_cad_plan(plan: CadPlan) -> CadPlanResult:
 
     if base is None:
         raise CadGenerationError("CadPlan produced no solid body")
+
+    # Deferred pipe bores: cut through the fully-unioned body so every bore
+    # opens into any body it crosses (continuous flow path in tees/branches).
+    for tool in deferred_bores:
+        base = base.cut(tool)
 
     # SINGLE-PART FUSE SAFEGUARD: a single-part plan should be ONE connected body.
     # If primitives ended up as several near-collinear sub-bodies with small gaps
@@ -602,6 +749,24 @@ def _need(base, f) -> cq.Workplane:
     return base
 
 
+# Minimum circular quality (spec Part 4): a small Ø1.52/Ø3.6 hole must look ROUND
+# in the STL/preview, not like a coarse polygon. The angular tolerance caps the
+# facet angle on curved surfaces (a small bore's whole circumference is one tiny
+# arc, so the linear deflection alone barely subdivides it); it does NOT add
+# facets to flat faces, so plates/brackets stay light. STEP is analytic BRep and
+# keeps true circles/cylinders regardless.
+_STL_LINEAR_TOL = 0.05          # mm
+_STL_ANGULAR_TOL = 0.25         # rad (~14°) → ≥ 25 facets per full circle
+_PREVIEW_ANGULAR_TOL = 0.30     # rad (~17°) → ≥ 20 facets per full circle
+
+
 def export_solid(solid: cq.Workplane) -> tuple[bytes, bytes, PreviewMesh]:
-    """STL + STEP bytes + a preview mesh, using the shared exporter helpers."""
-    return _export_bytes(solid, ".stl"), _export_bytes(solid, ".step"), _tessellate(solid)
+    """STL + STEP bytes + a preview mesh, using the shared exporter helpers.
+
+    The STL/preview are meshed with a minimum angular tolerance so small round
+    holes resolve as circles (not polygons); STEP stays analytic."""
+    stl = _export_bytes(solid, ".stl", tolerance=_STL_LINEAR_TOL,
+                        angular_tolerance=_STL_ANGULAR_TOL)
+    step = _export_bytes(solid, ".step")
+    preview = _tessellate(solid, tolerance=0.1, angular_tolerance=_PREVIEW_ANGULAR_TOL)
+    return stl, step, preview

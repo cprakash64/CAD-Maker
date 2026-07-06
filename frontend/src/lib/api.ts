@@ -6,6 +6,11 @@ import type {
   Hole,
   TemplateInfo,
 } from "./types";
+import {
+  pollDrawingJob,
+  type DrawingJobStage,
+  type DrawingJobStatus,
+} from "./drawingJob";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
@@ -186,10 +191,17 @@ export const api = {
       body: JSON.stringify(interp),
     }),
 
-  // ONE-SHOT drawing -> CAD: interpret + auto-generate in a single call.
+  // Drawing job status snapshot (poll target for the async generate flow).
+  getDrawingJob: (jobId: string) =>
+    request<DrawingJobStatus>(`/api/drawings/jobs/${jobId}`),
+
+  // ONE-SHOT drawing -> CAD as an async job: POST returns 202 + job_id, then
+  // we poll until done/failed and resolve with the final payload — callers
+  // keep the old Promise semantics, plus optional stage updates.
   generateFromDrawing: async (
     file: File,
-    hint?: string
+    hint?: string,
+    onStage?: (stage: DrawingJobStage, status: DrawingJobStatus) => void
   ): Promise<DrawingGenerateResult> => {
     const fd = new FormData();
     fd.append("file", file);
@@ -220,14 +232,141 @@ export const api = {
       }
       throw new ApiError(detail, res.status, "POST /api/drawings/generate");
     }
-    return (await res.json()) as DrawingGenerateResult;
+    const body = (await res.json()) as { job_id?: string } & DrawingGenerateResult;
+    if (res.status !== 202 || !body.job_id) {
+      return body as DrawingGenerateResult; // sync=true escape hatch
+    }
+    const finished = await pollDrawingJob(body.job_id, {
+      fetchStatus: api.getDrawingJob,
+      onUpdate: (s) => onStage?.(s.stage, s),
+    });
+    return finished.result as DrawingGenerateResult;
+  },
+
+  // Drawing → CAD for all supported file types (PNG/JPG/PDF/SVG/DXF) as an
+  // async job: upload (with progress) → 202 + job_id → poll with stage
+  // updates → resolve with the final payload.
+  drawingToCad: async (
+    file: File,
+    opts?: {
+      notes?: string;
+      units?: "mm" | "inch";
+      thicknessMm?: number;
+      family?: string;
+      onProgress?: (pct: number) => void;
+      onStage?: (stage: DrawingJobStage, status: DrawingJobStatus) => void;
+    }
+  ): Promise<DrawingToCadResult> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (opts?.notes) fd.append("notes", opts.notes);
+    if (opts?.units) fd.append("units", opts.units);
+    if (opts?.thicknessMm) fd.append("thickness_mm", String(opts.thicknessMm));
+    if (opts?.family) fd.append("family", opts.family);
+    const token = getToken();
+    // XMLHttpRequest so real upload progress can be reported for large files.
+    const accepted = await new Promise<{ status: number; body: unknown }>(
+      (resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${API_BASE}/api/drawings/to-cad`);
+        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && opts?.onProgress)
+            opts.onProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onerror = () =>
+          reject(
+            new ApiError(
+              `Cannot reach the LunaiCAD backend at ${API_BASE} (POST /api/drawings/to-cad).`,
+              0,
+              "POST /api/drawings/to-cad"
+            )
+          );
+        xhr.onload = () => {
+          let body: unknown = null;
+          try {
+            body = JSON.parse(xhr.responseText);
+          } catch {
+            /* non-JSON body */
+          }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve({ status: xhr.status, body });
+          } else {
+            const detail =
+              (body as { detail?: string } | null)?.detail ??
+              `${xhr.status} ${xhr.statusText}`;
+            reject(new ApiError(detail, xhr.status, "POST /api/drawings/to-cad"));
+          }
+        };
+        xhr.send(fd);
+      }
+    );
+    const body = accepted.body as { job_id?: string } | null;
+    if (accepted.status !== 202 || !body?.job_id) {
+      return accepted.body as DrawingToCadResult; // sync=true escape hatch
+    }
+    const finished = await pollDrawingJob(body.job_id, {
+      fetchStatus: api.getDrawingJob,
+      onUpdate: (s) => opts?.onStage?.(s.stage, s),
+    });
+    return finished.result as DrawingToCadResult;
   },
 };
 
 export interface DrawingGenerateResult {
   generated: boolean;
-  interpretation: DrawingInterpretation;
+  // Unified pipeline payload: `interpretation` mirrors the canonical
+  // `analysis` block (legacy key kept for compatibility).
+  interpretation: DrawingAnalysisSummary | null;
+  analysis?: DrawingAnalysisSummary | null;
   design: Design | null;
+  message?: string | null;
+}
+
+export interface DrawingAnalysisSummary {
+  source: "vision" | "dxf" | "svg" | "pdf" | "hint";
+  units: "mm" | "inch";
+  drawing_type: string;
+  title: string | null;
+  detected_views: { view: string; description: string | null }[];
+  scale_confidence: number;
+  overall_dimensions: {
+    width_mm: number | null;
+    height_mm: number | null;
+    depth_mm: number | null;
+  };
+  inferred_depth_mm: number | null;
+  outer_profile: {
+    kind: "rectangle" | "circle" | "polygon" | "unknown";
+    width_mm: number | null;
+    height_mm: number | null;
+    diameter_mm: number | null;
+    corner_radius_mm: number | null;
+  };
+  features: {
+    through_holes: { diameter_mm: number; x_mm: number; y_mm: number; count: number }[];
+    patterns: {
+      kind: string;
+      count: number;
+      hole_diameter_mm: number;
+      pitch_circle_diameter_mm: number | null;
+    }[];
+    slots: { width_mm: number; length_mm: number }[];
+  };
+  dimension_annotations: { text: string; value: number | null }[];
+  assumptions: string[];
+  ambiguities: string[];
+  recommended_family: string | null;
+  confidence_score: number;
+  needs_clarification: boolean;
+  clarification_questions: string[];
+}
+
+export interface DrawingToCadResult {
+  generated: boolean;
+  analysis: DrawingAnalysisSummary;
+  design: Design | null;
+  message: string | null;
 }
 
 export interface LocalizedEdit {

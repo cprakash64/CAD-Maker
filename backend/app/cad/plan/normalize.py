@@ -22,6 +22,8 @@ def _holes_for(f: Feature) -> tuple[int, int]:
     k = f.kind
     if k == FeatureKind.hole:
         return 1, (1 if f.through else 0)
+    if k == FeatureKind.polygon_cut:  # hexagon / rectangle / slot through-cut
+        return 1, (1 if f.through else 0)
     if k in (FeatureKind.countersink, FeatureKind.counterbore):
         return 1, 1
     if k == FeatureKind.hole_pattern_rect:

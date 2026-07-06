@@ -95,6 +95,8 @@ export interface Design {
   validation_status?: ValidationStatus | null;
   validation_critical_failures?: string[];
   validation_warnings?: string[];
+  // Set when a critical validation failure gates STEP/STL download.
+  download_blocked_reason?: string | null;
   // Large-assembly gate: the prompt describes a whole machine / multi-subsystem
   // assembly and must be decomposed into single parts before generation.
   needs_decomposition?: boolean;

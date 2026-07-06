@@ -73,9 +73,11 @@ def test_scale_real_size_drawing_untouched():
 
 
 def _generate(client, auth, hint: str | None = None, body: dict | None = None):
-    """One-shot endpoint with a tiny png; mock provider classifies via hint."""
+    """One-shot endpoint with a tiny png; mock provider classifies via hint.
+    Uses the opt-in sync form (the default is an async 202 + job flow, covered
+    by test_drawing_jobs.py)."""
     files = {"file": ("drawing.png", io.BytesIO(b"\x89PNG fake image bytes"), "image/png")}
-    data = {"hint": hint} if hint else {}
+    data = {"sync": "true", **({"hint": hint} if hint else {})}
     r = client.post("/api/drawings/generate", files=files, data=data,
                     headers=auth["headers"])
     assert r.status_code == 200, r.text

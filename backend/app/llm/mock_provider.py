@@ -445,7 +445,9 @@ class MockLLMProvider(LLMProvider):
                 "interpretation_rationale": "No legible data could be extracted from the "
                 "image in mock mode; awaiting a textual description.",
             }
-        return _interpret_from_hint(hint)
+        # The mock can only classify from the user's TEXT, never the pixels —
+        # mark the source so fidelity gating keeps these builds at REVIEW.
+        return {**_interpret_from_hint(hint), "interp_source": "hint"}
 
     parse_drawing_hint = staticmethod(lambda hint: _interpret_from_hint(hint))
 

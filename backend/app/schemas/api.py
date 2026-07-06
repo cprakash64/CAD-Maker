@@ -204,6 +204,17 @@ class DesignDTO(BaseModel):
     object_intelligence: Optional[dict] = None
     # Requested vs generated feature diff (cutouts, tread, mounting holes, …).
     feature_contract: Optional[dict] = None
+    # Drawing → CAD fidelity: {source_drawing_confidence, drawing_fidelity_status
+    # (ok|review|failed), used_default_fallback}. Present on drawing-built designs.
+    drawing_fidelity: Optional[dict] = None
+    # Flanged pipe branch/tee topology: {side_branch_present, flange_count,
+    # branch_outer_diameter_mm, branch_flange_outer_diameter_mm, ...}. Present on
+    # branch drawings so the UI can confirm the side branch was modeled.
+    pipe_branch_detail: Optional[dict] = None
+    # Reconstructed mechanical sketch: {summary, ir}. Present on plate/bracket
+    # drawings built via the sketch-reconstruction pipeline (outer profile +
+    # classified cuts + grouped counterbores).
+    sketch_ir: Optional[dict] = None
 
 
 class DesignSummaryDTO(BaseModel):

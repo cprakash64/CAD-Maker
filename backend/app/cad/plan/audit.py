@@ -48,6 +48,8 @@ def resolve_role(f: Feature) -> str | None:
         return "branch_pipe" if "branch" in t else "pipe_body"
     if k == FeatureKind.shell:
         return "enclosure_shell"
+    if k == FeatureKind.extruded_profile:
+        return "body"
     if k == FeatureKind.rectangular_wall:
         return "hinge_ears" if "ear" in t else "side_walls"
     if k == FeatureKind.plate:

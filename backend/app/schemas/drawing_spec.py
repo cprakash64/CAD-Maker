@@ -27,6 +27,8 @@ SUPPORTED_DRAWING_TYPES = {
     # legacy templates still supported
     "rectangular_bracket", "enclosure", "spacer", "pipe_clamp", "drill_jig",
     "handle", "simple_gear_or_pulley", "inline_4_crankshaft",
+    # dimensioned 2D outline extruded to depth (deterministic contour path)
+    "profile_extrusion",
 }
 
 # Common synonyms the vision model emits -> canonical supported type.
@@ -34,8 +36,12 @@ _DRAWING_TYPE_SYNONYMS = {
     "tee": "pipe_tee", "tee fitting": "pipe_tee", "t-fitting": "pipe_tee",
     "pipe branch": "flanged_pipe_branch", "branch": "flanged_pipe_branch",
     "flanged pipe branch": "flanged_pipe_branch", "flanged tee": "flanged_pipe_branch",
+    "flanged pipe tee": "flanged_pipe_branch", "sectioned pipe assembly": "pipe_spool",
     "elbow": "pipe_elbow", "pipe elbow": "pipe_elbow",
     "spool": "pipe_spool", "pipe spool": "pipe_spool",
+    "flanged pipe spool": "pipe_spool", "flanged spool": "pipe_spool",
+    "pipe flange": "blind_flange", "flange with bolt pattern": "flange",
+    "bolted flange": "flange", "flanged pipe": "pipe_spool",
     "flange": "blind_flange", "blind flange": "blind_flange",
     "u bracket": "u_bracket", "u-bracket": "u_bracket", "u-shaped bracket": "u_bracket",
     "l bracket": "l_bracket", "l-bracket": "l_bracket",
@@ -44,6 +50,11 @@ _DRAWING_TYPE_SYNONYMS = {
     "vise jaw": "vise_jaw", "enclosure": "electronics_enclosure",
     "sensor enclosure": "sensor_enclosure", "plate": "mounting_plate",
     "pipe fitting": "pipe_fitting", "fitting": "pipe_fitting",
+    "extruded_profile": "profile_extrusion", "extruded profile": "profile_extrusion",
+    "dimensioned_2d_profile": "profile_extrusion",
+    "dimensioned 2d profile": "profile_extrusion",
+    "2d profile": "profile_extrusion", "profile extrusion": "profile_extrusion",
+    "stepped profile": "profile_extrusion",
 }
 
 # Mechanical keywords that justify a generic_mechanical_part fallback.
@@ -51,6 +62,25 @@ _MECH_KEYWORDS = (
     "pipe", "flange", "bracket", "plate", "block", "boss", "shaft", "mount",
     "bore", "bearing", "hinge", "enclosure", "fitting", "tee", "elbow", "spool",
 )
+
+
+# Canonical pipe/flange/spool families — a drawing recognized as one of these
+# must ALWAYS build in the pipe/flange family and can NEVER be routed to a
+# wheel/rim/tire part (a flange's outer edge is literally a "rim", which used to
+# hijack the generic-prompt router). Used by the drawing routing guard.
+PIPE_FLANGE_FAMILIES = frozenset({
+    "flanged_pipe_branch", "pipe_tee", "pipe_spool", "pipe_elbow",
+    "blind_flange", "flange", "pipe_fitting",
+})
+
+# Detected-type strings (as the vision model / detector emit them) that mean a
+# pipe/flange/spool part, even when they aren't a canonical supported type.
+_PIPE_FLANGE_DETECTIONS = frozenset({
+    "flanged_pipe_spool", "flanged_pipe_branch", "pipe_flange", "pipe_spool",
+    "pipe_tee", "flanged_tee", "pipe_branch", "flange_with_bolt_pattern",
+    "sectioned_pipe_assembly", "flanged_pipe", "bolted_flange", "pipe_elbow",
+    "blind_flange", "flange", "pipe_fitting",
+})
 
 
 def normalize_drawing_type(value) -> Optional[str]:
@@ -62,11 +92,31 @@ def normalize_drawing_type(value) -> Optional[str]:
     s = s.replace(" ", "_") if s.replace(" ", "_") in SUPPORTED_DRAWING_TYPES else s
     if s in SUPPORTED_DRAWING_TYPES:
         return s
-    if s in _DRAWING_TYPE_SYNONYMS:
-        return _DRAWING_TYPE_SYNONYMS[s]
+    # Synonyms are keyed with spaces; vision often emits underscores.
+    for key in (s, s.replace("_", " ")):
+        if key in _DRAWING_TYPE_SYNONYMS:
+            return _DRAWING_TYPE_SYNONYMS[key]
     if any(k in s for k in _MECH_KEYWORDS):
         return "generic_mechanical_part"
     return None
+
+
+def is_pipe_flange_detection(*values) -> bool:
+    """True when ANY detected/suggested string denotes a pipe/flange/spool part —
+    the hard signal that forbids wheel/rim/tire routing for this drawing."""
+    for value in values:
+        if not value:
+            continue
+        s = str(value).strip().lower().replace("-", " ").replace(" ", "_")
+        if s in _PIPE_FLANGE_DETECTIONS or normalize_drawing_type(value) in PIPE_FLANGE_FAMILIES:
+            return True
+        # Word-level cue: "... flanged pipe spool ...", "... pipe flange ...".
+        words = set(str(value).lower().replace("-", " ").replace("_", " ").split())
+        if ("pipe" in words or "flange" in words or "flanged" in words
+                or "spool" in words) and not (
+                words & {"wheel", "rim", "tire", "tyre", "hub", "spoke", "spokes"}):
+            return True
+    return False
 
 
 class DrawingViewType(str, Enum):
@@ -188,6 +238,10 @@ class DrawingInterpretationSpec(BaseModel):
     provider_error: Optional[str] = Field(default=None, max_length=2000)
     # True when this is a best-effort partial interpretation (repair fell back).
     partial: bool = False
+    # Where the interpretation came from: "vision" (the image was read) or
+    # "hint" (classified from the user's text — the dev workaround). Feeds the
+    # drawing-fidelity report; a hint-classified build can never be a clean PASS.
+    interp_source: str = Field(default="vision", max_length=16)
 
     @property
     def confidence(self) -> float:
@@ -213,13 +267,26 @@ class DrawingInterpretationSpec(BaseModel):
             and not self.unsupported_reason
         )
 
+    def has_geometry_content(self) -> bool:
+        """The interpretation carries SOMETHING real from the drawing: measured
+        dimensions, hole callouts, or a specific recognized family. An empty
+        'generic mechanical part' reading has nothing to build from — generating
+        would invent a default part unrelated to the upload."""
+        return (
+            bool(self.overall_dimensions)
+            or bool(self.holes)
+            or self.suggested_object_type not in (None, "generic_mechanical_part")
+        )
+
     def generatable_with_assumptions(self) -> bool:
         """ASSUMPTION-FIRST gate: a recognized mechanical drawing generates even
         with open clarification questions / missing secondary dimensions — those
         become assumptions + warnings on the design. Only a non-mechanical,
-        unrecognizable, or very-low-confidence interpretation still blocks."""
+        unrecognizable, contentless, or very-low-confidence interpretation
+        still blocks (never a fabricated default part)."""
         return (
             self.is_mechanical()
+            and self.has_geometry_content()
             and self.overall_confidence >= GENERATE_WITH_ASSUMPTIONS_CONFIDENCE
         )
 

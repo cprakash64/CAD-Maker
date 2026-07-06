@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { api, ApiError } from "@/lib/api";
+import { successfulDesignId } from "@/lib/drawingJob";
 import { useAuth } from "@/lib/auth";
 
 /* --------------------------------------------------------------------------
@@ -192,17 +193,22 @@ function Overlay({
       if (file) {
         // One-shot Drawing → CAD: interpret + generate, text as guidance.
         const res = await api.generateFromDrawing(file, trimmed || undefined);
-        if (res.generated && res.design) {
+        // HARD success gate: only a real design id opens the studio — a
+        // failed/degraded interpretation must never surface an unrelated part.
+        const designId = successfulDesignId(res);
+        if (designId) {
           onClose();
-          router.push(`/studio/${res.design.id}`);
+          router.push(`/studio/${designId}`);
           return;
         }
-        // Couldn't auto-generate — hand off to the full Drawing → CAD review.
-        setError("Couldn't auto-generate from this image. Opening Drawing → CAD to review…");
-        setTimeout(() => {
-          onClose();
-          router.push("/drawing");
-        }, 1100);
+        // Couldn't auto-generate — exit the busy state and explain.
+        setError(
+          (res && "message" in res && (res as { message?: string | null }).message) ||
+            "Couldn't generate CAD from this image. Try the Drawing → CAD page " +
+              "for options, or add a note describing the part."
+        );
+        setBusy(false);
+        submitting.current = false;
         return;
       }
       const design = await api.createDesign(trimmed);

@@ -1,0 +1,222 @@
+{
+  "units": "mm",
+  "source": "hybrid",
+  "confidence": 0.55,
+  "scale": {
+    "px_per_mm": 6.499999999999999,
+    "source_dimension_label": "90 (vision)",
+    "estimated": false
+  },
+  "outer_profiles": [
+    {
+      "id": "outer_1",
+      "kind": "rounded_rectangle",
+      "vertices": [
+        [
+          -12.077,
+          44.846
+        ],
+        [
+          -15.308,
+          43.923
+        ],
+        [
+          -17.462,
+          42.538
+        ],
+        [
+          -20.077,
+          39.307
+        ],
+        [
+          -21.154,
+          35.77
+        ],
+        [
+          -21.154,
+          -35.923
+        ],
+        [
+          -20.231,
+          -39.154
+        ],
+        [
+          -18.846,
+          -41.307
+        ],
+        [
+          -15.615,
+          -43.923
+        ],
+        [
+          -12.077,
+          -45.0
+        ],
+        [
+          11.923,
+          -45.0
+        ],
+        [
+          13.461,
+          -44.692
+        ],
+        [
+          16.231,
+          -43.462
+        ],
+        [
+          18.692,
+          -41.307
+        ],
+        [
+          20.077,
+          -39.154
+        ],
+        [
+          21.0,
+          -35.923
+        ],
+        [
+          21.0,
+          35.77
+        ],
+        [
+          20.077,
+          39.0
+        ],
+        [
+          18.692,
+          41.153
+        ],
+        [
+          17.308,
+          42.538
+        ],
+        [
+          15.154,
+          43.923
+        ],
+        [
+          12.847,
+          44.692
+        ],
+        [
+          -11.923,
+          44.846
+        ]
+      ],
+      "arcs": [],
+      "fillets": [],
+      "bbox_mm": {
+        "w": 42.308,
+        "h": 90.0
+      },
+      "corner_radius_mm": 4.354,
+      "confidence": 0.7
+    }
+  ],
+  "cut_features": [
+    {
+      "id": "cut_2",
+      "kind": "rectangular_slot",
+      "center": [
+        -0.077,
+        -3.154
+      ],
+      "diameter_mm": null,
+      "radius_mm": null,
+      "width_mm": 14.615,
+      "height_mm": 19.231,
+      "angle_deg": 0.0,
+      "vertices": [
+        [
+          -7.308,
+          6.385
+        ],
+        [
+          -7.308,
+          -12.693
+        ],
+        [
+          7.154,
+          -12.693
+        ],
+        [
+          7.154,
+          6.385
+        ],
+        [
+          -7.154,
+          6.385
+        ]
+      ],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "cut_3",
+      "kind": "circular_hole",
+      "center": [
+        -10.846,
+        -27.0
+      ],
+      "diameter_mm": 6.615,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    },
+    {
+      "id": "cut_4",
+      "kind": "circular_hole",
+      "center": [
+        10.692,
+        -27.0
+      ],
+      "diameter_mm": 6.615,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    }
+  ],
+  "additive_features": [],
+  "nested_features": [
+    {
+      "id": "nested_1",
+      "kind": "counterbore",
+      "center": [
+        -0.077,
+        28.384
+      ],
+      "outer_diameter_mm": 20.769,
+      "inner_diameter_mm": 8.462,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    }
+  ],
+  "construction_entities": [],
+  "dimensions": [],
+  "default_thickness_mm": 6.0,
+  "assumptions": [
+    "No legible overall dimension \u2014 scaled to a 100mm envelope",
+    "Overall size 90mm taken from the vision reading (CV geometry preserved, only rescaled)",
+    "Vision labelled this a generic mechanical part"
+  ],
+  "warnings": [
+    "Dimensions estimated from drawing image; verify before manufacturing."
+  ]
+}

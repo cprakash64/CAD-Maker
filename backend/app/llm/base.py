@@ -268,8 +268,41 @@ callouts like "12xØ1" or "8x M10" into holes[] with the exact count and the \
 written diameter — on flanged parts these are PER-FLANGE bolt circles. Read \
 pipe wall thickness and flange thickness from section views when present \
 (wall_thickness_mm, flange_thickness_mm), and put the flange outer diameter and \
-overall height into overall_dimensions. CRITICAL: do not invent dimensions. If \
-a value is illegible or missing, lower its confidence, record an assumption, \
-and when a build-critical dimension is missing add a clarification_question \
-instead of guessing. Respond with ONLY the JSON object.
+overall height into overall_dimensions.
+
+Reading the drawing: identify which views are present (front/top/side/\
+isometric/section) and reconcile dimensions across them. Take dimensions ONLY \
+from the dimensioned orthographic and section views; a rendered/shaded \
+isometric preview is illustration — never read sizes or proportions from it. \
+Distinguish the part's visible outline from dimension/extension/center lines — \
+dimension lines are annotations, never part geometry; centerlines (dash-dot) \
+mark axes, not edges. Extract every legible dimension, hole, radius, fillet, \
+chamfer, slot, cutout, and annotation. DECIMALS ARE CRITICAL: copy each number \
+exactly as printed, keeping the decimal separator — 14.8 must NEVER become 148 \
+and 0.5 must NEVER become 5; when a mark could be a decimal point, prefer the \
+reading that keeps the drawing's values mutually proportionate. Preserve symmetry: \
+features that appear mirrored or patterned on the drawing must keep their exact \
+counts and placement (report them as repeated callouts, never as random \
+individual features). Do NOT hallucinate tiny features that are likely line-\
+weight noise, hatching, or text artifacts. Classify the part honestly: plate, \
+bracket, enclosure, flange, clamp, spacer, gear, wheel/tire, jig, or a generic \
+extruded part. Aim for a MANUFACTURABLE 3D interpretation of the drawing.
+
+NEVER refuse or return an empty/unknown interpretation because the drawing is \
+complex, multi-view, dense, or partially legible — ALWAYS return the structured \
+JSON with your best approximate geometry, an honest overall_confidence, and \
+explicit assumptions for everything you inferred. Separate the drawing's real \
+VIEWS from annotation-only regions (title block, notes column, dimension \
+strips, revision tables) — annotations inform values but are never geometry. \
+For multi-view sheets, fuse the orthographic views and any section view into \
+ONE coherent 3D part (the isometric preview is visual context only). Prefer a \
+manufacturable feature-graph reading: base profile/body first, then holes, \
+patterns, slots, fillets.
+
+CRITICAL: do not invent PRECISE dimensions that aren't on the drawing. If a \
+value is illegible or missing, lower its confidence and record an assumption \
+with a practical inferred value (proportional to what IS legible) rather than \
+blocking — only add a clarification_question when the drawing is genuinely \
+unusable without the answer. Prefer millimetres. Respond with ONLY the JSON \
+object.
 """

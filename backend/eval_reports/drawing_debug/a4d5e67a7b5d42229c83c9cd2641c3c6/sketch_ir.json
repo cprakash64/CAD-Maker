@@ -1,0 +1,261 @@
+{
+  "units": "mm",
+  "source": "drawing_fallback",
+  "confidence": 0.55,
+  "scale": {
+    "px_per_mm": 5.43,
+    "source_dimension_label": null,
+    "estimated": true
+  },
+  "outer_profiles": [
+    {
+      "id": "outer_1",
+      "kind": "arbitrary_closed_contour",
+      "vertices": [
+        [
+          -1.565,
+          49.816
+        ],
+        [
+          -5.064,
+          48.895
+        ],
+        [
+          -8.379,
+          46.869
+        ],
+        [
+          -11.326,
+          43.37
+        ],
+        [
+          -12.983,
+          38.398
+        ],
+        [
+          -12.799,
+          34.346
+        ],
+        [
+          -11.326,
+          30.479
+        ],
+        [
+          -8.379,
+          26.98
+        ],
+        [
+          -5.985,
+          25.322
+        ],
+        [
+          -5.985,
+          -49.632
+        ],
+        [
+          -5.617,
+          -50.0
+        ],
+        [
+          5.433,
+          -50.0
+        ],
+        [
+          5.801,
+          -49.632
+        ],
+        [
+          5.801,
+          -40.608
+        ],
+        [
+          10.405,
+          -36.74
+        ],
+        [
+          10.405,
+          -29.374
+        ],
+        [
+          5.801,
+          -25.506
+        ],
+        [
+          5.801,
+          -16.667
+        ],
+        [
+          10.405,
+          -12.799
+        ],
+        [
+          10.405,
+          -5.433
+        ],
+        [
+          5.801,
+          -1.565
+        ],
+        [
+          5.801,
+          25.322
+        ],
+        [
+          8.195,
+          26.98
+        ],
+        [
+          11.142,
+          30.479
+        ],
+        [
+          12.615,
+          34.346
+        ],
+        [
+          12.799,
+          38.398
+        ],
+        [
+          11.142,
+          43.37
+        ],
+        [
+          8.195,
+          46.869
+        ],
+        [
+          6.354,
+          48.158
+        ],
+        [
+          3.223,
+          49.448
+        ],
+        [
+          -1.381,
+          49.816
+        ]
+      ],
+      "arcs": [],
+      "fillets": [],
+      "bbox_mm": {
+        "w": 25.967,
+        "h": 100.0
+      },
+      "corner_radius_mm": 7.008,
+      "confidence": 0.7
+    }
+  ],
+  "cut_features": [
+    {
+      "id": "recess_1",
+      "kind": "recessed_channel",
+      "center": [
+        -0.092,
+        -9.853
+      ],
+      "diameter_mm": null,
+      "radius_mm": null,
+      "width_mm": 4.604,
+      "height_mm": 72.376,
+      "angle_deg": 0.0,
+      "vertices": [
+        [
+          -1.565,
+          26.243
+        ],
+        [
+          -2.118,
+          25.691
+        ],
+        [
+          -1.565,
+          25.138
+        ],
+        [
+          -2.302,
+          24.586
+        ],
+        [
+          -1.565,
+          24.033
+        ],
+        [
+          -1.565,
+          -45.58
+        ],
+        [
+          -1.197,
+          -45.948
+        ],
+        [
+          1.013,
+          -45.948
+        ],
+        [
+          1.381,
+          -45.58
+        ],
+        [
+          1.381,
+          24.033
+        ],
+        [
+          2.118,
+          24.586
+        ],
+        [
+          1.381,
+          25.138
+        ],
+        [
+          1.934,
+          25.691
+        ],
+        [
+          1.381,
+          26.243
+        ],
+        [
+          -1.381,
+          26.243
+        ]
+      ],
+      "arcs": [],
+      "through": false,
+      "count": 1,
+      "confidence": 0.7
+    },
+    {
+      "id": "cut_1",
+      "kind": "circular_hole",
+      "center": [
+        -0.092,
+        36.924
+      ],
+      "diameter_mm": 4.236,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    }
+  ],
+  "additive_features": [],
+  "concentric_groups": [],
+  "nested_features": [],
+  "construction_entities": [],
+  "dimensions": [],
+  "default_thickness_mm": 6.0,
+  "assumptions": [
+    "No legible overall dimension \u2014 scaled to a 100mm envelope"
+  ],
+  "warnings": [
+    "Dimensions estimated from drawing image; verify before manufacturing."
+  ]
+}

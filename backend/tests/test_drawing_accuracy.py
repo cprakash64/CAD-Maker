@@ -122,12 +122,41 @@ class _WrongPlanProvider:
         }
 
 
-def test_drawing_mode_rescues_wrong_llm_plan(client, auth, monkeypatch):
-    """A 6/10-audit LLM model must NOT ship: the deterministic structured
-    fallback rebuilds it and the final design passes the full audit."""
+def test_drawing_mode_bypasses_wrong_llm_plan(client, auth, monkeypatch):
+    """DETERMINISTIC-FIRST: a drawing recognized as a flanged pipe branch is
+    built directly from the structured drawing data — the LLM cad_plan step is
+    never consulted, so a wrong (or timing-out) LLM cannot hurt the result."""
     import app.llm.factory as factory
 
+    provider = _WrongPlanProvider()
+    calls = []
+    orig = provider.plan_cad
+    provider.plan_cad = lambda *a, **k: calls.append(1) or orig(*a, **k)
+    monkeypatch.setattr(factory, "get_cad_provider", lambda: provider)
+    r = client.post("/api/drawings/confirm", json=DRAWING_INTERP, headers=auth["headers"])
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert calls == [], "recognized family must NOT invoke the LLM cad_plan step"
+    assert d["feature_audit_passed"] is True, \
+        f"drawing mode accepted a failing audit: {[i for i in d['feature_audit'] if not i['satisfied']]}"
+    ids = {f["id"] for f in d["features"]}
+    assert {"main_pipe", "branch_pipe", "top_flange", "bottom_flange",
+            "branch_flange"} <= ids
+    assert {e["fmt"] for e in d["exports"]} >= {"step", "stl"}
+    assert "deterministically" in (d["route_reason"] or "")
+
+
+def test_drawing_mode_route_locked_branch_ignores_missing_generic_plan(
+        client, auth, monkeypatch):
+    """Part E: a flanged pipe branch is route-locked to its deterministic family
+    builder. Nulling the GENERIC deterministic-plan helper (or the LLM) can no
+    longer divert it — the branch still builds correctly and never consults the
+    LLM cad_plan step."""
+    import app.llm.factory as factory
+    import app.routers.drawings as dr
+
     monkeypatch.setattr(factory, "get_cad_provider", lambda: _WrongPlanProvider())
+    monkeypatch.setattr(dr, "_deterministic_drawing_plan", lambda *a, **k: None)
     r = client.post("/api/drawings/confirm", json=DRAWING_INTERP, headers=auth["headers"])
     assert r.status_code == 200, r.text
     d = r.json()
@@ -136,20 +165,32 @@ def test_drawing_mode_rescues_wrong_llm_plan(client, auth, monkeypatch):
     ids = {f["id"] for f in d["features"]}
     assert {"main_pipe", "branch_pipe", "top_flange", "bottom_flange",
             "branch_flange"} <= ids
-    assert {e["fmt"] for e in d["exports"]} >= {"step", "stl"}
-    assert d["auto_repaired"] is True, "the fallback rebuild must be visible"
+    assert "deterministic" in (d["route_reason"] or "").lower()
 
 
-def test_drawing_mode_refuses_when_fallback_unavailable(client, auth, monkeypatch):
-    """Wrong plan + no fallback => 'Could not generate accurate CAD', no design."""
+def test_drawing_mode_route_locked_branch_never_falls_to_llm(client, auth, monkeypatch):
+    """Part E: with EVERY generic deterministic/fallback path nulled, a
+    route-locked pipe branch still builds via its own family builder — it never
+    degrades to the LLM cad_plan and never emits the generic 'could not generate'
+    refusal that a non-locked part would."""
+    import app.cad.plan.deterministic as det
     import app.drawing.fallback as fb
     import app.llm.factory as factory
+    import app.routers.drawings as dr
+    from app.services import design_service
+
+    def _boom(*a, **k):
+        raise AssertionError("route-locked branch must not reach the LLM path")
 
     monkeypatch.setattr(factory, "get_cad_provider", lambda: _WrongPlanProvider())
+    monkeypatch.setattr(dr, "_deterministic_drawing_plan", lambda *a, **k: None)
     monkeypatch.setattr(fb, "drawing_fallback_plan", lambda *a, **k: None)
+    monkeypatch.setattr(det, "plan", lambda *a, **k: None)
+    monkeypatch.setattr(design_service, "create_design", _boom)
     r = client.post("/api/drawings/confirm", json=DRAWING_INTERP, headers=auth["headers"])
-    assert r.status_code == 422, r.text
-    assert "Could not generate accurate CAD" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    ids = {f["id"] for f in r.json()["features"]}
+    assert {"main_pipe", "branch_pipe", "branch_flange"} <= ids
 
 
 # --- crankshaft topology (goal test 7) ------------------------------------------

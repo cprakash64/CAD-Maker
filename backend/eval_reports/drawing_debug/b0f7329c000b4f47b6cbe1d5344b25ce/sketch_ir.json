@@ -1,0 +1,585 @@
+{
+  "units": "mm",
+  "source": "drawing_fallback",
+  "confidence": 0.55,
+  "scale": {
+    "px_per_mm": 6.74,
+    "source_dimension_label": null,
+    "estimated": true
+  },
+  "outer_profiles": [
+    {
+      "id": "outer_1",
+      "kind": "arbitrary_closed_contour",
+      "vertices": [
+        [
+          -26.706,
+          31.083
+        ],
+        [
+          -32.789,
+          29.896
+        ],
+        [
+          -35.757,
+          28.709
+        ],
+        [
+          -38.427,
+          27.077
+        ],
+        [
+          -40.95,
+          27.819
+        ],
+        [
+          -43.175,
+          27.522
+        ],
+        [
+          -45.549,
+          25.89
+        ],
+        [
+          -46.291,
+          24.703
+        ],
+        [
+          -46.736,
+          22.923
+        ],
+        [
+          -45.994,
+          19.51
+        ],
+        [
+          -47.033,
+          18.027
+        ],
+        [
+          -48.516,
+          14.763
+        ],
+        [
+          -50.0,
+          8.531
+        ],
+        [
+          -50.0,
+          3.487
+        ],
+        [
+          -49.555,
+          0.816
+        ],
+        [
+          -48.368,
+          -3.19
+        ],
+        [
+          -45.994,
+          -7.641
+        ],
+        [
+          -46.736,
+          -10.015
+        ],
+        [
+          -46.588,
+          -11.795
+        ],
+        [
+          -46.142,
+          -12.982
+        ],
+        [
+          -44.807,
+          -14.614
+        ],
+        [
+          -43.62,
+          -15.356
+        ],
+        [
+          -41.84,
+          -15.801
+        ],
+        [
+          -40.208,
+          -15.653
+        ],
+        [
+          -38.576,
+          -15.059
+        ],
+        [
+          -35.163,
+          -16.988
+        ],
+        [
+          -32.344,
+          -18.027
+        ],
+        [
+          -27.003,
+          -19.065
+        ],
+        [
+          -22.107,
+          -19.214
+        ],
+        [
+          -18.991,
+          -20.401
+        ],
+        [
+          -16.172,
+          -22.923
+        ],
+        [
+          -14.985,
+          -25.0
+        ],
+        [
+          -14.392,
+          -27.077
+        ],
+        [
+          -14.392,
+          -30.935
+        ],
+        [
+          -14.095,
+          -31.231
+        ],
+        [
+          13.947,
+          -31.231
+        ],
+        [
+          14.243,
+          -24.407
+        ],
+        [
+          14.095,
+          -19.807
+        ],
+        [
+          15.134,
+          -18.472
+        ],
+        [
+          41.988,
+          -18.323
+        ],
+        [
+          43.62,
+          -18.027
+        ],
+        [
+          46.142,
+          -16.84
+        ],
+        [
+          47.923,
+          -15.208
+        ],
+        [
+          48.813,
+          -13.872
+        ],
+        [
+          49.852,
+          -10.905
+        ],
+        [
+          49.703,
+          -7.493
+        ],
+        [
+          48.22,
+          -4.377
+        ],
+        [
+          45.401,
+          -1.855
+        ],
+        [
+          -2.967,
+          21.439
+        ],
+        [
+          -3.264,
+          21.736
+        ],
+        [
+          -3.561,
+          24.407
+        ],
+        [
+          -4.303,
+          25.742
+        ],
+        [
+          -5.786,
+          27.077
+        ],
+        [
+          -7.864,
+          27.819
+        ],
+        [
+          -9.05,
+          27.819
+        ],
+        [
+          -11.424,
+          27.077
+        ],
+        [
+          -15.134,
+          29.154
+        ],
+        [
+          -18.694,
+          30.341
+        ],
+        [
+          -21.662,
+          30.935
+        ],
+        [
+          -26.558,
+          31.083
+        ]
+      ],
+      "arcs": [],
+      "fillets": [],
+      "bbox_mm": {
+        "w": 100.0,
+        "h": 62.463
+      },
+      "corner_radius_mm": 17.109,
+      "confidence": 0.7
+    }
+  ],
+  "cut_features": [
+    {
+      "id": "cut_2",
+      "kind": "circular_hole",
+      "center": [
+        -25.0,
+        6.009
+      ],
+      "diameter_mm": 38.353,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    },
+    {
+      "id": "cut_3",
+      "kind": "arbitrary_cutout",
+      "center": [
+        -3.561,
+        -15.356
+      ],
+      "diameter_mm": null,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [
+        [
+          -0.445,
+          -0.074
+        ],
+        [
+          -1.78,
+          -4.08
+        ],
+        [
+          -3.858,
+          -7.789
+        ],
+        [
+          -3.116,
+          -9.718
+        ],
+        [
+          -3.264,
+          -11.944
+        ],
+        [
+          -4.006,
+          -13.576
+        ],
+        [
+          -5.341,
+          -14.911
+        ],
+        [
+          -6.677,
+          -15.653
+        ],
+        [
+          -8.16,
+          -15.95
+        ],
+        [
+          -9.792,
+          -15.801
+        ],
+        [
+          -11.276,
+          -15.208
+        ],
+        [
+          -16.617,
+          -17.878
+        ],
+        [
+          -20.772,
+          -18.917
+        ],
+        [
+          -18.843,
+          -19.807
+        ],
+        [
+          -17.211,
+          -20.994
+        ],
+        [
+          -14.985,
+          -23.665
+        ],
+        [
+          -13.798,
+          -27.077
+        ],
+        [
+          -13.65,
+          -30.638
+        ],
+        [
+          13.501,
+          -30.638
+        ],
+        [
+          13.65,
+          -25.0
+        ],
+        [
+          13.353,
+          -23.516
+        ],
+        [
+          12.908,
+          -23.071
+        ],
+        [
+          12.166,
+          -22.774
+        ],
+        [
+          1.484,
+          -22.774
+        ],
+        [
+          -0.148,
+          -21.736
+        ],
+        [
+          -0.445,
+          -20.697
+        ],
+        [
+          -0.445,
+          -0.223
+        ]
+      ],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "cut_5",
+      "kind": "circular_hole",
+      "center": [
+        -41.395,
+        22.478
+      ],
+      "diameter_mm": 4.896,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    },
+    {
+      "id": "cut_6",
+      "kind": "circular_hole",
+      "center": [
+        -8.457,
+        22.478
+      ],
+      "diameter_mm": 4.896,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    },
+    {
+      "id": "cut_7",
+      "kind": "circular_hole",
+      "center": [
+        -41.395,
+        -10.46
+      ],
+      "diameter_mm": 4.896,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    },
+    {
+      "id": "cut_8",
+      "kind": "circular_hole",
+      "center": [
+        -8.457,
+        -10.46
+      ],
+      "diameter_mm": 4.896,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    }
+  ],
+  "additive_features": [],
+  "concentric_groups": [
+    {
+      "id": "group_1",
+      "center": [
+        17.878,
+        -2.077
+      ],
+      "circles_mm": [
+        44.585,
+        7.196
+      ],
+      "outer_diameter_mm": 44.585,
+      "counterbore_or_boss_diameter_mm": 44.585,
+      "through_hole_diameter_mm": 7.196,
+      "group_kind": "counterbore_with_through_hole",
+      "source_entity_ids": [
+        "circle_1_0",
+        "circle_1_1"
+      ],
+      "confidence": 0.6,
+      "depth_mm": null,
+      "depth_policy": "counterbore_default",
+      "associated_dimension_labels": [],
+      "generated_metadata": {
+        "circle_count": 2,
+        "snapped_center": true,
+        "generated": true,
+        "generated_as": "counterbore",
+        "rings": 2
+      }
+    },
+    {
+      "id": "group_4",
+      "center": [
+        41.135,
+        -9.57
+      ],
+      "circles_mm": [
+        16.469,
+        6.751
+      ],
+      "outer_diameter_mm": 16.469,
+      "counterbore_or_boss_diameter_mm": 16.469,
+      "through_hole_diameter_mm": 6.751,
+      "group_kind": "counterbore_with_through_hole",
+      "source_entity_ids": [
+        "circle_4_0",
+        "circle_4_1"
+      ],
+      "confidence": 0.6,
+      "depth_mm": null,
+      "depth_policy": "counterbore_default",
+      "associated_dimension_labels": [],
+      "generated_metadata": {
+        "circle_count": 2,
+        "snapped_center": true,
+        "generated": true,
+        "generated_as": "counterbore",
+        "rings": 2
+      }
+    }
+  ],
+  "nested_features": [
+    {
+      "id": "group_1",
+      "kind": "counterbore",
+      "center": [
+        17.878,
+        -2.077
+      ],
+      "outer_diameter_mm": 44.585,
+      "inner_diameter_mm": 7.196,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "group_4",
+      "kind": "counterbore",
+      "center": [
+        41.135,
+        -9.57
+      ],
+      "outer_diameter_mm": 16.469,
+      "inner_diameter_mm": 6.751,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    }
+  ],
+  "construction_entities": [],
+  "dimensions": [],
+  "default_thickness_mm": 6.0,
+  "assumptions": [
+    "No legible overall dimension \u2014 scaled to a 100mm envelope"
+  ],
+  "warnings": [
+    "Dimensions estimated from drawing image; verify before manufacturing."
+  ]
+}

@@ -37,12 +37,14 @@ class FeatureKind(str, Enum):
     pipe_spool = "pipe_spool"            # pipe + a flange on each end
     pipe_elbow = "pipe_elbow"            # two pipes joined at an angle
     rectangular_wall = "rectangular_wall"
+    extruded_profile = "extruded_profile"  # closed 2D polygon extruded (drawing outline)
     boss = "boss"                        # raised cylindrical pad
     rib = "rib"                          # thin reinforcing web
     gusset = "gusset"                    # triangular reinforcing web
     shell = "shell"                      # hollow out a body (enclosure)
     # --- subtractive features ---
     hole = "hole"
+    polygon_cut = "polygon_cut"          # closed 2D polygon cut through the part
     hole_pattern_rect = "hole_pattern_rect"
     hole_pattern_circle = "hole_pattern_circle"
     slot = "slot"
@@ -60,13 +62,15 @@ class FeatureKind(str, Enum):
 
 # Features that remove material from the running solid (also when op == "cut").
 SUBTRACTIVE_KINDS = {
-    FeatureKind.hole, FeatureKind.hole_pattern_rect, FeatureKind.hole_pattern_circle,
+    FeatureKind.hole, FeatureKind.polygon_cut, FeatureKind.hole_pattern_rect,
+    FeatureKind.hole_pattern_circle,
     FeatureKind.slot, FeatureKind.v_groove, FeatureKind.rectangular_cut,
     FeatureKind.countersink, FeatureKind.counterbore, FeatureKind.subtract,
 }
 # Features that count toward hole_count / through_hole_count.
 HOLE_KINDS = {
-    FeatureKind.hole, FeatureKind.hole_pattern_rect, FeatureKind.hole_pattern_circle,
+    FeatureKind.hole, FeatureKind.polygon_cut, FeatureKind.hole_pattern_rect,
+    FeatureKind.hole_pattern_circle,
     FeatureKind.countersink, FeatureKind.counterbore,
 }
 MODIFIER_KINDS = {FeatureKind.fillet, FeatureKind.chamfer, FeatureKind.mirror}
@@ -86,6 +90,9 @@ class Feature(BaseModel):
     kind: FeatureKind
     op: str = Field(default="add")  # "add" | "cut"
     params: dict[str, float] = Field(default_factory=dict)
+    # Closed 2D polygon (mm, y-up) for kind=extruded_profile. Deterministic
+    # sources only (drawing contour extraction) — the LLM planner never fills it.
+    profile: Optional[list[list[float]]] = Field(default=None, max_length=256)
     at: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
     axis: str = Field(default="z", max_length=4)  # z | x | y (primary axis)
     through: bool = True  # holes default to through-holes unless told otherwise

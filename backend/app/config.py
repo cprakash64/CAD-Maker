@@ -134,6 +134,25 @@ class Settings:
     # hang for minutes; exceeding it returns a clean 503. Alias accepted at load
     # time: TOTAL_LLM_TIMEOUT_SECONDS.
     cad_generation_timeout_seconds: int = 120
+    # Drawing → CAD: budget for the VISION interpretation call chain. Shorter
+    # than the CAD budget — a drawing that can't be read in this window should
+    # fail fast (deterministic contour extraction / a clean retry takes over),
+    # never stack model-fallback timeouts.
+    drawing_vision_timeout_seconds: int = 30
+    # Drawing → CAD async job pipeline. The provider timeout bounds ONLY the
+    # vision interpretation call chain (the job itself keeps running into the
+    # deterministic fallback afterwards); the job timeout is a watchdog for the
+    # whole job. A provider retry re-sends a COMPRESSED image, never the full
+    # original. Images are downscaled to drawing_max_image_side before the
+    # provider call and CV analysis.
+    drawing_job_timeout_seconds: int = 180
+    drawing_provider_timeout_seconds: int = 75
+    drawing_provider_retries: int = 1
+    drawing_max_image_side: int = 1600
+    # Deterministic best-effort fallback when the provider fails/times out:
+    # profile tracing, segmented main-contour extraction, and flange-family
+    # detection generate a REVIEW-flagged model instead of failing the job.
+    drawing_enable_deterministic_fallback: bool = True
 
     # CAD feature-graph engine (plain-English → CadPlan → CadQuery).
     # cad_engine="feature_graph" makes the CadPlan compiler the primary route;

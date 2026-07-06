@@ -1754,6 +1754,68 @@ def rebuild_design_from_plan(db: Session, design: Design, plan, prompt: str) -> 
     return audit.passed
 
 
+def create_design_from_plan(
+    db: Session,
+    plan,
+    prompt: str,
+    project_id: str | None,
+    name: str | None,
+    user_id: str,
+) -> Design:
+    """Create a design directly from a deterministic CadPlan (the Drawing → CAD
+    vector path: DXF/SVG geometry is exact, so no LLM planning is needed).
+
+    Runs the SAME compile → validate → audit → recovery → store pipeline as the
+    prompt route; only the plan's origin differs. Raises CadGenerationError when
+    the plan cannot compile at all."""
+    from app.cad.base import CadGenerationError
+    from app.cad.plan.audit import audit_plan
+    from app.cad.plan.normalize import normalize_cad_plan
+    from app.cad.plan.planner import build_and_validate
+    from app.llm.factory import get_cad_provider
+
+    project = _ensure_project(db, project_id, name, user_id)
+    design = Design(project_id=project.id, prompt=prompt)
+    db.add(design)
+    db.commit()
+    db.refresh(design)
+
+    plan = normalize_cad_plan(plan, prompt)
+    try:
+        outcome = build_and_validate(plan)
+    except CadGenerationError:
+        db.delete(design)
+        db.commit()
+        raise
+    audit = audit_plan(prompt, plan, outcome.result)
+
+    # One recovery attempt on critical validation failure (same as prompt route).
+    recovery = {"attempted": False, "strategy": None, "succeeded": False}
+    repair_attempts = 0
+    if _outcome_status(outcome) == "critical_failure":
+        recovery["attempted"] = True
+        new_plan, new_outcome, strategy, ok = _attempt_recovery(
+            prompt, plan, outcome, get_cad_provider())
+        recovery["strategy"] = strategy
+        recovery["succeeded"] = ok
+        log_event("critical_recovery", design_id=design.id, strategy=strategy,
+                  succeeded=ok, criticals=len(_outcome_criticals(outcome)))
+        if ok:
+            outcome, plan = new_outcome, new_plan
+            repair_attempts = 1
+            audit = audit_plan(prompt, plan, outcome.result)
+
+    _store_plan(db, design, plan, outcome, repair_attempts, audit, recovery=recovery)
+    db.commit()
+    db.refresh(design)
+    from app.cad.classification import classify_prompt
+
+    _attach_classification(db, design, classify_prompt(prompt))
+    _attach_contract(db, design, prompt)
+    log_design_telemetry(design, "design_created", export_clicked=False)
+    return design
+
+
 def _try_compiler(db: Session, design: Design, prompt: str, parse_start: float) -> Design | None:
     """Run the CAD compiler if it has a program for this prompt. Returns the
     finished design on success/clarification, or None to fall back to planning."""
@@ -2168,13 +2230,22 @@ def _store_failed_safe(db: Session, design: Design, prompt: str, exc: Exception)
     return design
 
 
+# Families the drawing pipeline can pin so a recognized pipe/flange drawing can
+# never be hijacked into a wheel/rim/tire part by ambiguous prompt wording.
+_RIM_WHEEL_ROUTES = ("rim", "tire", "wheel_assembly")
+
+
 def create_design(
     db: Session,
     prompt: str,
     project_id: str | None,
     name: str | None,
     user_id: str,
+    route_lock: str | None = None,
 ) -> Design:
+    """``route_lock`` (optional) pins the allowed family for drawing-derived
+    prompts: e.g. ``"pipe_flange"`` forbids the wheel/rim/tire routers so a
+    "flange rim diameter" callout can never produce a Wheel rim."""
     project = _ensure_project(db, project_id, name, user_id)
     design = Design(project_id=project.id, prompt=prompt)
     db.add(design)
@@ -2201,7 +2272,8 @@ def create_design(
     from app.llm.base import LLMUnavailableError
 
     try:
-        design = _dispatch_generation(db, design, prompt, classification)
+        design = _dispatch_generation(db, design, prompt, classification,
+                                      route_lock=route_lock)
     except (LLMUnavailableError, CadGenerationError):
         raise
     except Exception as exc:  # noqa: BLE001 — last-resort safety net
@@ -2216,7 +2288,7 @@ def create_design(
 
 
 def _dispatch_generation(db: Session, design: Design, prompt: str,
-                         classification=None) -> Design:
+                         classification=None, route_lock: str | None = None) -> Design:
     # DETERMINISTIC-FIRST HARD-PROMPT ROUTER. Supported families are built
     # offline (no OpenAI call, so they can't time out). Order: structural-frame /
     # concept assemblies, then a vague-prompt clarification gate, then the
@@ -2246,6 +2318,15 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
     from app.cad.part_family import detect_part_request
 
     request = detect_part_request(prompt)
+    # ROUTE LOCK: a drawing recognized as a pipe/flange part must never fall into
+    # the wheel/rim/tire families. If the prompt-based detector still picked one
+    # (e.g. a "flange rim diameter" callout), reject it and continue to the
+    # pipe/flange-aware pipeline below.
+    if request is not None and route_lock == "pipe_flange" \
+            and request.requested_family in _RIM_WHEEL_ROUTES:
+        log_event("route_lock_rejected_route", design_id=design.id,
+                  rejected=request.requested_family, lock=route_lock)
+        request = None
     if request is not None:
         handled = _try_part_family(db, design, prompt, request, parse_start)
         if handled is not None:
@@ -2574,6 +2655,14 @@ def reconciled_validation_status(design: Design) -> str | None:
     honesty = (sem.get("part_family_contract") or {}).get("generation_honesty_status")
     if honesty in ("partial", "substituted"):
         return "warning"
+    # DRAWING-FIDELITY GATE: a drawing-built model generated from weakened
+    # evidence (low read confidence, provider trouble, hint classification,
+    # assumed scale, default fallback) is REVIEW at best — never a clean PASS.
+    fidelity = sem.get("drawing_fidelity") or {}
+    if fidelity.get("used_default_fallback") or \
+            fidelity.get("drawing_fidelity_status") in ("review", "failed"):
+        return "warning" if fidelity.get("drawing_fidelity_status") != "failed" \
+            else "critical_failure"
     within = dim.get("within_tolerance")
     audit_passed = (sem.get("feature_audit") or {}).get("passed")
     if within is False or audit_passed is False:

@@ -44,6 +44,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(designs.router)
 app.include_router(drawings.router)
+app.include_router(drawings.alias_router)  # POST /api/drawing-to-cad
 app.include_router(templates.router)
 app.include_router(capabilities.router)
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.cad.plan.schema import CadPlan, Expected, Feature
+from app.cad.plan.schema import CadPlan
 from app.drawing.scale import ScaledDrawing, infer_scale
 from app.schemas.drawing_spec import DrawingInterpretationSpec
 
@@ -51,8 +51,10 @@ class DrawingPipeBranchSpec:
 
     @property
     def branch_flange_od(self) -> float:
+        # Proportional margin so literal small-unit drawings stay coherent
+        # (an absolute +20mm dwarfs a 15mm fitting's branch).
         return max(self.branch_od + (self.flange_od - self.main_od),
-                   self.branch_od + 20)
+                   self.branch_od * 1.4)
 
 
 def _dim(scaled: ScaledDrawing, *needles: str) -> float | None:
@@ -83,7 +85,7 @@ def spec_from_interpretation(
         assumptions.append(f"Main pipe OD {main_od}mm inferred"
                            + (" from the flange OD" if flange_od else " (default)"))
     if not flange_od:
-        flange_od = main_od + 40
+        flange_od = round(main_od + min(40.0, main_od * 0.55), 2)
         assumptions.append(f"Flange OD {flange_od}mm inferred from the main pipe")
     if not branch_od:
         branch_od = round(main_od * 2 / 3, 1)
@@ -91,11 +93,13 @@ def spec_from_interpretation(
 
     wall = _dim(scaled, "wall thickness", "wall")
     if not wall:
-        wall = round(max(3.0, main_od * 0.07), 1)
+        # Proportional, with a floor small enough for literal small-unit
+        # drawings (a 15mm fitting must not get a 3mm wall).
+        wall = round(max(0.5, main_od * 0.07), 2)
         assumptions.append(f"{wall}mm pipe wall thickness assumed")
     flange_thk = _dim(scaled, "flange thickness")
     if not flange_thk:
-        flange_thk = round(max(8.0, flange_od * 0.1), 1)
+        flange_thk = round(max(1.0, flange_od * 0.1), 2)
         assumptions.append(f"{flange_thk}mm flange thickness assumed")
 
     main_len = _dim(scaled, "main pipe length", "total height", "overall height",
@@ -103,7 +107,7 @@ def spec_from_interpretation(
     branch_len = _dim(scaled, "branch length", "branch pipe length") \
         or round(main_len / 2, 1)
 
-    bolt_count, bolt_dia = 12, 10.0
+    bolt_count, bolt_dia = 12, max(1.0, round(flange_od * 0.08, 1))
     if scaled.holes:
         bolt_count = scaled.holes[0].count
         bolt_dia = scaled.holes[0].diameter
@@ -125,39 +129,96 @@ def spec_from_interpretation(
     )
 
 
+def to_pipe_branch_spec(spec: DrawingPipeBranchSpec):
+    """Bridge the drawing-scaled spec to the canonical parametric builder spec."""
+    from app.cad.pipe_branch import PipeBranchSpec
+
+    return PipeBranchSpec(
+        main_od=spec.main_od, main_id=spec.main_bore, main_len=spec.main_len,
+        branch_od=spec.branch_od, branch_id=spec.branch_bore,
+        branch_len=spec.branch_len,
+        flange_od=spec.flange_od, flange_thk=spec.flange_thk,
+        branch_flange_od=spec.branch_flange_od,
+        bolt_count=spec.bolt_count, bolt_dia=spec.bolt_dia, pcd=spec.pcd,
+        assumptions=list(spec.assumptions),
+    )
+
+
 def plan_from_spec(spec: DrawingPipeBranchSpec) -> CadPlan:
     """Spec → CadPlan with the drawing's anatomy: VERTICAL main run (Z) with
-    top/bottom flanges, perpendicular branch (X) with its own flange."""
-    s = spec
-    pcd_branch = round(s.branch_flange_od - 2.5 * s.bolt_dia, 1)
-    flange = lambda fid, axis, desc, od, bore, pcd, at: Feature(  # noqa: E731
-        id=fid, kind="circular_flange", axis=axis, description=desc,
-        params={"od": od, "thickness": s.flange_thk, "pcd": pcd,
-                "bolt_count": s.bolt_count, "bolt_diameter": s.bolt_dia,
-                "bore": bore},
-        at=at,
-    )
-    features = [
-        Feature(id="main_pipe", kind="pipe", axis="z",
-                description="vertical main run pipe with a hollow main bore",
-                params={"od": s.main_od, "id": s.main_bore, "length": s.main_len},
-                at=[0, 0, -s.main_len / 2]),
-        Feature(id="branch_pipe", kind="pipe", axis="x",
-                description="perpendicular side branch pipe with a hollow branch bore",
-                params={"od": s.branch_od, "id": s.branch_bore, "length": s.branch_len},
-                at=[0, 0, 0]),
-        flange("top_flange", "z", "top flange with repeated bolt pattern",
-               s.flange_od, s.main_bore, s.pcd, [0, 0, s.main_len / 2 - s.flange_thk]),
-        flange("bottom_flange", "z", "bottom flange with repeated bolt pattern",
-               s.flange_od, s.main_bore, s.pcd, [0, 0, -s.main_len / 2]),
-        flange("branch_flange", "x", "branch flange with repeated bolt pattern",
-               s.branch_flange_od, s.branch_bore, pcd_branch,
-               [s.branch_len - s.flange_thk, 0, 0]),
-    ]
+    top/bottom flanges, perpendicular branch (X) with its own flange. Built by
+    the canonical parametric builder (app.cad.pipe_branch) — solid union first,
+    bores cut after, so the internal flow path is continuous."""
+    from app.cad.pipe_branch import build_plan
+
+    return build_plan(to_pipe_branch_spec(spec))
+
+
+def plan_pipe_spool_from_interp(
+    interp: DrawingInterpretationSpec, scaled: ScaledDrawing | None = None,
+) -> CadPlan:
+    """Structured straight flanged pipe spool (a pipe with a circular flange on
+    EACH end) built directly from the drawing's scaled dimensions — no brittle
+    prose parsing. Fills gaps with PROPORTIONS of what is known. This is what a
+    ``flanged_pipe_spool`` detection builds: circular flanges, a continuous
+    central bore, a per-flange bolt circle — never a wheel/rim/spokes."""
+    from app.cad.plan.schema import Feature
+
+    scaled = scaled or infer_scale(interp)
+    assumptions = list(scaled.assumptions)
+
+    flange_od = _dim(scaled, "flange outer diameter", "flange diameter",
+                     "flange od", "flange rim diameter", "rim diameter")
+    od = _dim(scaled, "main pipe outer diameter", "pipe outer diameter",
+              "outer diameter", "main pipe", "pipe od", "od")
+    bore = _dim(scaled, "bore", "inner diameter", "pipe id", "main pipe bore", "id")
+    length = _dim(scaled, "main pipe length", "pipe length", "length",
+                  "overall height", "total height", "height")
+    wall = _dim(scaled, "wall thickness", "wall")
+    flange_thk = _dim(scaled, "flange thickness")
+
+    if not od:
+        od = round(flange_od * 0.6, 1) if flange_od else 75.0
+        assumptions.append(f"Main pipe OD {od}mm inferred"
+                           + (" from the flange OD" if flange_od else " (default)"))
+    if not flange_od:
+        flange_od = round(od + min(40.0, od * 0.55), 1)
+        assumptions.append(f"Flange OD {flange_od}mm inferred from the pipe OD")
+    if not bore:
+        bore = round(od - 2 * wall, 1) if wall else round(max(1.0, od * 0.7), 1)
+        assumptions.append(f"Bore Ø{bore}mm inferred from the pipe OD")
+    bore = min(bore, round(od - 1.0, 1))  # bore must stay inside the wall
+    if not length:
+        length = round(flange_od * 1.5, 1)
+        assumptions.append(f"Spool length {length}mm inferred (no legible length)")
+    if not flange_thk:
+        flange_thk = round(max(1.0, flange_od * 0.1), 1)
+        assumptions.append(f"{flange_thk}mm flange thickness assumed")
+
+    bolt_count, bolt_dia = 8, max(1.0, round(flange_od * 0.08, 1))
+    if scaled.holes:
+        bolt_count = scaled.holes[0].count
+        bolt_dia = scaled.holes[0].diameter
+    pcd = _dim(scaled, "bolt circle diameter", "pcd") \
+        or round(flange_od - 2.5 * bolt_dia, 1)
+    total = bolt_count * 2
+    assumptions.append(
+        f"Straight flanged spool: {bolt_count}× Ø{bolt_dia:g}mm bolts per flange "
+        f"on Ø{pcd:g}mm PCD ({total} total)")
+
+    feature = Feature(
+        id="pipe_body", kind="pipe_spool",
+        description="straight pipe with a circular flange on each end",
+        params={"length": length, "od": od, "id": bore, "flange_od": flange_od,
+                "flange_thickness": flange_thk, "bolt_count": bolt_count,
+                "bolt_diameter": bolt_dia, "pcd": pcd})
+    from app.cad.plan.schema import Expected
+
     return CadPlan(
-        object_type="flanged_pipe_branch", name="flanged pipe branch (from drawing)",
-        assumptions=list(s.assumptions), features=features, expected=Expected(),
-    )
+        object_type="pipe_spool", name=interp.title or "flanged pipe spool",
+        assumptions=assumptions, features=[feature],
+        expected=Expected(bbox_mm={"x": flange_od, "y": flange_od, "z": length},
+                          hole_count=total, through_hole_count=total))
 
 
 def drawing_fallback_plan(

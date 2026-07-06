@@ -1,0 +1,218 @@
+{
+  "units": "mm",
+  "source": "drawing_fallback",
+  "confidence": 0.55,
+  "scale": {
+    "px_per_mm": 4.53,
+    "source_dimension_label": null,
+    "estimated": true
+  },
+  "outer_profiles": [
+    {
+      "id": "outer_1",
+      "kind": "rounded_rectangle",
+      "vertices": [
+        [
+          -28.808,
+          24.393
+        ],
+        [
+          -33.223,
+          23.289
+        ],
+        [
+          -37.859,
+          21.302
+        ],
+        [
+          -42.053,
+          18.212
+        ],
+        [
+          -45.364,
+          14.68
+        ],
+        [
+          -46.909,
+          12.252
+        ],
+        [
+          -49.338,
+          6.512
+        ],
+        [
+          -50.0,
+          3.642
+        ],
+        [
+          -50.0,
+          -3.642
+        ],
+        [
+          -49.117,
+          -7.174
+        ],
+        [
+          -46.689,
+          -12.914
+        ],
+        [
+          -44.04,
+          -16.225
+        ],
+        [
+          -40.508,
+          -19.536
+        ],
+        [
+          -37.859,
+          -21.302
+        ],
+        [
+          -33.223,
+          -23.289
+        ],
+        [
+          -28.808,
+          -24.393
+        ],
+        [
+          -25.497,
+          -24.614
+        ],
+        [
+          29.691,
+          -24.614
+        ],
+        [
+          29.912,
+          1.656
+        ],
+        [
+          49.779,
+          2.097
+        ],
+        [
+          49.779,
+          24.172
+        ],
+        [
+          -28.587,
+          24.393
+        ]
+      ],
+      "arcs": [],
+      "fillets": [],
+      "bbox_mm": {
+        "w": 100.0,
+        "h": 49.227
+      },
+      "corner_radius_mm": 10.29,
+      "confidence": 0.7
+    }
+  ],
+  "cut_features": [
+    {
+      "id": "cut_1",
+      "kind": "circular_hole",
+      "center": [
+        -23.289,
+        -0.11
+      ],
+      "diameter_mm": 11.258,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    },
+    {
+      "id": "cut_2",
+      "kind": "polygon_hole",
+      "center": [
+        40.728,
+        13.245
+      ],
+      "diameter_mm": null,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [
+        [
+          38.079,
+          17.77
+        ],
+        [
+          35.651,
+          13.576
+        ],
+        [
+          35.651,
+          12.914
+        ],
+        [
+          38.079,
+          8.72
+        ],
+        [
+          43.377,
+          8.72
+        ],
+        [
+          45.806,
+          12.914
+        ],
+        [
+          45.806,
+          13.576
+        ],
+        [
+          43.377,
+          17.77
+        ],
+        [
+          38.3,
+          17.77
+        ]
+      ],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "cut_3",
+      "kind": "circular_hole",
+      "center": [
+        16.446,
+        -11.148
+      ],
+      "diameter_mm": 7.726,
+      "radius_mm": null,
+      "width_mm": null,
+      "height_mm": null,
+      "angle_deg": 0.0,
+      "vertices": [],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.7
+    }
+  ],
+  "additive_features": [],
+  "nested_features": [],
+  "construction_entities": [],
+  "dimensions": [],
+  "default_thickness_mm": 6.0,
+  "assumptions": [
+    "No legible overall dimension \u2014 scaled to a 100mm envelope"
+  ],
+  "warnings": [
+    "Dimensions estimated from drawing image; verify before manufacturing."
+  ]
+}

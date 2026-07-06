@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "check:routes": "node scripts/check-routes.mjs",
     "test:cad": "cd ../backend && LLM_PROVIDER=mock APP_ENV=development TESTING=true .venv/bin/python -m pytest -q tests/test_plain_english_cad.py"
   },
@@ -27,6 +28,7 @@
     "autoprefixer": "10.4.20",
     "postcss": "8.4.47",
     "tailwindcss": "3.4.14",
-    "typescript": "5.6.3"
+    "typescript": "5.6.3",
+    "vitest": "^2.1.9"
   }
 }

@@ -1,0 +1,451 @@
+{
+  "units": "mm",
+  "source": "drawing_fallback",
+  "confidence": 0.55,
+  "scale": {
+    "px_per_mm": 5.53,
+    "source_dimension_label": null,
+    "estimated": true
+  },
+  "outer_profiles": [
+    {
+      "id": "outer_1",
+      "kind": "arbitrary_closed_contour",
+      "vertices": [
+        [
+          -49.819,
+          30.018
+        ],
+        [
+          -50.0,
+          -30.199
+        ],
+        [
+          49.819,
+          -30.018
+        ],
+        [
+          49.638,
+          30.018
+        ],
+        [
+          -49.638,
+          30.018
+        ]
+      ],
+      "arcs": [],
+      "fillets": [],
+      "bbox_mm": {
+        "w": 100.0,
+        "h": 60.398
+      },
+      "corner_radius_mm": null,
+      "confidence": 0.7
+    }
+  ],
+  "cut_features": [
+    {
+      "id": "cut_1",
+      "kind": "rounded_slot",
+      "center": [
+        -0.09,
+        -0.09
+      ],
+      "diameter_mm": null,
+      "radius_mm": null,
+      "width_mm": 11.212,
+      "height_mm": 51.175,
+      "angle_deg": 0.0,
+      "vertices": [
+        [
+          -25.588,
+          5.425
+        ],
+        [
+          -25.588,
+          -5.606
+        ],
+        [
+          25.407,
+          -5.606
+        ],
+        [
+          25.226,
+          5.425
+        ],
+        [
+          -25.407,
+          5.425
+        ]
+      ],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "cut_2",
+      "kind": "arc_slot",
+      "center": [
+        -0.09,
+        12.749
+      ],
+      "diameter_mm": null,
+      "radius_mm": null,
+      "width_mm": 13.382,
+      "height_mm": 36.709,
+      "angle_deg": 0.0,
+      "vertices": [
+        [
+          -1.899,
+          19.349
+        ],
+        [
+          -6.781,
+          18.264
+        ],
+        [
+          -9.855,
+          16.817
+        ],
+        [
+          -12.025,
+          15.371
+        ],
+        [
+          -16.004,
+          11.212
+        ],
+        [
+          -18.174,
+          7.414
+        ],
+        [
+          -18.354,
+          6.329
+        ],
+        [
+          -0.452,
+          6.148
+        ],
+        [
+          18.174,
+          6.329
+        ],
+        [
+          18.174,
+          6.691
+        ],
+        [
+          16.546,
+          10.127
+        ],
+        [
+          15.099,
+          12.116
+        ],
+        [
+          13.653,
+          13.743
+        ],
+        [
+          10.217,
+          16.456
+        ],
+        [
+          7.866,
+          17.722
+        ],
+        [
+          4.792,
+          18.807
+        ],
+        [
+          1.718,
+          19.349
+        ],
+        [
+          -1.718,
+          19.349
+        ]
+      ],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "cut_3",
+      "kind": "arc_slot",
+      "center": [
+        -0.09,
+        -13.02
+      ],
+      "diameter_mm": null,
+      "radius_mm": null,
+      "width_mm": 13.201,
+      "height_mm": 36.709,
+      "angle_deg": 0.0,
+      "vertices": [
+        [
+          -18.354,
+          -6.51
+        ],
+        [
+          -18.174,
+          -7.595
+        ],
+        [
+          -16.908,
+          -10.127
+        ],
+        [
+          -15.28,
+          -12.477
+        ],
+        [
+          -12.568,
+          -15.19
+        ],
+        [
+          -7.866,
+          -18.083
+        ],
+        [
+          -5.335,
+          -18.987
+        ],
+        [
+          -2.441,
+          -19.53
+        ],
+        [
+          2.26,
+          -19.53
+        ],
+        [
+          4.25,
+          -19.168
+        ],
+        [
+          7.143,
+          -18.264
+        ],
+        [
+          10.036,
+          -16.817
+        ],
+        [
+          12.568,
+          -15.009
+        ],
+        [
+          15.461,
+          -11.935
+        ],
+        [
+          17.089,
+          -9.403
+        ],
+        [
+          18.174,
+          -6.51
+        ],
+        [
+          -18.174,
+          -6.51
+        ]
+      ],
+      "arcs": [],
+      "through": true,
+      "count": 1,
+      "confidence": 0.6
+    }
+  ],
+  "additive_features": [],
+  "concentric_groups": [
+    {
+      "id": "group_4",
+      "center": [
+        -34.901,
+        14.783
+      ],
+      "circles_mm": [
+        9.403,
+        5.335
+      ],
+      "outer_diameter_mm": 9.403,
+      "counterbore_or_boss_diameter_mm": 9.403,
+      "through_hole_diameter_mm": 5.335,
+      "group_kind": "counterbore_with_through_hole",
+      "source_entity_ids": [
+        "circle_4_0",
+        "circle_4_1"
+      ],
+      "confidence": 0.6,
+      "depth_mm": null,
+      "depth_policy": "counterbore_default",
+      "associated_dimension_labels": [],
+      "generated_metadata": {
+        "circle_count": 2,
+        "snapped_center": true,
+        "generated": true,
+        "generated_as": "counterbore",
+        "rings": 2
+      }
+    },
+    {
+      "id": "group_5",
+      "center": [
+        34.675,
+        14.783
+      ],
+      "circles_mm": [
+        9.403,
+        5.244
+      ],
+      "outer_diameter_mm": 9.403,
+      "counterbore_or_boss_diameter_mm": 9.403,
+      "through_hole_diameter_mm": 5.244,
+      "group_kind": "counterbore_with_through_hole",
+      "source_entity_ids": [
+        "circle_5_0",
+        "circle_5_1"
+      ],
+      "confidence": 0.6,
+      "depth_mm": null,
+      "depth_policy": "counterbore_default",
+      "associated_dimension_labels": [],
+      "generated_metadata": {
+        "circle_count": 2,
+        "snapped_center": true,
+        "generated": true,
+        "generated_as": "counterbore",
+        "rings": 2
+      }
+    },
+    {
+      "id": "group_6",
+      "center": [
+        -34.901,
+        -15.009
+      ],
+      "circles_mm": [
+        9.313,
+        5.335
+      ],
+      "outer_diameter_mm": 9.313,
+      "counterbore_or_boss_diameter_mm": 9.313,
+      "through_hole_diameter_mm": 5.335,
+      "group_kind": "counterbore_with_through_hole",
+      "source_entity_ids": [
+        "circle_6_0",
+        "circle_6_1"
+      ],
+      "confidence": 0.6,
+      "depth_mm": null,
+      "depth_policy": "counterbore_default",
+      "associated_dimension_labels": [],
+      "generated_metadata": {
+        "circle_count": 2,
+        "snapped_center": true,
+        "generated": true,
+        "generated_as": "counterbore",
+        "rings": 2
+      }
+    },
+    {
+      "id": "group_7",
+      "center": [
+        34.675,
+        -15.009
+      ],
+      "circles_mm": [
+        9.313,
+        5.244
+      ],
+      "outer_diameter_mm": 9.313,
+      "counterbore_or_boss_diameter_mm": 9.313,
+      "through_hole_diameter_mm": 5.244,
+      "group_kind": "counterbore_with_through_hole",
+      "source_entity_ids": [
+        "circle_7_0",
+        "circle_7_1"
+      ],
+      "confidence": 0.6,
+      "depth_mm": null,
+      "depth_policy": "counterbore_default",
+      "associated_dimension_labels": [],
+      "generated_metadata": {
+        "circle_count": 2,
+        "snapped_center": true,
+        "generated": true,
+        "generated_as": "counterbore",
+        "rings": 2
+      }
+    }
+  ],
+  "nested_features": [
+    {
+      "id": "group_4",
+      "kind": "counterbore",
+      "center": [
+        -34.901,
+        14.783
+      ],
+      "outer_diameter_mm": 9.403,
+      "inner_diameter_mm": 5.335,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "group_5",
+      "kind": "counterbore",
+      "center": [
+        34.675,
+        14.783
+      ],
+      "outer_diameter_mm": 9.403,
+      "inner_diameter_mm": 5.244,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "group_6",
+      "kind": "counterbore",
+      "center": [
+        -34.901,
+        -15.009
+      ],
+      "outer_diameter_mm": 9.313,
+      "inner_diameter_mm": 5.335,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    },
+    {
+      "id": "group_7",
+      "kind": "counterbore",
+      "center": [
+        34.675,
+        -15.009
+      ],
+      "outer_diameter_mm": 9.313,
+      "inner_diameter_mm": 5.244,
+      "outer_depth_mm": null,
+      "count": 1,
+      "confidence": 0.6
+    }
+  ],
+  "construction_entities": [],
+  "dimensions": [],
+  "default_thickness_mm": 6.0,
+  "assumptions": [
+    "No legible overall dimension \u2014 scaled to a 100mm envelope"
+  ],
+  "warnings": [
+    "Dimensions estimated from drawing image; verify before manufacturing."
+  ]
+}

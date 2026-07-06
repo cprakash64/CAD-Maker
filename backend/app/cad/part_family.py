@@ -323,6 +323,17 @@ _NO_RIM = re.compile(
 # and must not hijack e.g. "coupler with hub"). A "N-spoke wheel"/"alloy wheel" with
 # no tire also reads as a rim.
 _RIM = re.compile(r"\brim\b|\balloy\s+wheel\b|\bwheel\b.{0,20}\bspokes?\b|\bspokes?\b.{0,20}\bwheel\b", re.I)
+# Pipe/flange context that must not be mistaken for a wheel rim (a flange edge
+# IS a "rim"; pipe spools quote "flange rim diameter", "bore", "wall thickness").
+_PIPE_FLANGE_CTX = re.compile(
+    r"\bpipe\b|\bflange\b|\bflanged\b|\bspool\b|\bpipe\s+branch\b|\bpipe\s+tee\b|"
+    r"\bblind\s+flange\b|\bbolt\s+circle\b|\bwall\s+thickness\b|\bbore\b|"
+    r"\bnpt\b|\bpipe\s+fitting\b", re.I)
+# An explicit wheel/rim/tire intent that legitimately DOES want a rim family —
+# these override the pipe/flange guard so a real wheel drawing still routes.
+_EXPLICIT_WHEEL = re.compile(
+    r"\bwheel\b|\bt[iy]res?\b|\balloy\s+wheel\b|\bspokes?\b|\bhub\b|\bcaster\b|"
+    r"\bcastor\b|\bpulley\b", re.I)
 _SET_SCREW_CTX = re.compile(r"\bset[- ]?screw\b", re.I)
 # A container/assembly part: when present, a "screw"/"bolt"/"nut" mention is a
 # FEATURE (screw boss, bolt hole, captive nut), not the part the user wants — so
@@ -363,7 +374,20 @@ def detect_part_request(prompt: str) -> PartRequest | None:
     has_tire = bool(_TIRE.search(t))
     rim_excluded = bool(_NO_RIM.search(t))
     rim_only = bool(_RIM_ONLY.search(t))
-    has_rim = bool(_RIM.search(t)) and not rim_excluded
+    # PIPE/FLANGE GUARD: a flange's outer edge is literally a "rim", and pipe
+    # drawings carry "flange rim diameter" / "rim Ø" callouts. Such a prompt must
+    # NEVER route to a wheel rim unless it ALSO carries an explicit wheel cue
+    # (wheel / tire / alloy wheel / spokes / hub / caster / pulley). This closes
+    # the "flanged_pipe_spool → part_family_rim → Wheel rim" misroute.
+    pipe_flange_ctx = bool(_PIPE_FLANGE_CTX.search(t))
+    explicit_wheel = bool(_EXPLICIT_WHEEL.search(t))
+    if pipe_flange_ctx and not explicit_wheel:
+        has_tire = has_tire and False  # a "tire" claim on a pipe drawing is noise
+        rim_only = False
+        rim_suppressed = True
+    else:
+        rim_suppressed = False
+    has_rim = bool(_RIM.search(t)) and not rim_excluded and not rim_suppressed
     # Priority: explicit assembly intent (or a genuine tire+rim co-mention) wins over
     # a bare "rim" keyword, UNLESS the prompt explicitly asks for the rim only. This
     # is what stops "wheel assembly ... with a matching rim" collapsing to rim-only.

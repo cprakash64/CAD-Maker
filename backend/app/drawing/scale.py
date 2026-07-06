@@ -55,39 +55,40 @@ def _is_count_key(key: str) -> bool:
 
 
 def infer_scale(interp: DrawingInterpretationSpec) -> ScaledDrawing:
-    """One consistent drawing→mm scale for dimensions AND hole callouts."""
+    """One consistent drawing→mm scale for dimensions AND hole callouts.
+
+    Delegates the scale decision to ``app.drawing.normalize`` (candidate-factor
+    self-consistency scoring + per-key decimal-loss repair) so OCR inflation
+    (14.8 read as 148) is corrected, not just cm-like drawings scaled up."""
+    from app.drawing.normalize import normalize_dimensions
+
     out = ScaledDrawing()
     dims = {k: float(v) for k, v in (interp.overall_dimensions or {}).items()
             if v is not None and float(v) > 0}
-    lengths = {k: v for k, v in dims.items() if not _is_count_key(k)}
-    envelope = max(lengths.values(), default=0.0)
+    hole_dias = [float(h.diameter) for h in (interp.holes or [])
+                 if h.diameter and h.diameter > 0]
 
-    units = str(interp.units or "mm").lower()
-    explicit_mm = ("mm" in units or "millim" in units) and \
-        interp.drawing_units_confidence >= EXPLICIT_UNITS_CONFIDENCE
-
-    factor = 1.0
-    if "inch" in units or units in ("in", '"'):
-        factor = 25.4
-        out.assumptions.append("Converted inch dimensions to millimetres (×25.4)")
-    elif 0 < envelope < PLAUSIBLE_ENVELOPE_MIN:
-        if explicit_mm:
-            out.warnings.append(
-                f"Dimensions are marked mm but the whole part is only "
-                f"{envelope:g}mm — double-check the drawing scale")
-        else:
-            factor = 10.0
-            out.assumptions.append(
-                f"Dimensions (largest {envelope:g}) look like centimetres / "
-                f"drawing-scale units — interpreted ×10 as millimetres")
-
+    norm = normalize_dimensions(
+        dims, hole_dias,
+        units=str(interp.units or "mm"),
+        units_confidence=interp.drawing_units_confidence,
+        explicit_units_confidence=EXPLICIT_UNITS_CONFIDENCE,
+    )
+    factor = norm.factor
     out.scale = factor
-    out.dimensions = {
-        k: round(v * factor, 3) if not _is_count_key(k) else v
-        for k, v in dims.items()
-    }
+    out.dimensions = norm.dimensions
+    out.assumptions.extend(norm.assumptions)
+    out.warnings.extend(norm.warnings)
+
     envelope_mm = max((v for k, v in out.dimensions.items() if not _is_count_key(k)),
                       default=0.0)
+    # Explicit-mm drawings that still look physically tiny get a warning (never
+    # a silent wrong model).
+    if factor == 1.0 and 0 < envelope_mm < PLAUSIBLE_ENVELOPE_MIN \
+            and not any("double-check" in w for w in out.warnings):
+        out.warnings.append(
+            f"Dimensions are marked mm but the whole part is only "
+            f"{envelope_mm:g}mm — double-check the drawing scale")
 
     for h in interp.holes or []:
         if not h.diameter or h.diameter <= 0:
