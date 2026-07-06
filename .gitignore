@@ -23,3 +23,6 @@ frontend/tsconfig.tsbuildinfo
 
 # Generated debug artifacts (threaded-part cross-sections, etc.)
 backend/reports/thread_debug/
+
+# Generated drawing/CAD debug artifacts
+backend/eval_reports/drawing_debug/
