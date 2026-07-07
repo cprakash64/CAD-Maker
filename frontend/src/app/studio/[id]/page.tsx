@@ -9,6 +9,7 @@ import HoleTable from "@/components/HoleTable";
 import ModifyBox from "@/components/ModifyBox";
 import ParameterSidebar from "@/components/ParameterSidebar";
 import type { SelectedFeature } from "@/components/Studio3D";
+import { buildFaceEditPayload, type FaceEditPayload, type MeshFaceSelection } from "@/lib/selection";
 import { usePartPrompt } from "@/components/PartPromptOverlay";
 import ExportMenu from "@/components/ExportMenu";
 import { api, ApiError, getToken } from "@/lib/api";
@@ -66,6 +67,7 @@ export default function StudioPage({ params }: { params: { id: string } }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState<SelectedFeature | null>(null);
+  const [faceSelection, setFaceSelection] = useState<MeshFaceSelection | null>(null);
   const [materialColor, setMaterialColor] = useState<string | undefined>(undefined);
   const [materialName, setMaterialName] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(true);
@@ -87,6 +89,8 @@ export default function StudioPage({ params }: { params: { id: string } }) {
     if (!user) return;
     setMaterialColor(undefined);
     setMaterialName(null);
+    setSelectedFeature(null);
+    setFaceSelection(null);
     api.getDesign(id).then(setDesign).catch((e) =>
       setError(e instanceof ApiError ? e.message : String(e))
     );
@@ -125,8 +129,40 @@ export default function StudioPage({ params }: { params: { id: string } }) {
     [design, regenerate]
   );
 
+  // Phase 4: localized visual-face edit. Regenerates real CAD on the backend and
+  // refreshes the viewer; failures surface the backend reason unchanged.
+  const applyFaceEdit = useCallback(
+    async (payload: FaceEditPayload): Promise<{ ok: boolean; message: string }> => {
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      try {
+        const updated = await api.faceEdit(id, {
+          instruction: payload.instruction,
+          quick_action: payload.quick_action,
+          selection: payload.selection as unknown as Record<string, unknown>,
+        });
+        setDesign(updated);
+        return { ok: true, message: "Edit applied." };
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : "Could not apply this edit safely.";
+        setError(msg);
+        return { ok: false, message: msg };
+      } finally {
+        setBusy(false);
+      }
+    },
+    [id]
+  );
+
   const circleEdit = useCallback(
     async (instruction: string) => {
+      // A clicked mesh face routes through the localized face-edit endpoint;
+      // a circle/lasso feature selection keeps the constrained circle-edit path.
+      if (faceSelection) {
+        await applyFaceEdit(buildFaceEditPayload(faceSelection, instruction, null));
+        return;
+      }
       if (!selectedFeature) return;
       setBusy(true);
       setError(null);
@@ -148,7 +184,7 @@ export default function StudioPage({ params }: { params: { id: string } }) {
         setBusy(false);
       }
     },
-    [id, selectedFeature]
+    [id, selectedFeature, faceSelection, applyFaceEdit]
   );
 
   const downloadPackage = useCallback(async () => {
@@ -366,7 +402,14 @@ export default function StudioPage({ params }: { params: { id: string } }) {
                 <Studio3D
                   mesh={design.preview}
                   features={design.features ?? []}
+                  selectableFaces={design.selectable_faces ?? []}
+                  selectableHoles={design.selectable_holes ?? []}
+                  selectableEdges={design.selectable_edges ?? []}
+                  selectableBodies={design.selectable_bodies ?? []}
                   onSelect={setSelectedFeature}
+                  objectId={id}
+                  onFaceSelect={setFaceSelection}
+                  onApplyFaceEdit={applyFaceEdit}
                   materialColor={materialColor}
                 />
               </div>
@@ -412,7 +455,12 @@ export default function StudioPage({ params }: { params: { id: string } }) {
 
               <Section title="Parameters">
                 {design.spec && <ModifyBox onSubmit={modify} busy={busy} />}
-                <CircleEditPanel selected={selectedFeature} onApply={circleEdit} busy={busy} />
+                <CircleEditPanel
+                  selected={selectedFeature}
+                  faceSelection={faceSelection}
+                  onApply={circleEdit}
+                  busy={busy}
+                />
                 {Object.keys(design.editable_parameters).length > 0 && (
                   <ParameterSidebar
                     parameters={design.editable_parameters}

@@ -101,3 +101,78 @@ class LocalizedEditResult(BaseModel):
     message: str
     operation: Optional[str] = None
     selected_entity_id: Optional[str] = None
+
+
+# --- Phase 4: localized *visual face* edits -------------------------------
+# The viewer selects a continuous visual face (planar / cylindrical / curved)
+# and sends its geometry context plus a plain-English instruction. We classify
+# the edit, translate it into trusted DesignSpec changes, and regenerate real
+# CAD — the instruction is only ever used for keyword classification + number
+# extraction, never executed.
+from pydantic import AliasChoices, field_validator  # noqa: E402
+
+
+class FaceBounds(BaseModel):
+    min: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    max: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+class FaceLocalFrame(BaseModel):
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    normal: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    tangent: tuple[float, float, float] = (1.0, 0.0, 0.0)
+    bitangent: tuple[float, float, float] = (0.0, 1.0, 0.0)
+
+
+# Phase 6: selection kinds the localized-edit endpoint accepts. Unknown values
+# degrade to the mesh-face fallback rather than being rejected outright.
+_SELECTION_TYPES = {
+    "backend_face", "backend_edge", "backend_hole", "backend_body",
+    "backend_feature", "visual_face", "mesh_face",
+}
+
+
+class FaceSelectionSpec(BaseModel):
+    """Selected geometry context reported by the viewer (world frame)."""
+
+    model_config = {"extra": "ignore"}
+
+    selection_type: str = Field(default="visual_face", max_length=32)
+    # Accept the frontend's `frontend_visual_face_id` or legacy `visual_face_id`.
+    frontend_visual_face_id: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        validation_alias=AliasChoices("frontend_visual_face_id", "visual_face_id"),
+    )
+    backend_face_id: Optional[str] = Field(default=None, max_length=64)
+    # Phase 6: edge / hole ids for edge and hole selections.
+    edge_id: Optional[str] = Field(default=None, max_length=64)
+    hole_id: Optional[str] = Field(default=None, max_length=64)
+    # Stable bbox-face id the frontend mapped the normal to (face_top/face_+X/…).
+    feature_id: Optional[str] = Field(default=None, max_length=64)
+    body_id: Optional[str] = Field(default=None, max_length=64)
+    face_kind: str = Field(default="unknown", max_length=16)
+    clicked_point: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    center: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    normal: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    bounds: Optional[FaceBounds] = None
+    area: Optional[float] = Field(default=None, ge=0)
+    local_frame: Optional[FaceLocalFrame] = None
+    triangle_indices: Optional[list[int]] = None
+
+    @field_validator("selection_type", mode="before")
+    @classmethod
+    def _known_selection_type(cls, v):
+        """Degrade an unknown selection_type to the mesh-face fallback rather
+        than rejecting the request (forward compatibility)."""
+        return v if isinstance(v, str) and v in _SELECTION_TYPES else "visual_face"
+
+
+class FaceLocalizedEditRequest(BaseModel):
+    """POST /api/designs/{id}/face-edit body."""
+
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+    instruction: str = Field(min_length=1, max_length=400)
+    quick_action: Optional[str] = Field(default=None, max_length=32)
+    selection: FaceSelectionSpec

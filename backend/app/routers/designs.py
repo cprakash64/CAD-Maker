@@ -29,6 +29,12 @@ from app.config import settings
 from app.database import get_db
 from app.drawing import STANDARD_VIEWS
 from app.drawing.render import render_view
+from app.editing.face_edit import (
+    FaceEditError,
+    FaceEditReview,
+    apply_face_edit,
+    apply_face_edit_to_plan,
+)
 from app.editing.localized import (
     UnsupportedLocalizedEdit,
     apply_localized,
@@ -37,7 +43,11 @@ from app.editing.localized import (
 from app.manufacturability.checks import run_checks
 from app.models import Design, ExportFile, Feedback, Project, User
 from app.rate_limit import rate_limit
-from app.schemas.editing_spec import LocalizedEditRequest, LocalizedModificationSpec
+from app.schemas.editing_spec import (
+    FaceLocalizedEditRequest,
+    LocalizedEditRequest,
+    LocalizedModificationSpec,
+)
 from app.services.package_service import build_package_zip
 from app.schemas.api import (
     CheckDTO,
@@ -110,6 +120,11 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         updated_at=design.updated_at.isoformat(),
         my_feedback=_feedback_dto(mine) if mine else None,
         features=design.features_json or [],
+        selectable_faces=(design.semantic_json or {}).get("selectable_faces") or [],
+        selectable_edges=(design.semantic_json or {}).get("selectable_edges") or [],
+        selectable_holes=(design.semantic_json or {}).get("selectable_holes") or [],
+        selectable_bodies=(design.semantic_json or {}).get("selectable_bodies") or [],
+        selectable_features=(design.semantic_json or {}).get("selectable_features") or [],
         default_assumptions=[
             a for a in (design.assumptions or []) if a.startswith("Used sensible defaults")
         ],
@@ -210,13 +225,27 @@ def create_design(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DesignDTO:
+    import time as _time
+
+    from app.observability import log_event
+
+    _t0 = _time.perf_counter()
+    # Timing bookends around the whole create pipeline. The inner stages already
+    # log their own latency (prompt_parsed, geometry_generated,
+    # selectable_metadata_extracted), so a stall is now pinpointable end-to-end.
+    log_event("design_create_received", user_id=user.id, prompt_len=len(req.prompt or ""))
     try:
         design = design_service.create_design(
             db, req.prompt, req.project_id, req.name, user.id
         )
     except CadGenerationError as exc:
+        log_event("design_create_failed", detail=str(exc)[:200],
+                  ms=int((_time.perf_counter() - _t0) * 1000))
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _to_dto(design, user)
+    dto = _to_dto(design, user)
+    log_event("design_create_completed", design_id=design.id,
+              ms=int((_time.perf_counter() - _t0) * 1000))
+    return dto
 
 
 @router.post("/{design_id}/regenerate", response_model=DesignDTO,
@@ -509,6 +538,156 @@ def circle_edit(
         design = design_service.apply_spec_edit(db, design, new_spec, note=result.message)
     except CadGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _to_dto(design, user)
+
+
+def _record_face_edit(
+    db: Session,
+    design: Design,
+    req: FaceLocalizedEditRequest,
+    status_: str,
+    message: str,
+) -> None:
+    """Append a localized-edit history entry to semantic_json and persist it.
+
+    ``semantic_json["localized_edits"]`` grows an audit trail of every attempt
+    (applied / rejected / needs_review) with the selection + instruction."""
+    from datetime import datetime, timezone
+
+    sel = req.selection
+    # Compact selection snapshot — omit the bulky triangle_indices / local_frame
+    # so the audit trail never bloats semantic_json.
+    compact_selection = {
+        "selection_type": sel.selection_type,
+        "face_kind": sel.face_kind,
+        "backend_face_id": sel.backend_face_id,
+        "hole_id": sel.hole_id,
+        "edge_id": sel.edge_id,
+        "feature_id": sel.feature_id,
+        "center": list(sel.center),
+        "normal": list(sel.normal),
+    }
+    semantic = dict(design.semantic_json or {})
+    edits = list(semantic.get("localized_edits") or [])
+    edits.append(
+        {
+            "instruction": req.instruction[:200],
+            "quick_action": req.quick_action,
+            "selection": compact_selection,
+            "status": status_,
+            "message": message,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    semantic["localized_edits"] = edits[-25:]  # cap the trail
+    design.semantic_json = semantic
+    db.commit()
+
+
+@router.post("/{design_id}/face-edit", response_model=DesignDTO,
+             dependencies=[rate_limit("modify")])
+def face_edit(
+    design_id: str,
+    req: FaceLocalizedEditRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DesignDTO:
+    """Localized *visual face* edit (Phase 4).
+
+    Accepts a selected-face context + plain-English instruction, classifies it
+    into a constrained operation, edits the trusted DesignSpec, and regenerates
+    real CAD (STL/STEP). Unsupported or unsafe edits leave the original design
+    unchanged and return a clear reason (HTTP 422); every attempt is recorded in
+    ``semantic_json['localized_edits']``."""
+    from app.observability import log_event
+
+    design = _owned_or_404(db, design_id, user)
+
+    # Two editable-source shapes: a DesignSpec (template parts) or a stored CadPlan
+    # feature graph (cad_plan parts, which have spec_json = None). Resolve whichever
+    # this design carries so the SAME safe parametric pipeline regenerates real CAD.
+    plan = None if design.spec_json else design_service.load_cad_plan(design)
+    if not design.spec_json and plan is None:
+        # Nothing editable to load — log the full context so a genuine gap is
+        # diagnosable, then return a helpful 409 (never a silent failure).
+        log_event(
+            "face_edit_no_editable_source",
+            design_id=design.id,
+            route=design.route,
+            object_type=design.object_type,
+            semantic_keys=sorted((design.semantic_json or {}).keys()),
+            has_spec=False,
+            has_plan=False,
+            reason="cad_plan design has no persisted feature graph (generated before "
+                   "the graph was stored) — regenerate this part to enable editing"
+                   if design.route == "cad_plan" else "design has no validated model yet",
+        )
+        detail = (
+            "This part was generated before parametric editing was enabled — "
+            "regenerate it to edit faces."
+            if design.route == "cad_plan"
+            else "No model to edit yet"
+        )
+        raise HTTPException(status_code=409, detail=detail)
+
+    # --- CadPlan feature-graph edit path -----------------------------------
+    if plan is not None:
+        try:
+            new_plan, outcome = apply_face_edit_to_plan(plan, req, design.bounding_box)
+        except FaceEditError as exc:
+            _record_face_edit(db, design, req, "rejected", str(exc))
+            raise HTTPException(
+                status_code=422, detail=f"Could not apply this edit safely: {exc}"
+            ) from exc
+        except FaceEditReview as exc:
+            _record_face_edit(db, design, req, "needs_review", str(exc))
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        try:
+            design = design_service.apply_plan_edit(
+                db, design, new_plan, note=outcome.message, guard_critical=True
+            )
+        except design_service.CriticalEditRejected as exc:
+            _record_face_edit(db, design, req, "rejected", str(exc))
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except CadGenerationError as exc:
+            _record_face_edit(db, design, req, "rejected", f"regeneration failed: {exc}")
+            raise HTTPException(
+                status_code=422, detail=f"Could not apply this edit safely: {exc}"
+            ) from exc
+        _record_face_edit(db, design, req, "applied", outcome.message)
+        db.refresh(design)
+        return _to_dto(design, user)
+
+    # --- DesignSpec edit path ----------------------------------------------
+    current = DesignSpec(**design.spec_json)
+    try:
+        new_spec, outcome = apply_face_edit(current, req, design.bounding_box)
+    except FaceEditError as exc:  # invalid / unsafe → rejected
+        _record_face_edit(db, design, req, "rejected", str(exc))
+        raise HTTPException(
+            status_code=422, detail=f"Could not apply this edit safely: {exc}"
+        ) from exc
+    except FaceEditReview as exc:  # understood but unsupported → needs_review
+        _record_face_edit(db, design, req, "needs_review", str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        # guard_critical: an edit that would fail validation is rolled back and
+        # the previously-valid design is preserved (never replace good with bad).
+        design = design_service.apply_spec_edit(
+            db, design, new_spec, note=outcome.message, guard_critical=True
+        )
+    except design_service.CriticalEditRejected as exc:
+        _record_face_edit(db, design, req, "rejected", str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except CadGenerationError as exc:
+        _record_face_edit(db, design, req, "rejected", f"regeneration failed: {exc}")
+        raise HTTPException(
+            status_code=422, detail=f"Could not apply this edit safely: {exc}"
+        ) from exc
+
+    _record_face_edit(db, design, req, "applied", outcome.message)
+    db.refresh(design)
     return _to_dto(design, user)
 
 

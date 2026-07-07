@@ -1,0 +1,53 @@
+{
+  "_doc": "Normalized DrawingFeatureGraph fixture (spec Part 8): a flat bracket with a stepped concentric top feature (Ø8.2 lobe / Ø4.8 boss / Ø3.6 through), a central rectangular slot, and two lower concentric holes (Ø2.4 boss / Ø1.52 through). Pixel-space diameters are deliberately off-scale so the callout snapper must correct them. Callouts are the source of truth.",
+  "units": "mm",
+  "default_thickness_mm": 4.0,
+  "callouts": {
+    "diameters_mm": [8.2, 4.8, 3.6, 2.4, 1.52],
+    "radii_mm": [1.6]
+  },
+  "expected_after_normalize": {
+    "top_group_circles_mm": [8.2, 4.8, 3.6],
+    "lower_group_circles_mm": [2.4, 1.52],
+    "outer_corner_radius_mm": 1.6,
+    "center_rectangular_cutouts": 1,
+    "no_extra_center_circle": true
+  },
+  "outer_profile": {
+    "id": "outer_1",
+    "kind": "rounded_rectangle",
+    "bbox_mm": {"w": 12.0, "h": 18.0},
+    "vertices": [[-6.0, -9.0], [6.0, -9.0], [6.0, 9.0], [-6.0, 9.0]],
+    "corner_radius_mm": null
+  },
+  "concentric_groups": [
+    {
+      "id": "group_top",
+      "center": [0.0, 6.0],
+      "pixel_circles_mm": [20.5, 12.0, 9.0],
+      "role": "outer_lobe / boss / through_hole"
+    },
+    {
+      "id": "group_lower_left",
+      "center": [-3.2, -5.5],
+      "pixel_circles_mm": [6.0, 3.8],
+      "role": "boss / through_hole"
+    },
+    {
+      "id": "group_lower_right",
+      "center": [3.2, -5.5],
+      "pixel_circles_mm": [6.0, 3.8],
+      "role": "boss / through_hole"
+    }
+  ],
+  "cut_features": [
+    {
+      "id": "center_slot",
+      "kind": "rectangular_slot",
+      "center": [0.0, 0.0],
+      "width_mm": 3.0,
+      "height_mm": 6.0,
+      "vertices": [[-1.5, -3.0], [1.5, -3.0], [1.5, 3.0], [-1.5, 3.0]]
+    }
+  ]
+}

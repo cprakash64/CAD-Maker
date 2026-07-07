@@ -27,8 +27,20 @@ export function setToken(token: string | null): void {
   else window.localStorage.removeItem(TOKEN_KEY);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Default per-request timeout. Generation endpoints (create/regenerate/modify/
+// edits) get a longer one — the backend bounds its own work to ~120s, so the
+// client waits a little longer, then aborts so the UI never hangs forever.
+const DEFAULT_TIMEOUT_MS = 45_000;
+export const GENERATION_TIMEOUT_MS = 150_000;
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<T> {
   const token = getToken();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
@@ -39,8 +51,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         ...(init?.headers ?? {}),
       },
       cache: "no-store",
+      signal: controller.signal,
     });
   } catch (e) {
+    // A timeout abort must surface as a clear, actionable error so the caller
+    // can exit its loading state instead of hanging on "Generating…".
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new ApiError(
+        `The request timed out after ${Math.round(timeoutMs / 1000)}s ` +
+          `(${init?.method ?? "GET"} ${path}). The backend may be busy or ` +
+          `misconfigured (check the LLM provider/model). Please try again.`,
+        0,
+        `${init?.method ?? "GET"} ${path}`
+      );
+    }
     // Network-level failure (backend down, wrong port, CORS, DNS). Never let a
     // bare "TypeError: Failed to fetch" reach the user — say exactly which
     // endpoint failed and how to fix it.
@@ -52,6 +76,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         `(${e instanceof Error ? e.message : String(e)})`,
       0
     );
+  } finally {
+    clearTimeout(timer);
   }
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
@@ -93,12 +119,13 @@ export const api = {
     }),
   me: () => request<{ id: string; email: string }>("/api/auth/me"),
 
-  // Designs
+  // Designs — generation endpoints use the longer timeout (CAD can take a while).
   createDesign: (prompt: string) =>
-    request<Design>("/api/designs/create", {
-      method: "POST",
-      body: JSON.stringify({ prompt }),
-    }),
+    request<Design>(
+      "/api/designs/create",
+      { method: "POST", body: JSON.stringify({ prompt }) },
+      GENERATION_TIMEOUT_MS
+    ),
   getDesign: (id: string) => request<Design>(`/api/designs/${id}`),
   listDesigns: () => request<DesignSummary[]>("/api/designs"),
   regenerate: (
@@ -106,19 +133,25 @@ export const api = {
     dimensions: Record<string, number>,
     holes?: Hole[]
   ) =>
-    request<Design>(`/api/designs/${id}/regenerate`, {
-      method: "POST",
-      body: JSON.stringify({ dimensions, holes }),
-    }),
+    request<Design>(
+      `/api/designs/${id}/regenerate`,
+      { method: "POST", body: JSON.stringify({ dimensions, holes }) },
+      GENERATION_TIMEOUT_MS
+    ),
   modify: (id: string, prompt: string) =>
-    request<Design>(`/api/designs/${id}/modify`, {
-      method: "POST",
-      body: JSON.stringify({ prompt }),
-    }),
+    request<Design>(
+      `/api/designs/${id}/modify`,
+      { method: "POST", body: JSON.stringify({ prompt }) },
+      GENERATION_TIMEOUT_MS
+    ),
   exportDesign: (id: string) =>
-    request<Design>(`/api/designs/${id}/export`, { method: "POST" }),
+    request<Design>(`/api/designs/${id}/export`, { method: "POST" }, GENERATION_TIMEOUT_MS),
   generateWithDefaults: (id: string) =>
-    request<Design>(`/api/designs/${id}/generate-with-defaults`, { method: "POST" }),
+    request<Design>(
+      `/api/designs/${id}/generate-with-defaults`,
+      { method: "POST" },
+      GENERATION_TIMEOUT_MS
+    ),
   templates: () => request<TemplateInfo[]>("/api/templates"),
 
   // Feedback
@@ -142,17 +175,29 @@ export const api = {
 
   // Localized point-and-prompt edit.
   localizedEdit: (id: string, body: LocalizedEdit) =>
-    request<Design>(`/api/designs/${id}/localized-edit`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    request<Design>(
+      `/api/designs/${id}/localized-edit`,
+      { method: "POST", body: JSON.stringify(body) },
+      GENERATION_TIMEOUT_MS
+    ),
 
   // Circle-to-edit: apply an edit to a feature resolved from a circle selection.
   circleEdit: (id: string, body: CircleEdit) =>
-    request<Design>(`/api/designs/${id}/circle-edit`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    request<Design>(
+      `/api/designs/${id}/circle-edit`,
+      { method: "POST", body: JSON.stringify(body) },
+      GENERATION_TIMEOUT_MS
+    ),
+
+  // Phase 4: localized visual-face edit. Regenerates real CAD (STL/STEP) from
+  // the trusted spec; rejected/unsupported edits return 4xx with a reason and
+  // leave the design unchanged.
+  faceEdit: (id: string, body: FaceEditRequestBody) =>
+    request<Design>(
+      `/api/designs/${id}/face-edit`,
+      { method: "POST", body: JSON.stringify(body) },
+      GENERATION_TIMEOUT_MS
+    ),
 
   health: () =>
     request<{ status: string; llm_provider?: string; dev_mode?: boolean }>("/health"),
@@ -382,6 +427,14 @@ export interface CircleEdit {
   operation?: string;
   instruction: string;
   validated_parameters?: Record<string, number>;
+}
+
+// Body for POST /api/designs/{id}/face-edit — the localized face-edit payload
+// (the `design_id` in FaceEditPayload is dropped; it's the URL path param).
+export interface FaceEditRequestBody {
+  instruction: string;
+  quick_action: string | null;
+  selection: Record<string, unknown>;
 }
 
 export interface FeatureInfo {

@@ -85,6 +85,89 @@ class ExportDTO(BaseModel):
     size_bytes: int
 
 
+class FaceBoundsDTO(BaseModel):
+    width: float = 0.0
+    height: float = 0.0
+    depth: float = 0.0
+
+
+class FaceLocalFrameDTO(BaseModel):
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    x_axis: tuple[float, float, float] = (1.0, 0.0, 0.0)
+    y_axis: tuple[float, float, float] = (0.0, 1.0, 0.0)
+    z_axis: tuple[float, float, float] = (0.0, 0.0, 1.0)
+
+
+class SelectableFaceDTO(BaseModel):
+    """Phase 5: semantic, selectable CAD face metadata (model frame, mm)."""
+
+    model_config = {"extra": "ignore"}
+
+    face_id: str
+    feature_id: Optional[str] = None
+    body_id: Optional[str] = None
+    face_kind: str = "unknown"
+    label: str = ""
+    normal: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    center: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    area_mm2: float = 0.0
+    bounds_mm: Optional[FaceBoundsDTO] = None
+    local_frame: Optional[FaceLocalFrameDTO] = None
+    allowed_operations: list[str] = []
+    confidence: float = 0.0
+
+
+class SelectableHoleDTO(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    hole_id: str
+    feature_id: Optional[str] = None
+    diameter_mm: float = 0.0
+    center: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    axis: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    through: bool = True
+    hole_type: str = "simple"
+    allowed_operations: list[str] = []
+    confidence: float = 0.0
+
+
+class SelectableEdgeDTO(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    edge_id: str
+    feature_id: Optional[str] = None
+    edge_kind: str = "linear"
+    start: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    end: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    length_mm: float = 0.0
+    allowed_operations: list[str] = []
+    confidence: float = 0.0
+
+
+class SelectableBodyDTO(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    body_id: str
+    feature_id: Optional[str] = None
+    label: str = ""
+    volume_mm3: float = 0.0
+    bounds_mm: Optional[dict] = None
+    material: Optional[str] = None
+    allowed_operations: list[str] = []
+    confidence: float = 0.0
+
+
+class SelectableFeatureDTO(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    feature_id: str
+    feature_type: str = ""
+    label: str = ""
+    center: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    allowed_operations: list[str] = []
+    confidence: float = 0.0
+
+
 class DesignDTO(BaseModel):
     id: str
     project_id: str
@@ -110,6 +193,12 @@ class DesignDTO(BaseModel):
     updated_at: Optional[str] = None
     my_feedback: Optional[FeedbackDTO] = None
     features: list[dict] = []
+    # Phase 5/6: semantic selectable-geometry metadata (empty for older designs).
+    selectable_faces: list[SelectableFaceDTO] = []
+    selectable_edges: list[SelectableEdgeDTO] = []
+    selectable_holes: list[SelectableHoleDTO] = []
+    selectable_bodies: list[SelectableBodyDTO] = []
+    selectable_features: list[SelectableFeatureDTO] = []
     # Generate-first transparency: defaults we applied, and whether a missing-info
     # clarification could still be generated with defaults.
     default_assumptions: list[str] = []

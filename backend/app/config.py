@@ -129,6 +129,12 @@ class Settings:
     # back rather than block the UI for minutes (the production 503-after-183s bug).
     openai_timeout_seconds: int = 20
     openai_max_retries: int = 1
+    # Phase 5/6 selectable-geometry metadata is advisory and MUST never block or
+    # slow a basic CAD generation. It can be disabled entirely, and each build's
+    # extraction is run under a hard wall-clock timeout (returns empty metadata
+    # and continues if BRep inspection is ever slow/hangs).
+    selectable_metadata_enabled: bool = True
+    selectable_metadata_timeout_seconds: float = 6.0
     # Total wall-clock budget for ONE generation (all LLM fallbacks + repair
     # passes combined). Bounds the model-fallback chain so a request can never
     # hang for minutes; exceeding it returns a clean 503. Alias accepted at load

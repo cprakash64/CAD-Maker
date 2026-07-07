@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import cadquery as cq
@@ -38,6 +38,12 @@ class GenerationResult:
     features: list[dict]
     volume_mm3: float = 0.0
     surface_area_mm2: float = 0.0
+    # Phase 5/6: semantic selectable-geometry metadata (advisory; may be empty).
+    selectable_faces: list[dict] = field(default_factory=list)
+    selectable_edges: list[dict] = field(default_factory=list)
+    selectable_holes: list[dict] = field(default_factory=list)
+    selectable_bodies: list[dict] = field(default_factory=list)
+    selectable_features: list[dict] = field(default_factory=list)
 
 
 def spec_hash(spec: DesignSpec) -> str:
@@ -143,6 +149,75 @@ _REVOLVE_PREVIEW_TOL = 0.2
 _REVOLVE_PREVIEW_ANGULAR_TOL = 0.2   # radians (~11.5°) → ~32 facets / turn
 
 
+_EMPTY_SELECTABLE = {"faces": [], "edges": [], "holes": [], "bodies": [], "features": []}
+
+
+def _extract_selectable_metadata(solid, spec, bbox: dict) -> dict:
+    """Run all selectable-geometry extractors best-effort, under a hard timeout.
+
+    Returns a dict of five lists. If the feature is disabled, or extraction
+    raises, or it exceeds ``selectable_metadata_timeout_seconds``, the affected
+    lists come back empty and generation continues — selectable metadata must
+    NEVER block or slow a basic CAD build. Per-extractor timings are logged so a
+    slow BRep call is immediately visible.
+    """
+    import concurrent.futures
+    import time
+
+    from app.config import settings
+    from app.observability import log_event
+
+    if not getattr(settings, "selectable_metadata_enabled", True):
+        return dict(_EMPTY_SELECTABLE)
+
+    from app.cad import selectable_faces as _sf
+
+    extractors = [
+        ("faces", _sf.extract_selectable_faces, (solid, spec)),
+        ("edges", _sf.extract_selectable_edges, (solid,)),
+        ("holes", _sf.extract_selectable_holes, (spec,)),
+        ("bodies", _sf.extract_selectable_bodies, (solid, spec, bbox)),
+        ("features", _sf.extract_selectable_features, (spec, bbox)),
+    ]
+
+    def _work() -> dict:
+        out = dict(_EMPTY_SELECTABLE)
+        timings: dict[str, int] = {}
+        for name, fn, args in extractors:
+            t = time.perf_counter()
+            try:
+                out[name] = fn(*args) or []
+            except Exception:  # noqa: BLE001 - one bad extractor never sinks the rest
+                out[name] = []
+            timings[name] = int((time.perf_counter() - t) * 1000)
+        out["_timings_ms"] = timings  # popped by the caller
+        return out
+
+    timeout = float(getattr(settings, "selectable_metadata_timeout_seconds", 6.0) or 6.0)
+    # Run in a worker so a hung C-level call can't block the request. No `with`
+    # (its __exit__ would join the worker and defeat the timeout); on timeout we
+    # abandon the worker and continue with empty metadata.
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    fut = executor.submit(_work)
+    try:
+        result = fut.result(timeout=timeout)
+        timings = result.pop("_timings_ms", {})
+        log_event("selectable_metadata_extracted",
+                  object_type=getattr(spec, "object_type", None), timings_ms=timings)
+        executor.shutdown(wait=False)
+        return result
+    except concurrent.futures.TimeoutError:
+        log_event("selectable_metadata_timeout",
+                  object_type=getattr(spec, "object_type", None), timeout_s=timeout)
+        executor.shutdown(wait=False)  # abandon the worker; never block the build
+        return dict(_EMPTY_SELECTABLE)
+    except Exception as exc:  # noqa: BLE001
+        log_event("selectable_metadata_failed",
+                  object_type=getattr(spec, "object_type", None), error=type(exc).__name__)
+        executor.shutdown(wait=False)
+        return dict(_EMPTY_SELECTABLE)
+
+
 def generate(spec: DesignSpec) -> GenerationResult:
     # build_solid handles both templates and the feature-graph fallback, and
     # converts kernel failures into CadGenerationError.
@@ -192,14 +267,32 @@ def generate(spec: DesignSpec) -> GenerationResult:
     from app.cad.features import extract_features  # local import avoids a cycle
 
     features = [f.model_dump() for f in extract_features(spec, bbox)]
+
+    # Finish every solid-touching export/tessellation BEFORE the (last, guarded)
+    # selectable-metadata step, so the metadata worker never races the kernel.
+    step_bytes = _export_bytes(solid, ".step")
+    preview = _tessellate(
+        solid,
+        tolerance=0.04 if fine else (_REVOLVE_PREVIEW_TOL if smooth else 0.1),
+        angular_tolerance=(_REVOLVE_PREVIEW_ANGULAR_TOL if smooth else None),
+    )
+
+    # Phase 5/6 selectable metadata — advisory, best-effort, and bounded by a hard
+    # timeout so slow/hanging BRep inspection can NEVER block a basic generation.
+    selectable = _extract_selectable_metadata(solid, spec, bbox)
+
     return GenerationResult(
         spec_hash=spec_hash(spec),
         stl_bytes=stl_bytes,
-        step_bytes=_export_bytes(solid, ".step"),
-        preview=_tessellate(solid, tolerance=0.04 if fine else (_REVOLVE_PREVIEW_TOL if smooth else 0.1),
-                            angular_tolerance=(_REVOLVE_PREVIEW_ANGULAR_TOL if smooth else None)),
+        step_bytes=step_bytes,
+        preview=preview,
         bounding_box_mm=bbox,
         features=features,
         volume_mm3=volume_mm3,
         surface_area_mm2=surface_area_mm2,
+        selectable_faces=selectable["faces"],
+        selectable_edges=selectable["edges"],
+        selectable_holes=selectable["holes"],
+        selectable_bodies=selectable["bodies"],
+        selectable_features=selectable["features"],
     )

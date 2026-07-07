@@ -1639,45 +1639,6 @@ def _try_cad_plan(db: Session, design: Design, prompt: str, parse_start: float) 
     return design
 
 
-class _PlanSpecShim:
-    """Minimal spec-like object so the solid-based selectable extractors (which
-    only read ``object_type`` / ``material`` / ``dimensions``) work for a
-    CadPlan-built part that has no DesignSpec."""
-
-    def __init__(self, plan):
-        self.object_type = getattr(plan, "object_type", "feature_graph")
-        self.material = getattr(plan, "material", None)
-        self.dimensions: dict = {}
-
-
-def _plan_selectable_metadata(plan, result) -> dict:
-    """Selectable faces/edges/holes/bodies/features for a CadPlan-built part.
-
-    Holes are read from the feature graph (deterministic, ids aligned with the
-    face-edit plan handlers); faces/edges/bodies from the compiled solid. All
-    extractors already fail-safe to ``[]``; the whole block is additionally
-    wrapped so selectable metadata can never break generation or an edit."""
-    from app.cad import selectable_faces as _sf
-
-    shim = _PlanSpecShim(plan)
-    solid = getattr(result, "solid", None)
-    bbox = getattr(result, "bbox_mm", None)
-
-    def _safe(fn, *args):
-        try:
-            return fn(*args)
-        except Exception:  # noqa: BLE001 - advisory metadata, never fatal
-            return []
-
-    return {
-        "selectable_faces": _safe(_sf.extract_selectable_faces, solid, shim) if solid is not None else [],
-        "selectable_edges": _safe(_sf.extract_selectable_edges, solid) if solid is not None else [],
-        "selectable_holes": _safe(_sf.extract_selectable_holes_from_plan, plan),
-        "selectable_bodies": _safe(_sf.extract_selectable_bodies, solid, shim, bbox) if solid is not None else [],
-        "selectable_features": [],
-    }
-
-
 def _store_plan(db: Session, design: Design, plan, outcome, repair_attempts: int,
                 audit=None, recovery: dict | None = None) -> None:
     """Persist a CadPlan-built design: exports, preview, validation, assumptions."""
@@ -1719,17 +1680,6 @@ def _store_plan(db: Session, design: Design, plan, outcome, repair_attempts: int
     semantic["recovery"] = recovery or {
         "attempted": False, "strategy": None, "succeeded": False
     }
-    # Persist the parametric SOURCE (the feature graph) so localized face edits can
-    # reload it and regenerate real CAD. A CadPlan-built part has no DesignSpec
-    # (spec_json is None); this is its editable spec. Kept compact — a plan is a
-    # small feature list, not geometry.
-    semantic["cad_plan"] = plan_json
-    # Phase 5/6 selectable geometry for Fusion-style editing. A CadPlan-built part
-    # has no DesignSpec, so holes come straight from the feature graph (ids aligned
-    # with the face-edit plan handlers) and faces/edges/bodies from the compiled
-    # solid. Every extractor is advisory and fail-safe ([] on error) — selectable
-    # metadata must never break generation.
-    semantic.update(_plan_selectable_metadata(plan, result))
     design.semantic_json = semantic
     design.features_json = result.feature_meta
     design.missing_required = []
@@ -3045,87 +2995,6 @@ def apply_spec_edit(
         design.assumptions = list(design.assumptions or []) + [f"Edit: {note}"]
     db.commit()
     db.refresh(design)
-    return design
-
-
-def load_cad_plan(design: Design):
-    """The stored parametric CadPlan for a feature-graph design, or None.
-
-    CadPlan-built parts (``route == 'cad_plan'``, ``spec_json is None``) persist
-    their feature graph under ``semantic_json['cad_plan']`` (see ``_store_plan``).
-    This is the editable source localized face edits regenerate from. Returns None
-    for DesignSpec-backed parts (edit via ``spec_json``) and for older CadPlan
-    designs generated before the graph was persisted (they must be regenerated)."""
-    raw = (design.semantic_json or {}).get("cad_plan")
-    if not raw:
-        return None
-    from app.cad.plan.schema import CadPlan
-
-    try:
-        return CadPlan(**raw)
-    except Exception:  # noqa: BLE001 — a malformed stored plan is simply not editable
-        return None
-
-
-def apply_plan_edit(
-    db: Session,
-    design: Design,
-    new_plan,
-    note: str | None = None,
-    guard_critical: bool = False,
-) -> Design:
-    """Rebuild a CadPlan-built design from an edited feature graph (localized face
-    edits). Deterministic; no LLM — the edited plan is compiled by the same safe
-    parametric pipeline that built the original, so STL/STEP stay real and valid.
-
-    When ``guard_critical`` is set, an edit that turns a previously-valid design
-    into a critically-failed one (or that fails to compile) is discarded and the
-    original geometry/exports/validation are preserved; ``CriticalEditRejected``
-    is raised. On success the exact original is never mutated in place — the row
-    is only committed once the new build validates."""
-    from app.cad.base import CadGenerationError
-    from app.cad.plan.audit import audit_plan
-    from app.cad.plan.normalize import normalize_cad_plan
-    from app.cad.plan.planner import build_and_validate
-
-    was_valid = (not is_critical_failure(design)) if guard_critical else False
-    prompt = design.prompt or ""
-    plan = normalize_cad_plan(new_plan, prompt)
-    try:
-        outcome = build_and_validate(plan)
-    except CadGenerationError as exc:
-        if guard_critical and was_valid:
-            db.rollback()
-            db.refresh(design)
-            raise CriticalEditRejected(
-                "This edit could not be built, so it was not applied and the "
-                f"original part is unchanged. ({exc})"
-            ) from exc
-        raise
-
-    # A previously-valid part must never be replaced by a critically-failed one.
-    if guard_critical and was_valid and _outcome_status(outcome) == "critical_failure":
-        failures = list(_outcome_criticals(outcome))
-        db.rollback()
-        db.refresh(design)
-        raise CriticalEditRejected(
-            "This edit would fail validation, so it was not applied and the "
-            "original part is unchanged."
-            + (" Issues: " + "; ".join(failures) if failures else ""),
-            failures,
-        )
-
-    audit = audit_plan(prompt, plan, outcome.result)
-    _store_plan(
-        db, design, plan, outcome,
-        repair_attempts=int(design.repair_attempts or 0), audit=audit,
-        recovery=recovery_info(design) or None,
-    )
-    if note:
-        design.assumptions = list(design.assumptions or []) + [f"Edit: {note}"]
-    db.commit()
-    db.refresh(design)
-    log_design_telemetry(design, "design_edited", edit_kind="face_edit_plan")
     return design
 
 

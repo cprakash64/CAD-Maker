@@ -1,0 +1,527 @@
+"""Phase 4: localized *visual face* edits.
+
+The viewer selects a continuous visual face and sends its geometry context plus a
+plain-English instruction. We classify the edit into a constrained operation and
+translate it into trusted ``DesignSpec`` changes — geometry is then rebuilt by
+the same safe parametric pipeline, so STL/STEP exports stay valid. The
+instruction is used only for keyword classification and number extraction; it is
+never executed and the LLM never emits geometry.
+
+Deterministic handlers regenerate real CAD for:
+  * add_hole  — centered through hole on the top/bottom planar face of a plate
+  * add_vent  — evenly spaced ventilation slots on an enclosure wall
+  * fillet    — round the part edges
+  * chamfer   — bevel the part edges
+
+Anything else returns ``FaceEditReview`` (understood but not supported yet) or
+``FaceEditError`` (invalid / unsafe) and the original design is left unchanged.
+"""
+from __future__ import annotations
+
+import math
+import re
+from dataclasses import dataclass, field
+from typing import Optional
+
+from app.editing.localized import _rebuild, _spec_to_mm
+from app.schemas.design_spec import DesignSpec, Hole
+from app.schemas.editing_spec import FaceLocalizedEditRequest, FaceSelectionSpec
+
+# Parts whose templates actually drill spec.holes on the +Z face.
+_HOLE_PLATE_TYPES = {"rectangular_bracket", "adapter_plate", "drill_jig"}
+# Parts whose templates apply the spec fillet/chamfer edge treatment.
+_EDGE_TREATMENT_TYPES = {
+    "rectangular_bracket", "adapter_plate", "drill_jig", "l_bracket", "enclosure", "handle",
+}
+# The two planar faces where a Z-axis through hole is meaningful.
+_FLAT_FACES = {"face_top", "face_bottom"}
+
+# Quick-action / allowed-operation key -> canonical operation.
+_QUICK_ACTION_OPS = {
+    # face
+    "hole": "add_hole",
+    "slot": "add_slot",
+    "cutout": "add_cutout",
+    "boss": "add_boss",
+    "vent": "add_vent",
+    "fillet": "fillet",
+    "chamfer": "chamfer",
+    "pattern": "pattern",
+    "add_hole": "add_hole",
+    "add_vent": "add_vent",
+    # edge
+    "fillet_edge": "fillet",
+    "chamfer_edge": "chamfer",
+    "fillet_edges": "fillet",
+    "chamfer_edges": "chamfer",
+    "measure": "measure",
+    # hole
+    "resize_hole": "resize_hole",
+    "move_hole": "move_hole",
+    "delete_hole": "delete_hole",
+    "pattern_hole": "pattern_hole",
+    # body / feature (not deterministically supported yet)
+    "rename": "rename",
+    "material": "material",
+    "export_body": "export_body",
+    "duplicate": "duplicate",
+    "mirror": "mirror",
+    "edit_dimensions": "edit_dimensions",
+    "suppress": "suppress",
+}
+
+SUPPORTED_OPS = {"add_hole", "add_vent", "fillet", "chamfer", "resize_hole", "delete_hole"}
+
+
+class FaceEditError(Exception):
+    """Rejected: invalid or unsafe edit. Original design must stay unchanged."""
+
+
+class FaceEditReview(Exception):
+    """Understood but not supported yet (needs_review). Design stays unchanged."""
+
+
+@dataclass
+class FaceEditOutcome:
+    op: str
+    message: str
+    params: dict = field(default_factory=dict)
+    local_frame: dict = field(default_factory=dict)
+
+
+def classify_edit(quick_action: Optional[str], instruction: str) -> str:
+    """Map the chosen chip (preferred) or instruction keywords to an operation."""
+    if quick_action and quick_action in _QUICK_ACTION_OPS:
+        return _QUICK_ACTION_OPS[quick_action]
+    t = instruction.lower()
+    if "vent" in t or "ventilation" in t:
+        return "add_vent"
+    if "slot" in t:
+        return "add_slot"
+    if "boss" in t:
+        return "add_boss"
+    if "chamfer" in t:
+        return "chamfer"
+    if "fillet" in t or "round" in t:
+        return "fillet"
+    if "delete" in t or "remove" in t:
+        return "delete_hole"
+    if "resize" in t or "change" in t and ("hole" in t or "diameter" in t):
+        return "resize_hole"
+    if "pattern" in t:
+        return "pattern"
+    if "hole" in t or "drill" in t or "bore" in t:
+        return "add_hole"
+    if "cutout" in t or "cut out" in t or "opening" in t or "pocket" in t or "cut " in t:
+        return "add_cutout"
+    return "freeform_local_edit"
+
+
+def _first_number(instruction: str) -> Optional[float]:
+    """First numeric literal in the instruction (mm assumed), else None."""
+    m = re.search(r"(-?\d+(?:\.\d+)?)", instruction)
+    return float(m.group(1)) if m else None
+
+
+def _normalize(v: tuple[float, float, float]) -> tuple[float, float, float]:
+    n = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) or 1.0
+    return (v[0] / n, v[1] / n, v[2] / n)
+
+
+def _cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def build_local_frame(sel: FaceSelectionSpec) -> dict:
+    """Local frame at the selection: origin, Z=normal, stable X/Y on the face."""
+    if sel.local_frame is not None:
+        lf = sel.local_frame
+        return {
+            "origin": list(lf.origin),
+            "z_axis": list(_normalize(lf.normal)),
+            "x_axis": list(_normalize(lf.tangent)),
+            "y_axis": list(_normalize(lf.bitangent)),
+        }
+    n = _normalize(sel.normal)
+    ref = (1.0, 0.0, 0.0) if abs(n[0]) < 0.9 else (0.0, 1.0, 0.0)
+    x = _normalize(_cross(n, ref))
+    y = _normalize(_cross(n, x))
+    origin = sel.center if any(sel.center) else sel.clicked_point
+    return {"origin": list(origin), "z_axis": list(n), "x_axis": list(x), "y_axis": list(y)}
+
+
+def _in_plane_extent_mm(bbox: dict | None) -> Optional[float]:
+    """Smaller in-plane dimension of a plate, in mm.
+
+    A plate's thickness is its smallest overall dimension, so the two in-plane
+    dimensions are the two largest — their min is the *middle* of the three
+    sorted bbox extents. This is robust to which axis the thickness lies on."""
+    if not bbox:
+        return None
+    vals = sorted(float(bbox.get(k) or 0.0) for k in ("x", "y", "z"))
+    return vals[1] if vals[1] > 0 else None
+
+
+# --- deterministic handlers ------------------------------------------------
+
+
+def _handle_add_hole(
+    spec: DesignSpec, sel: FaceSelectionSpec, instruction: str, bbox: dict | None
+) -> tuple[DesignSpec, str, dict]:
+    if spec.object_type not in _HOLE_PLATE_TYPES:
+        raise FaceEditReview(
+            f"Adding a hole isn't supported on a '{spec.object_type}' yet — this works "
+            "on flat bracket / plate parts."
+        )
+    if sel.face_kind not in ("planar", "unknown"):
+        raise FaceEditReview("Select a flat (planar) face to add a through hole.")
+    face = sel.feature_id or sel.backend_face_id
+    if face is not None and face not in _FLAT_FACES:
+        raise FaceEditReview(
+            "Through holes are added on the top or bottom face — select that face."
+        )
+    dia = _first_number(instruction)
+    if dia is None:
+        dia = 6.0  # sensible default clearance hole when no size was given
+    if dia <= 0:
+        raise FaceEditError("Hole diameter must be greater than zero.")
+    extent = _in_plane_extent_mm(bbox)
+    if extent is not None and dia >= extent * 0.95:
+        raise FaceEditError(
+            f"A Ø{dia:g} mm hole is too large for the ~{extent:g} mm face — it would "
+            "remove the part."
+        )
+    dims, holes = _spec_to_mm(spec)
+    holes.append(Hole(diameter=dia, x=0.0, y=0.0))
+    new_spec = _rebuild(spec, dims, holes)
+    params = {"diameter_mm": dia, "x_mm": 0.0, "y_mm": 0.0}
+    return new_spec, f"Added a Ø{dia:g} mm through hole centered on the face", params
+
+
+def _handle_add_vent(
+    spec: DesignSpec, instruction: str
+) -> tuple[DesignSpec, str, dict]:
+    if spec.object_type != "enclosure":
+        raise FaceEditReview("Ventilation slots are supported on enclosures.")
+    count = _first_number(instruction)
+    n = int(count) if count and count > 0 else 3
+    n = max(1, min(n, 40))
+    dims, holes = _spec_to_mm(spec)
+    dims["vent_count"] = float(n)
+    return _rebuild(spec, dims, holes), f"Added {n} ventilation slots to the enclosure wall", {"vent_count": n}
+
+
+def _handle_edge_treatment(
+    spec: DesignSpec, instruction: str, bbox: dict | None, chamfer: bool
+) -> tuple[DesignSpec, str, dict]:
+    if spec.object_type not in _EDGE_TREATMENT_TYPES:
+        kind = "Chamfer" if chamfer else "Fillet"
+        raise FaceEditReview(
+            f"{kind} edits aren't supported on a '{spec.object_type}' yet."
+        )
+    size = _first_number(instruction)
+    if size is None:
+        size = 1.0 if chamfer else 2.0
+    if size <= 0:
+        raise FaceEditError(f"{'Chamfer' if chamfer else 'Fillet'} size must be greater than zero.")
+    # Cap against the in-plane extent (not the thickness): the spec's edge
+    # treatment rounds the vertical corner edges, so a radius approaching half
+    # the plate footprint would obliterate the part.
+    extent = _in_plane_extent_mm(bbox)
+    if extent is not None and size >= extent * 0.5:
+        raise FaceEditError(
+            f"A {size:g} mm {'chamfer' if chamfer else 'fillet'} is too large for the "
+            f"~{extent:g} mm part."
+        )
+    dims, holes = _spec_to_mm(spec)
+    if chamfer:
+        new_spec = _rebuild(spec, dims, holes, chamfer_size=size, fillet_radius=None)
+        return new_spec, f"Chamfered the part edges {size:g} mm", {"chamfer_mm": size}
+    new_spec = _rebuild(spec, dims, holes, fillet_radius=size, chamfer_size=None)
+    return new_spec, f"Rounded the part edges with a {size:g} mm fillet", {"fillet_mm": size}
+
+
+def _hole_index(sel: FaceSelectionSpec) -> int:
+    """Resolve a hole index from `hole_0`/`hole_2`/… (hole_id or feature_id)."""
+    raw = sel.hole_id or sel.feature_id or ""
+    m = re.search(r"(\d+)\s*$", raw)
+    if not m:
+        raise FaceEditReview("Select a specific hole to edit.")
+    return int(m.group(1))
+
+
+def _handle_resize_hole(
+    spec: DesignSpec, sel: FaceSelectionSpec, instruction: str, bbox: dict | None
+) -> tuple[DesignSpec, str, dict]:
+    dims, holes = _spec_to_mm(spec)
+    if not holes:
+        raise FaceEditReview("This part has no editable holes.")
+    i = _hole_index(sel)
+    if not (0 <= i < len(holes)):
+        raise FaceEditReview(f"Hole {i + 1} does not exist on this part.")
+    dia = _first_number(instruction)
+    if dia is None:
+        raise FaceEditError("Tell me the new hole diameter, e.g. '8 mm'.")
+    if dia <= 0:
+        raise FaceEditError("Hole diameter must be greater than zero.")
+    extent = _in_plane_extent_mm(bbox)
+    if extent is not None and dia >= extent * 0.95:
+        raise FaceEditError(
+            f"A Ø{dia:g} mm hole is too large for the ~{extent:g} mm face."
+        )
+    holes[i].diameter = dia
+    return _rebuild(spec, dims, holes), f"Resized hole {i + 1} to Ø{dia:g} mm", {"hole": i, "diameter_mm": dia}
+
+
+def _handle_delete_hole(
+    spec: DesignSpec, sel: FaceSelectionSpec
+) -> tuple[DesignSpec, str, dict]:
+    dims, holes = _spec_to_mm(spec)
+    if not holes:
+        raise FaceEditReview("This part has no holes to delete.")
+    i = _hole_index(sel)
+    if not (0 <= i < len(holes)):
+        raise FaceEditReview(f"Hole {i + 1} does not exist on this part.")
+    holes.pop(i)
+    return _rebuild(spec, dims, holes), f"Deleted hole {i + 1}", {"hole": i}
+
+
+def apply_face_edit(
+    spec: DesignSpec, req: FaceLocalizedEditRequest, bbox: dict | None = None
+) -> tuple[DesignSpec, FaceEditOutcome]:
+    """Classify and apply a localized face edit.
+
+    Returns ``(new_spec, outcome)`` on success. Raises ``FaceEditError`` for an
+    invalid/unsafe edit or ``FaceEditReview`` for an unsupported one; in both
+    cases the caller leaves the original design untouched.
+    """
+    op = classify_edit(req.quick_action, req.instruction)
+    frame = build_local_frame(req.selection)
+
+    if op == "add_hole":
+        new_spec, message, params = _handle_add_hole(spec, req.selection, req.instruction, bbox)
+    elif op == "add_vent":
+        new_spec, message, params = _handle_add_vent(spec, req.instruction)
+    elif op == "fillet":
+        new_spec, message, params = _handle_edge_treatment(spec, req.instruction, bbox, chamfer=False)
+    elif op == "chamfer":
+        new_spec, message, params = _handle_edge_treatment(spec, req.instruction, bbox, chamfer=True)
+    elif op == "resize_hole":
+        new_spec, message, params = _handle_resize_hole(spec, req.selection, req.instruction, bbox)
+    elif op == "delete_hole":
+        new_spec, message, params = _handle_delete_hole(spec, req.selection)
+    elif op in ("add_slot", "add_cutout", "add_boss", "pattern", "pattern_hole", "move_hole"):
+        raise FaceEditReview(
+            f"'{op.replace('add_', '').replace('_', ' ')}' isn't supported by the safe "
+            "parametric pipeline yet — coming in a later phase."
+        )
+    elif op in ("measure", "rename", "material", "export_body", "duplicate",
+                "mirror", "edit_dimensions", "suppress"):
+        raise FaceEditReview(
+            f"'{op.replace('_', ' ')}' is a viewer/body action that the CAD edit "
+            "pipeline doesn't apply yet."
+        )
+    else:  # freeform_local_edit and anything unclassified
+        raise FaceEditReview(
+            "I couldn't map that instruction to a safe localized edit. Try a quick "
+            "action or rephrase."
+        )
+
+    return new_spec, FaceEditOutcome(op=op, message=message, params=params, local_frame=frame)
+
+
+# --- feature-graph (CadPlan) face edits ------------------------------------
+#
+# CadPlan-built parts have no DesignSpec; they carry a stored parametric feature
+# graph instead (semantic_json['cad_plan']). These handlers edit that graph and
+# the part is recompiled by the same safe parametric pipeline — real CAD, never a
+# mesh edit. Restricted to flat plate families where a Z-through hole / edge
+# treatment is unambiguous and safe.
+
+# CadPlan object_types that are clean flat plates (single plate/box base): a
+# centered Z-through hole and vertical-edge treatment are well-defined on these.
+_PLAN_PLATE_TYPES = {
+    "mounting_plate", "rectangular_bracket", "adapter_plate", "drill_jig", "plate",
+}
+# Feature kinds that can serve as the flat base of a plate.
+_PLAN_BASE_KINDS = {"plate", "box", "extruded_profile"}
+
+
+def _plan_base_plate(plan):
+    """The additive flat-plate base feature of a plan, or None."""
+    for f in plan.features:
+        if not f.is_subtractive and f.kind.value in _PLAN_BASE_KINDS:
+            return f
+    return None
+
+
+def _plan_hole_features(plan) -> list:
+    """The plan's circular-hole features, in declaration order."""
+    return [f for f in plan.features if f.kind.value == "hole"]
+
+
+def _plan_unique_id(base: str, plan) -> str:
+    existing = {f.id for f in plan.features}
+    if base not in existing:
+        return base
+    i = 1
+    while f"{base}_{i}" in existing:
+        i += 1
+    return f"{base}_{i}"
+
+
+def _plan_add_hole(plan, sel: FaceSelectionSpec, instruction: str, bbox: dict | None):
+    from app.cad.plan.schema import Feature
+
+    if plan.object_type not in _PLAN_PLATE_TYPES:
+        raise FaceEditReview(
+            f"Adding a hole isn't supported on a '{plan.object_type}' yet — this "
+            "works on flat plate / mounting-plate parts."
+        )
+    if sel.face_kind not in ("planar", "unknown"):
+        raise FaceEditReview("Select a flat (planar) face to add a through hole.")
+    face = sel.feature_id or sel.backend_face_id
+    if face is not None and face not in _FLAT_FACES:
+        raise FaceEditReview(
+            "Through holes are added on the top or bottom face — select that face."
+        )
+    base = _plan_base_plate(plan)
+    if base is None:
+        raise FaceEditReview("Couldn't find a flat plate to drill on this part.")
+    dia = _first_number(instruction)
+    if dia is None:
+        dia = 6.0
+    if dia <= 0:
+        raise FaceEditError("Hole diameter must be greater than zero.")
+    extent = _in_plane_extent_mm(bbox)
+    if extent is not None and dia >= extent * 0.95:
+        raise FaceEditError(
+            f"A Ø{dia:g} mm hole is too large for the ~{extent:g} mm face — it would "
+            "remove the part."
+        )
+    bx, by = float(base.at[0]), float(base.at[1])  # centre of the plate footprint
+    new_plan = plan.model_copy(deep=True)
+    hid = _plan_unique_id("face_hole", new_plan)
+    new_plan.features.append(
+        Feature(
+            id=hid, kind="hole", op="cut", through=True, axis="z",
+            params={"diameter": dia}, at=[bx, by, 0.0],
+            description="through hole added via face edit",
+        )
+    )
+    params = {"diameter_mm": dia, "x_mm": bx, "y_mm": by}
+    return new_plan, f"Added a Ø{dia:g} mm through hole centered on the face", params
+
+
+def _plan_resize_hole(plan, sel: FaceSelectionSpec, instruction: str, bbox: dict | None):
+    holes = _plan_hole_features(plan)
+    if not holes:
+        raise FaceEditReview("This part has no editable holes.")
+    i = _hole_index(sel)
+    if not (0 <= i < len(holes)):
+        raise FaceEditReview(f"Hole {i + 1} does not exist on this part.")
+    dia = _first_number(instruction)
+    if dia is None:
+        raise FaceEditError("Tell me the new hole diameter, e.g. '8 mm'.")
+    if dia <= 0:
+        raise FaceEditError("Hole diameter must be greater than zero.")
+    extent = _in_plane_extent_mm(bbox)
+    if extent is not None and dia >= extent * 0.95:
+        raise FaceEditError(f"A Ø{dia:g} mm hole is too large for the ~{extent:g} mm face.")
+    new_plan = plan.model_copy(deep=True)
+    target = _plan_hole_features(new_plan)[i]
+    target.params["diameter"] = dia
+    return new_plan, f"Resized hole {i + 1} to Ø{dia:g} mm", {"hole": i, "diameter_mm": dia}
+
+
+def _plan_delete_hole(plan, sel: FaceSelectionSpec):
+    holes = _plan_hole_features(plan)
+    if not holes:
+        raise FaceEditReview("This part has no holes to delete.")
+    i = _hole_index(sel)
+    if not (0 <= i < len(holes)):
+        raise FaceEditReview(f"Hole {i + 1} does not exist on this part.")
+    target_id = holes[i].id
+    new_plan = plan.model_copy(deep=True)
+    new_plan.features = [f for f in new_plan.features if f.id != target_id]
+    return new_plan, f"Deleted hole {i + 1}", {"hole": i}
+
+
+def _plan_edge_treatment(plan, instruction: str, bbox: dict | None, chamfer: bool):
+    from app.cad.plan.schema import Feature
+
+    if plan.object_type not in _PLAN_PLATE_TYPES:
+        kind = "Chamfer" if chamfer else "Fillet"
+        raise FaceEditReview(f"{kind} edits aren't supported on a '{plan.object_type}' yet.")
+    size = _first_number(instruction)
+    if size is None:
+        size = 1.0 if chamfer else 2.0
+    if size <= 0:
+        raise FaceEditError(f"{'Chamfer' if chamfer else 'Fillet'} size must be greater than zero.")
+    extent = _in_plane_extent_mm(bbox)
+    if extent is not None and size >= extent * 0.5:
+        raise FaceEditError(
+            f"A {size:g} mm {'chamfer' if chamfer else 'fillet'} is too large for the "
+            f"~{extent:g} mm part."
+        )
+    new_plan = plan.model_copy(deep=True)
+    # One edge treatment at a time — drop any existing fillet/chamfer, mirroring
+    # the DesignSpec pipeline (a spec carries a single fillet_radius/chamfer_size).
+    new_plan.features = [f for f in new_plan.features if f.kind.value not in ("fillet", "chamfer")]
+    if chamfer:
+        cid = _plan_unique_id("edge_chamfer", new_plan)
+        new_plan.features.append(
+            Feature(id=cid, kind="chamfer", description="vertical edge chamfer",
+                    params={"size": size})
+        )
+        return new_plan, f"Chamfered the part edges {size:g} mm", {"chamfer_mm": size}
+    fid = _plan_unique_id("edge_fillet", new_plan)
+    new_plan.features.append(
+        Feature(id=fid, kind="fillet", description="rounded vertical edges",
+                params={"radius": size})
+    )
+    return new_plan, f"Rounded the part edges with a {size:g} mm fillet", {"fillet_mm": size}
+
+
+def apply_face_edit_to_plan(
+    plan, req: FaceLocalizedEditRequest, bbox: dict | None = None
+):
+    """Classify and apply a localized face edit to a CadPlan feature graph.
+
+    Mirrors :func:`apply_face_edit` for CadPlan-built (feature-graph) parts that
+    have no DesignSpec. Returns ``(new_plan, FaceEditOutcome)`` on success; raises
+    ``FaceEditError`` (invalid/unsafe) or ``FaceEditReview`` (unsupported) with the
+    original plan left untouched."""
+    op = classify_edit(req.quick_action, req.instruction)
+    frame = build_local_frame(req.selection)
+
+    if op == "add_hole":
+        new_plan, message, params = _plan_add_hole(plan, req.selection, req.instruction, bbox)
+    elif op == "fillet":
+        new_plan, message, params = _plan_edge_treatment(plan, req.instruction, bbox, chamfer=False)
+    elif op == "chamfer":
+        new_plan, message, params = _plan_edge_treatment(plan, req.instruction, bbox, chamfer=True)
+    elif op == "resize_hole":
+        new_plan, message, params = _plan_resize_hole(plan, req.selection, req.instruction, bbox)
+    elif op == "delete_hole":
+        new_plan, message, params = _plan_delete_hole(plan, req.selection)
+    elif op == "add_vent":
+        raise FaceEditReview("Ventilation slots are supported on enclosures, not flat plates.")
+    elif op in ("add_slot", "add_cutout", "add_boss", "pattern", "pattern_hole", "move_hole"):
+        raise FaceEditReview(
+            f"'{op.replace('add_', '').replace('_', ' ')}' isn't supported by the safe "
+            "parametric pipeline yet — coming in a later phase."
+        )
+    elif op in ("measure", "rename", "material", "export_body", "duplicate",
+                "mirror", "edit_dimensions", "suppress"):
+        raise FaceEditReview(
+            f"'{op.replace('_', ' ')}' is a viewer/body action that the CAD edit "
+            "pipeline doesn't apply yet."
+        )
+    else:
+        raise FaceEditReview(
+            "I couldn't map that instruction to a safe localized edit. Try a quick "
+            "action or rephrase."
+        )
+
+    return new_plan, FaceEditOutcome(op=op, message=message, params=params, local_frame=frame)

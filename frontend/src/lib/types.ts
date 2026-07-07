@@ -1,3 +1,13 @@
+// Local bindings for the backend selectable shapes (canonical defs live in
+// selection.ts) so `Design`'s selectable_* fields can reference them; re-exported
+// at the bottom of this file for `@/lib/types` consumers.
+import type {
+  SelectableBody,
+  SelectableEdge,
+  SelectableFace,
+  SelectableHole,
+} from "./selection";
+
 export type HoleType = "simple" | "counterbore" | "countersink";
 
 export interface Hole {
@@ -119,6 +129,11 @@ export interface Design {
   object_intelligence?: ObjectIntelligence | null;
   // Requested vs generated feature diff (cutouts, tread, mounting holes, …).
   feature_contract?: FeatureContract | null;
+  // Phase 5/6: backend semantic selectable metadata (empty for older designs).
+  selectable_faces?: SelectableFace[];
+  selectable_holes?: SelectableHole[];
+  selectable_edges?: SelectableEdge[];
+  selectable_bodies?: SelectableBody[];
 }
 
 export interface ObjectIntelligence {
@@ -351,6 +366,17 @@ export interface FeatureInfo {
   anchor: [number, number, number];
   meta?: Record<string, unknown>;
 }
+
+// Re-export so `Design` can reference the backend selectable shapes without a
+// circular import (the canonical definitions live in selection.ts). `import type`
+// creates the local binding used by the `selectable_*` fields above; `export
+// type` re-exposes them for consumers that import from `@/lib/types`.
+export type {
+  SelectableBody,
+  SelectableEdge,
+  SelectableFace,
+  SelectableHole,
+};
 
 // --- Validation / print-readiness (additive backend fields) ---------------
 // Everything optional: older designs and non-CadPlan routes may omit parts, and
