@@ -78,20 +78,22 @@ def _axis_identity(n: tuple[float, float, float]) -> Optional[tuple[str, str]]:
 
 
 def _allowed_operations(kind: str, area: float, max_area: float, min_extent: float) -> list[str]:
+    # CAPABILITY MATRIX (see the Phase 6 note): advertise only implemented ops.
+    # Planar plate faces support add_hole + edge fillet/chamfer. Slot/cutout/boss/
+    # vent/pattern are NOT implemented by the safe pipeline, so they're never
+    # advertised as chips. A cylindrical face has no safe parametric edit of its
+    # own (real holes are selected as hole entities), so it advertises nothing.
     if kind == "planar":
         large = area >= 0.12 * max_area or min_extent >= 8.0
         if large:
-            return [
-                "add_hole", "add_slot", "add_cutout", "add_boss",
-                "add_vent", "fillet_edges", "chamfer_edges",
-            ]
+            return ["add_hole", "fillet_edges", "chamfer_edges"]
         ops = ["fillet_edges", "chamfer_edges"]
         if min_extent >= 5.0:  # enough room for a small hole on a side face
             ops.insert(0, "add_hole")
         return ops
     if kind == "cylindrical":
-        return ["radial_hole", "groove", "pattern", "fillet_edges"]
-    return ["fillet_edges"]
+        return []
+    return []
 
 
 def _stable_face_id(slug: str, kind: str, n, c) -> str:
@@ -208,11 +210,16 @@ def extract_selectable_faces(
 
 
 # --- Phase 6: edges / holes / bodies / features ----------------------------
-
-_HOLE_OPS = ["resize_hole", "move_hole", "delete_hole", "pattern_hole"]
-_EDGE_OPS = ["fillet_edge", "chamfer_edge", "measure"]
-_BODY_OPS = ["rename", "material", "export_body", "duplicate", "mirror"]
-_FEATURE_OPS = ["edit_dimensions", "suppress", "pattern", "mirror"]
+#
+# CAPABILITY MATRIX: advertise ONLY operations that are actually implemented
+# end-to-end by the safe parametric pipeline, so every enabled chip the UI shows
+# from `allowed_operations` really works. Unimplemented ops (move_hole,
+# pattern_hole, slot/cutout/boss, body/feature actions) are deliberately omitted
+# — they are not shown as chips until they're built.
+_HOLE_OPS = ["resize_hole", "delete_hole"]
+_EDGE_OPS = ["fillet_edge", "chamfer_edge"]
+_BODY_OPS: list[str] = []
+_FEATURE_OPS: list[str] = []
 
 
 def _plate_top_z(spec) -> float:

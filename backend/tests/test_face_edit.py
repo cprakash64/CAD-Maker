@@ -182,7 +182,11 @@ def test_face_edit_oversized_hole_rejected_unchanged(client, auth, legacy_engine
         headers=h,
     )
     assert r.status_code == 422
-    assert "safely" in r.json()["detail"].lower()
+    detail = r.json()["detail"]
+    # Structured, calm rejection (an oversized hole is an invalid edit).
+    assert detail["code"] == "invalid_edit"
+    assert detail["safe_to_retry"] is True
+    assert "too large" in detail["message"].lower()
     # Original design is untouched.
     after = client.get(f"/api/designs/{did}", headers=h).json()
     assert after["spec_hash"] == before_hash
@@ -406,9 +410,7 @@ def test_cad_plan_new_hole_appears_in_selectable_holes(client, auth):
     assert ids == {"hole_0", "hole_1", "hole_2"}
     new_hole = next(hh for hh in holes if hh["hole_id"] == "hole_2")
     assert new_hole["diameter_mm"] == 10.0
-    assert new_hole["allowed_operations"] == [
-        "resize_hole", "move_hole", "delete_hole", "pattern_hole",
-    ]
+    assert new_hole["allowed_operations"] == ["resize_hole", "delete_hole"]
     # Re-fetch persists them.
     again = client.get(f"/api/designs/{did}", headers=h).json()
     assert len(again["selectable_holes"]) == 3
@@ -462,9 +464,8 @@ def test_cad_plan_delete_new_hole_by_id(client, auth):
 
 
 def test_cad_plan_cylindrical_face_without_hole_id_helpful_error(client, auth):
-    """Backend fallback safety: a cylindrical-face selection carrying no hole_id
-    (a mis-sent payload) returns a helpful 422, never a crash, and leaves the part
-    unchanged."""
+    """A bare cylindrical-face selection (no hole_id) has no safe parametric edit
+    → structured unsupported_operation, never a crash, and the part is unchanged."""
     h = auth["headers"]
     d = _make_cad_plan_plate(client, h)
     did, before_hash = d["id"], d["spec_hash"]
@@ -474,13 +475,16 @@ def test_cad_plan_cylindrical_face_without_hole_id_helpful_error(client, auth):
             "instruction": "Resize this hole to 8 mm",
             "quick_action": "resize_hole",
             # A cylindrical face selection with NO hole_id and no numeric feature.
-            "selection": {"selection_type": "visual_face", "face_kind": "cylindrical",
+            "selection": {"selection_type": "backend_face", "face_kind": "cylindrical",
                           "feature_id": "cylindrical_face", "normal": [1, 0, 0]},
         },
         headers=h,
     )
     assert r.status_code == 422
-    assert "hole" in r.json()["detail"].lower()
+    detail = r.json()["detail"]
+    assert detail["code"] == "unsupported_operation"
+    assert detail["safe_to_retry"] is True
+    assert detail["selection_type"] == "backend_face"
     after = client.get(f"/api/designs/{did}", headers=h).json()
     assert after["spec_hash"] == before_hash
 
@@ -602,3 +606,142 @@ def test_plan_add_hole_rejected_on_structurally_non_flat_body():
     assert _plan_is_plate_like(plan) is False
     with pytest.raises(FaceEditReview):
         apply_face_edit_to_plan(plan, _plan_hole_req(), _PLATE_BBOX)
+
+
+# --- selection-aware classification + structured unsupported (Phase 8) -------
+from app.editing.face_edit import (  # noqa: E402
+    FaceEditUnsupported,
+    UNSUPPORTED_EDIT_MESSAGE,
+    _selection_kind,
+)
+from app.schemas.editing_spec import FaceSelectionSpec  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "instruction,expected",
+    [
+        ("make the hole 5mm", "resize_hole"),
+        ("make this 5 mm", "resize_hole"),
+        ("resize this to 5mm", "resize_hole"),
+        ("change diameter to 5 mm", "resize_hole"),
+        ("hole 8mm", "resize_hole"),
+        ("add a hole 5mm", "resize_hole"),   # hole selected → never add_hole
+        ("delete this", "delete_hole"),
+        ("remove this hole", "delete_hole"),
+    ],
+)
+def test_classify_selected_hole_prioritizes_hole_ops(instruction, expected):
+    sel = FaceSelectionSpec(selection_type="backend_hole", hole_id="hole_2",
+                            face_kind="cylindrical")
+    assert classify_edit(None, instruction, sel) == expected
+
+
+def test_classify_selected_edge_prioritizes_edge_ops():
+    edge = FaceSelectionSpec(selection_type="backend_edge", edge_id="edge_1")
+    assert classify_edit(None, "fillet", edge) == "fillet"
+    assert classify_edit(None, "round this edge", edge) == "fillet"
+    assert classify_edit(None, "chamfer", edge) == "chamfer"
+    assert classify_edit(None, "bevel this edge", edge) == "chamfer"
+
+
+def test_classify_cylindrical_face_and_body_are_unsupported():
+    cyl = FaceSelectionSpec(selection_type="backend_face", face_kind="cylindrical")
+    body = FaceSelectionSpec(selection_type="backend_body", body_id="main_body")
+    # A pattern chip/keyword on a cylindrical face never routes to a fake op.
+    assert classify_edit("pattern", "pattern", cyl) == "unsupported_selection"
+    assert classify_edit(None, "do something", cyl) == "unsupported_selection"
+    assert classify_edit(None, "change material", body) == "unsupported_selection"
+
+
+def test_selection_kind_derivation():
+    assert _selection_kind(FaceSelectionSpec(selection_type="backend_hole")) == "hole"
+    assert _selection_kind(FaceSelectionSpec(hole_id="hole_0")) == "hole"
+    assert _selection_kind(FaceSelectionSpec(selection_type="backend_edge")) == "edge"
+    assert _selection_kind(FaceSelectionSpec(selection_type="backend_body")) == "body"
+    assert _selection_kind(FaceSelectionSpec(selection_type="backend_face",
+                                             face_kind="planar")) == "face"
+    assert _selection_kind(None) == "face"
+
+
+def test_cad_plan_selected_hole_freetext_resize(client, auth):
+    """The exact live bug: selected hole + typed 'make the hole 5mm' → resize."""
+    h = auth["headers"]
+    did = _make_cad_plan_plate(client, h)["id"]
+    # Add a center hole (hole_2) first so there's a fresh hole to resize.
+    add = client.post(
+        f"/api/designs/{did}/face-edit",
+        json={"instruction": "Add a 10 mm through hole", "quick_action": "hole",
+              "selection": _top_face_selection()},
+        headers=h,
+    )
+    assert add.status_code == 200, add.text
+    before_hash = add.json()["spec_hash"]
+
+    # No quick_action — free-typed instruction on a selected hole.
+    r = client.post(
+        f"/api/designs/{did}/face-edit",
+        json={"instruction": "make the hole 5mm", "selection": _hole_selection("hole_2")},
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["spec_hash"] != before_hash
+    resized = next(hh for hh in body["selectable_holes"] if hh["hole_id"] == "hole_2")
+    assert resized["diameter_mm"] == 5.0
+    # Real CAD regenerated.
+    assert {e["fmt"] for e in body["exports"]} >= {"stl", "step"}
+
+
+def test_cad_plan_selected_hole_bare_size(client, auth):
+    """Selected hole + 'hole 8mm' (no quick_action) → resize_hole → 200."""
+    h = auth["headers"]
+    did = _make_cad_plan_plate(client, h)["id"]
+    r = client.post(
+        f"/api/designs/{did}/face-edit",
+        json={"instruction": "hole 8mm", "selection": _hole_selection("hole_0")},
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    resized = next(hh for hh in r.json()["selectable_holes"] if hh["hole_id"] == "hole_0")
+    assert resized["diameter_mm"] == 8.0
+
+
+def test_cad_plan_cylindrical_face_pattern_structured_unsupported(client, auth):
+    """Selected cylindrical face + Pattern → structured unsupported_operation."""
+    h = auth["headers"]
+    d = _make_cad_plan_plate(client, h)
+    did, before_hash = d["id"], d["spec_hash"]
+    r = client.post(
+        f"/api/designs/{did}/face-edit",
+        json={
+            "instruction": "pattern this",
+            "quick_action": "pattern",
+            "selection": {"selection_type": "backend_face", "face_kind": "cylindrical",
+                          "feature_id": "cyl_face", "normal": [1, 0, 0]},
+        },
+        headers=h,
+    )
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert detail["code"] == "unsupported_operation"
+    assert detail["message"] == UNSUPPORTED_EDIT_MESSAGE
+    assert detail["safe_to_retry"] is True
+    # The design is not corrupted by an unsupported attempt.
+    after = client.get(f"/api/designs/{did}", headers=h).json()
+    assert after["spec_hash"] == before_hash
+
+
+def test_cad_plan_planar_add_hole_still_works(client, auth):
+    """Regression guard: add_hole on a planar plate face still succeeds."""
+    h = auth["headers"]
+    d = _make_cad_plan_plate(client, h)
+    did, before_hash = d["id"], d["spec_hash"]
+    r = client.post(
+        f"/api/designs/{did}/face-edit",
+        json={"instruction": "Add a 10 mm through hole centered on this face",
+              "quick_action": "add_hole", "selection": _top_face_selection()},
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["spec_hash"] != before_hash
+    assert len(r.json()["selectable_holes"]) == 3

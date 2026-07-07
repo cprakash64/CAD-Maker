@@ -390,10 +390,29 @@ const ACTION_LIBRARY: Record<string, Omit<EditAction, "key">> = {
   pattern: { label: "Pattern", prompt: "Pattern this feature" },
 };
 
-/** Build editable chips from an entity's advertised operations. */
+/**
+ * CAPABILITY MATRIX (frontend mirror of the backend): the operations the safe
+ * parametric pipeline actually implements end-to-end. Any chip whose operation
+ * isn't here is never shown as enabled — so the UI can't offer an edit that would
+ * come back "unsupported". Unimplemented ops (pattern, pattern_hole, move_hole,
+ * add_slot/cutout/boss/vent, body/feature actions) are intentionally excluded.
+ */
+export const SUPPORTED_OPERATIONS: ReadonlySet<string> = new Set([
+  "add_hole",
+  "fillet_edges",
+  "chamfer_edges",
+  "resize_hole",
+  "delete_hole",
+  "fillet_edge",
+  "chamfer_edge",
+]);
+
+/** Build editable chips from an entity's advertised operations, keeping only the
+ *  operations that are actually supported end-to-end (capability matrix). */
 export function actionsForOperations(allowed: string[] | null | undefined): EditAction[] {
   if (!allowed || allowed.length === 0) return [];
   return allowed
+    .filter((op) => SUPPORTED_OPERATIONS.has(op))
     .map((op) => {
       const def = ACTION_LIBRARY[op];
       return def ? { key: op, ...def } : null;
@@ -512,19 +531,24 @@ const CHIP_TO_OPERATION: Record<string, string> = {
 };
 
 /**
- * Filter the quick-action chips by the backend's advised operations. When the
- * backend gave no guidance (null/empty — older designs or unmatched clicks) we
- * show every chip and let the backend gate the edit.
+ * Filter the quick-action chips for a face by the backend's advised operations,
+ * intersected with the capability matrix so only implemented edits ever show:
+ *  - `null`/`undefined` (older designs, no guidance): every SUPPORTED chip.
+ *  - `[]` (backend says this face has no editable ops, e.g. a cylindrical face):
+ *    NO chips — the popup then shows the "no safe edits" empty state.
+ *  - a list: the intersection of that list, the chips, and the capability matrix.
  */
 export function filterQuickActions(
   allowed: string[] | null | undefined
 ): FaceQuickAction[] {
-  if (!allowed || allowed.length === 0) return FACE_QUICK_ACTIONS;
+  // Chips whose backend operation is actually implemented.
+  const supported = FACE_QUICK_ACTIONS.filter((a) =>
+    SUPPORTED_OPERATIONS.has(CHIP_TO_OPERATION[a.key] ?? "")
+  );
+  if (allowed == null) return supported; // no backend guidance → all supported chips
+  if (allowed.length === 0) return []; // explicit "no ops" → empty state
   const set = new Set(allowed);
-  return FACE_QUICK_ACTIONS.filter((a) => {
-    const op = CHIP_TO_OPERATION[a.key];
-    return op !== undefined && set.has(op);
-  });
+  return supported.filter((a) => set.has(CHIP_TO_OPERATION[a.key]!));
 }
 
 // --- Localized face-edit payload (prepared for the future backend) ----------

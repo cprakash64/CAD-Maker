@@ -110,25 +110,31 @@ export default function FaceEditPopup({ selection, busy = false, onApply, onClos
           disabled={busy}
         />
 
-        {/* Quick action chips */}
-        <div className="flex flex-wrap gap-1">
-          {chips.map((a) => (
-            <button
-              key={a.key}
-              type="button"
-              onClick={() => pickAction(a)}
-              title={a.prompt}
-              disabled={busy}
-              className={`rounded-md border px-2 py-0.5 text-[11px] transition-colors disabled:opacity-50 ${
-                quickAction === a.key
-                  ? "border-accent/70 bg-accent/15 text-accent"
-                  : "border-edge text-slate-300 hover:border-accent/50 hover:text-slate-100"
-              }`}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
+        {/* Quick action chips — or a calm empty state when nothing is supported. */}
+        {chips.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {chips.map((a) => (
+              <button
+                key={a.key}
+                type="button"
+                onClick={() => pickAction(a)}
+                title={a.prompt}
+                disabled={busy}
+                className={`rounded-md border px-2 py-0.5 text-[11px] transition-colors disabled:opacity-50 ${
+                  quickAction === a.key
+                    ? "border-accent/70 bg-accent/15 text-accent"
+                    : "border-edge text-slate-300 hover:border-accent/50 hover:text-slate-100"
+                }`}
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-400">
+            No safe parametric edits are available for this selection yet.
+          </p>
+        )}
 
         {/* Actions */}
         <div className="flex items-center gap-2 pt-0.5">

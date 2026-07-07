@@ -78,7 +78,30 @@ class FaceEditError(Exception):
 
 
 class FaceEditReview(Exception):
-    """Understood but not supported yet (needs_review). Design stays unchanged."""
+    """Understood but not supported yet (needs_review). Design stays unchanged.
+
+    Carries an optional ``code`` (for the structured API response) and the
+    ``operation`` that was requested. Subclassed by :class:`FaceEditUnsupported`
+    for operations we deliberately don't implement yet."""
+
+    code = "needs_selection"
+
+    def __init__(self, message: str, operation: Optional[str] = None):
+        super().__init__(message)
+        self.operation = operation
+
+
+class FaceEditUnsupported(FaceEditReview):
+    """A recognized operation that isn't implemented for the selected geometry.
+
+    Surfaced to the client as ``code: 'unsupported_operation'`` with
+    ``safe_to_retry: true`` — the UI shows a calm limitation, not a failure."""
+
+    code = "unsupported_operation"
+
+
+# Calm, user-facing message for a recognized-but-unimplemented edit.
+UNSUPPORTED_EDIT_MESSAGE = "This edit is not supported yet for this selected geometry."
 
 
 @dataclass
@@ -89,11 +112,80 @@ class FaceEditOutcome:
     local_frame: dict = field(default_factory=dict)
 
 
-def classify_edit(quick_action: Optional[str], instruction: str) -> str:
-    """Map the chosen chip (preferred) or instruction keywords to an operation."""
-    if quick_action and quick_action in _QUICK_ACTION_OPS:
-        return _QUICK_ACTION_OPS[quick_action]
-    t = instruction.lower()
+# Canonical ops that are meaningful for each selection kind. Used to keep an
+# operation consistent with what the user actually selected (a hole only resizes
+# or deletes; an edge only fillets or chamfers), so a stray keyword or a mismatched
+# chip can never route a hole edit into "add a new hole".
+_HOLE_CANON_OPS = {"resize_hole", "delete_hole"}
+_EDGE_CANON_OPS = {"fillet", "chamfer"}
+
+
+def _selection_kind(sel: Optional[FaceSelectionSpec]) -> str:
+    """The kind of geometry selected: hole / edge / body / feature / face.
+
+    Derived from the entity ids / selection_type the viewer sends, so routing is
+    driven by WHAT was selected, not by keywords in the free-text instruction."""
+    if sel is None:
+        return "face"
+    st = sel.selection_type
+    if st == "backend_hole" or sel.hole_id:
+        return "hole"
+    if st == "backend_edge" or sel.edge_id:
+        return "edge"
+    if st == "backend_body" or sel.body_id:
+        return "body"
+    if st == "backend_feature":
+        return "feature"
+    return "face"
+
+
+def classify_edit(
+    quick_action: Optional[str],
+    instruction: str,
+    sel: Optional[FaceSelectionSpec] = None,
+) -> str:
+    """Map a selection + chip/instruction to a canonical operation.
+
+    SELECTION-AWARE: the selected entity kind has priority over instruction
+    keywords, so a selected hole always resolves to resize/delete (never
+    add_hole), a selected edge to fillet/chamfer, and a bare cylindrical face or
+    body/feature to an unsupported (calm) op. A chip id is honored only when it is
+    consistent with the selection kind."""
+    kind = _selection_kind(sel)
+    t = (instruction or "").lower()
+    qop = _QUICK_ACTION_OPS.get(quick_action) if quick_action else None
+
+    # --- hole: resize or delete only -------------------------------------
+    if kind == "hole":
+        if qop in _HOLE_CANON_OPS:
+            return qop
+        if "delete" in t or "remove" in t:
+            return "delete_hole"
+        return "resize_hole"  # "make it 5mm", "hole 8mm", "change diameter", …
+
+    # --- edge: fillet or chamfer only ------------------------------------
+    if kind == "edge":
+        if qop in _EDGE_CANON_OPS:
+            return qop
+        if "chamfer" in t or "bevel" in t:
+            return "chamfer"
+        return "fillet"  # "fillet", "round this edge", default
+
+    # --- body / feature: nothing implemented yet -------------------------
+    if kind in ("body", "feature"):
+        return "unsupported_selection"
+
+    # --- face -------------------------------------------------------------
+    face_kind = getattr(sel, "face_kind", "unknown") if sel is not None else "unknown"
+    # A bare cylindrical face (not resolved to a hole) has no safe parametric edit.
+    # Real holes arrive as kind == "hole" (the viewer promotes wall clicks), so we
+    # never lose hole editing here.
+    if face_kind == "cylindrical":
+        return "unsupported_selection"
+
+    # Planar / plate face: an explicit chip wins, else keyword routing.
+    if qop:
+        return qop
     if "vent" in t or "ventilation" in t:
         return "add_vent"
     if "slot" in t:
@@ -295,7 +387,7 @@ def apply_face_edit(
     invalid/unsafe edit or ``FaceEditReview`` for an unsupported one; in both
     cases the caller leaves the original design untouched.
     """
-    op = classify_edit(req.quick_action, req.instruction)
+    op = classify_edit(req.quick_action, req.instruction, req.selection)
     frame = build_local_frame(req.selection)
 
     if op == "add_hole":
@@ -310,22 +402,8 @@ def apply_face_edit(
         new_spec, message, params = _handle_resize_hole(spec, req.selection, req.instruction, bbox)
     elif op == "delete_hole":
         new_spec, message, params = _handle_delete_hole(spec, req.selection)
-    elif op in ("add_slot", "add_cutout", "add_boss", "pattern", "pattern_hole", "move_hole"):
-        raise FaceEditReview(
-            f"'{op.replace('add_', '').replace('_', ' ')}' isn't supported by the safe "
-            "parametric pipeline yet — coming in a later phase."
-        )
-    elif op in ("measure", "rename", "material", "export_body", "duplicate",
-                "mirror", "edit_dimensions", "suppress"):
-        raise FaceEditReview(
-            f"'{op.replace('_', ' ')}' is a viewer/body action that the CAD edit "
-            "pipeline doesn't apply yet."
-        )
-    else:  # freeform_local_edit and anything unclassified
-        raise FaceEditReview(
-            "I couldn't map that instruction to a safe localized edit. Try a quick "
-            "action or rephrase."
-        )
+    else:  # unimplemented ops, unsupported selections, unclassified text
+        raise FaceEditUnsupported(UNSUPPORTED_EDIT_MESSAGE, operation=op)
 
     return new_spec, FaceEditOutcome(op=op, message=message, params=params, local_frame=frame)
 
@@ -562,7 +640,7 @@ def apply_face_edit_to_plan(
     have no DesignSpec. Returns ``(new_plan, FaceEditOutcome)`` on success; raises
     ``FaceEditError`` (invalid/unsafe) or ``FaceEditReview`` (unsupported) with the
     original plan left untouched."""
-    op = classify_edit(req.quick_action, req.instruction)
+    op = classify_edit(req.quick_action, req.instruction, req.selection)
     frame = build_local_frame(req.selection)
 
     if op == "add_hole":
@@ -576,22 +654,11 @@ def apply_face_edit_to_plan(
     elif op == "delete_hole":
         new_plan, message, params = _plan_delete_hole(plan, req.selection)
     elif op == "add_vent":
-        raise FaceEditReview("Ventilation slots are supported on enclosures, not flat plates.")
-    elif op in ("add_slot", "add_cutout", "add_boss", "pattern", "pattern_hole", "move_hole"):
-        raise FaceEditReview(
-            f"'{op.replace('add_', '').replace('_', ' ')}' isn't supported by the safe "
-            "parametric pipeline yet — coming in a later phase."
+        raise FaceEditUnsupported(
+            "Ventilation slots are supported on enclosures, not flat plates.",
+            operation=op,
         )
-    elif op in ("measure", "rename", "material", "export_body", "duplicate",
-                "mirror", "edit_dimensions", "suppress"):
-        raise FaceEditReview(
-            f"'{op.replace('_', ' ')}' is a viewer/body action that the CAD edit "
-            "pipeline doesn't apply yet."
-        )
-    else:
-        raise FaceEditReview(
-            "I couldn't map that instruction to a safe localized edit. Try a quick "
-            "action or rephrase."
-        )
+    else:  # unimplemented ops, unsupported selections, unclassified text
+        raise FaceEditUnsupported(UNSUPPORTED_EDIT_MESSAGE, operation=op)
 
     return new_plan, FaceEditOutcome(op=op, message=message, params=params, local_frame=frame)

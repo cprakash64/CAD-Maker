@@ -541,6 +541,22 @@ def circle_edit(
     return _to_dto(design, user)
 
 
+def _face_edit_detail(
+    req: FaceLocalizedEditRequest, message: str, code: str,
+    operation: str | None = None, safe_to_retry: bool = True,
+) -> dict:
+    """Structured face-edit error body (rendered by the UI as a calm limitation,
+    not a hard failure). ``safe_to_retry`` tells the client the design is intact
+    and the user may simply try a different edit."""
+    return {
+        "code": code,
+        "operation": operation,
+        "selection_type": req.selection.selection_type,
+        "message": message,
+        "safe_to_retry": safe_to_retry,
+    }
+
+
 def _record_face_edit(
     db: Session,
     design: Design,
@@ -637,11 +653,18 @@ def face_edit(
         except FaceEditError as exc:
             _record_face_edit(db, design, req, "rejected", str(exc))
             raise HTTPException(
-                status_code=422, detail=f"Could not apply this edit safely: {exc}"
+                status_code=422,
+                detail=_face_edit_detail(req, str(exc), "invalid_edit"),
             ) from exc
         except FaceEditReview as exc:
             _record_face_edit(db, design, req, "needs_review", str(exc))
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=422,
+                detail=_face_edit_detail(
+                    req, str(exc), getattr(exc, "code", "needs_selection"),
+                    operation=getattr(exc, "operation", None),
+                ),
+            ) from exc
         try:
             design = design_service.apply_plan_edit(
                 db, design, new_plan, note=outcome.message, guard_critical=True
@@ -665,11 +688,18 @@ def face_edit(
     except FaceEditError as exc:  # invalid / unsafe → rejected
         _record_face_edit(db, design, req, "rejected", str(exc))
         raise HTTPException(
-            status_code=422, detail=f"Could not apply this edit safely: {exc}"
+            status_code=422,
+            detail=_face_edit_detail(req, str(exc), "invalid_edit"),
         ) from exc
     except FaceEditReview as exc:  # understood but unsupported → needs_review
         _record_face_edit(db, design, req, "needs_review", str(exc))
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=422,
+            detail=_face_edit_detail(
+                req, str(exc), getattr(exc, "code", "needs_selection"),
+                operation=getattr(exc, "operation", None),
+            ),
+        ) from exc
 
     try:
         # guard_critical: an edit that would fail validation is rolled back and

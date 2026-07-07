@@ -74,13 +74,18 @@ def test_normals_are_normalized():
 def test_allowed_operations_reasonable():
     faces = extract_selectable_faces(build_solid(_bracket()), _bracket())
     top = next(f for f in faces if f["feature_id"] == "face_top")
-    # A big planar face offers the full add-feature set.
-    assert set(top["allowed_operations"]) >= {"add_hole", "add_slot", "add_cutout", "add_boss"}
-    # Cylindrical (hole wall) faces are limited and never claim high confidence.
+    # Capability matrix: a big planar face offers only implemented ops.
+    assert set(top["allowed_operations"]) == {"add_hole", "fillet_edges", "chamfer_edges"}
+    # Unimplemented ops are never advertised as chips.
+    for unimpl in ("add_slot", "add_cutout", "add_boss", "add_vent", "pattern"):
+        assert unimpl not in top["allowed_operations"]
+    # Cylindrical (hole wall) faces advertise nothing (no safe parametric edit) and
+    # never claim high confidence.
     cyl = [f for f in faces if f["face_kind"] == "cylindrical"]
     for f in cyl:
         assert f["confidence"] <= 0.65
-        assert "add_slot" not in f["allowed_operations"]
+        assert f["allowed_operations"] == []
+        assert "pattern" not in f["allowed_operations"]
 
 
 def test_face_ids_are_stable_across_regeneration():
@@ -121,7 +126,7 @@ def test_plan_holes_extracted_with_aligned_ids():
     for h in holes:
         assert h["diameter_mm"] > 0
         assert h["through"] is True
-        assert h["allowed_operations"] == ["resize_hole", "move_hole", "delete_hole", "pattern_hole"]
+        assert h["allowed_operations"] == ["resize_hole", "delete_hole"]
         # A Z-axis through hole opens on the plate's top face (z = thickness).
         assert h["axis"] == [0.0, 0.0, 1.0]
         assert h["center"][2] == 6.0

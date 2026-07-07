@@ -335,30 +335,90 @@ describe("pickHole — cylindrical/opening click → hole promotion", () => {
   });
 });
 
-describe("hole selection surfaces hole actions, not face actions", () => {
-  it("renders Resize / Move / Pattern / Delete for a selected hole", () => {
+describe("hole selection surfaces only supported hole actions", () => {
+  it("renders Resize and Delete only (never Move or Pattern)", () => {
+    // Even if the backend advertised more, the capability matrix trims to the
+    // operations that actually work end-to-end.
     const chips = actionsForOperations([
       "resize_hole",
       "move_hole",
       "pattern_hole",
       "delete_hole",
     ]);
-    expect(chips.map((c) => c.label)).toEqual(["Resize", "Move", "Pattern", "Delete"]);
+    expect(chips.map((c) => c.label)).toEqual(["Resize", "Delete"]);
+    expect(chips.map((c) => c.key)).not.toContain("move_hole");
+    expect(chips.map((c) => c.key)).not.toContain("pattern_hole");
     // Never the face-only chips.
     expect(chips.map((c) => c.label)).not.toContain("Hole");
     expect(chips.map((c) => c.label)).not.toContain("Slot");
     expect(chips.map((c) => c.label)).not.toContain("Boss");
   });
+
+  it("supported backend ops become their chips", () => {
+    expect(actionsForOperations(["resize_hole", "delete_hole"]).map((c) => c.label)).toEqual([
+      "Resize",
+      "Delete",
+    ]);
+  });
+
+  it("chips carry real backend op ids and produce the correct face-edit payload", () => {
+    const sel = buildMeshFaceSelection(
+      {
+        faceIndex: null,
+        point: [0, 0, 6],
+        normal: [0, 0, 1],
+        center: [0, 0, 6],
+        axisLabel: "hole",
+        patchTriangleCount: 0,
+        cameraPosition: null,
+        kind: "hole",
+        hole: {
+          hole_id: "hole_2",
+          feature_id: "holes",
+          diameter_mm: 10,
+          center: [0, 0, 6],
+          axis: [0, 0, 1],
+          through: true,
+          allowed_operations: ["resize_hole", "delete_hole"],
+          confidence: 0.9,
+        },
+      },
+      "d1"
+    );
+    const chips = actionsForOperations(sel.allowed_operations);
+    expect(chips.map((c) => c.key)).toEqual(["resize_hole", "delete_hole"]);
+
+    const resize = chips.find((c) => c.label === "Resize")!;
+    const payload = buildFaceEditPayload(sel, resize.prompt, resize.key);
+    // Resize chip → real op id + hole_id (never a vague "hole"/"move"/"pattern").
+    expect(payload.quick_action).toBe("resize_hole");
+    expect(payload.selection.selection_type).toBe("backend_hole");
+    expect(payload.selection.hole_id).toBe("hole_2");
+
+    const del = chips.find((c) => c.label === "Delete")!;
+    expect(buildFaceEditPayload(sel, del.prompt, del.key).quick_action).toBe("delete_hole");
+  });
 });
 
 describe("filterQuickActions", () => {
-  it("shows all chips when the backend gave no guidance", () => {
-    expect(filterQuickActions(null)).toHaveLength(FACE_QUICK_ACTIONS.length);
-    expect(filterQuickActions([])).toHaveLength(FACE_QUICK_ACTIONS.length);
+  it("shows only supported chips when the backend gave no guidance", () => {
+    // null → every SUPPORTED face chip (Hole/Fillet/Chamfer); never Slot/Cutout/
+    // Boss/Vent/Pattern (unimplemented).
+    const chips = filterQuickActions(null);
+    expect(chips.map((c) => c.key).sort()).toEqual(["chamfer", "fillet", "hole"]);
+    expect(chips.map((c) => c.key)).not.toContain("pattern");
+    expect(chips.map((c) => c.key)).not.toContain("slot");
+  });
+  it("returns no chips when the backend advertises an empty op list (e.g. cylindrical face)", () => {
+    expect(filterQuickActions([])).toEqual([]);
   });
   it("filters chips to the advised operations", () => {
     const chips = filterQuickActions(["add_hole", "fillet_edges", "chamfer_edges"]);
     expect(chips.map((c) => c.key).sort()).toEqual(["chamfer", "fillet", "hole"]);
+  });
+  it("drops an advised-but-unimplemented op (pattern) from a cylindrical-ish list", () => {
+    // A stale/legacy allowed list that still names pattern must not surface it.
+    expect(filterQuickActions(["pattern"])).toEqual([]);
   });
 });
 

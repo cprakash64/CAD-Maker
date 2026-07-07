@@ -81,25 +81,56 @@ async function request<T>(
   }
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
+    let code: string | undefined;
+    let safeToRetry: boolean | undefined;
     try {
-      const body = (await res.json()) as { detail?: string };
-      if (body.detail) detail = body.detail;
+      const body = (await res.json()) as { detail?: string | StructuredErrorDetail };
+      if (typeof body.detail === "string") {
+        detail = body.detail;
+      } else if (body.detail && typeof body.detail === "object") {
+        // Structured error (e.g. face-edit unsupported_operation): carry the
+        // machine code + retry hint so the UI can show a calm limitation.
+        detail = body.detail.message ?? detail;
+        code = body.detail.code;
+        safeToRetry = body.detail.safe_to_retry;
+      }
     } catch {
       /* non-JSON error body */
     }
-    throw new ApiError(detail, res.status, `${init?.method ?? "GET"} ${path}`);
+    throw new ApiError(detail, res.status, `${init?.method ?? "GET"} ${path}`, code, safeToRetry);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
+/** Structured error body some endpoints return under `detail` (e.g. face-edit). */
+export interface StructuredErrorDetail {
+  code: string;
+  operation?: string | null;
+  selection_type?: string;
+  message: string;
+  safe_to_retry?: boolean;
+}
+
 export class ApiError extends Error {
   status: number; // 0 = network-level failure (backend unreachable)
   endpoint?: string; // "POST /api/drawings/generate"
-  constructor(message: string, status: number, endpoint?: string) {
+  /** Machine code from a structured error body (e.g. "unsupported_operation"). */
+  code?: string;
+  /** True when the request failed safely (design intact) and the user may retry. */
+  safeToRetry?: boolean;
+  constructor(
+    message: string,
+    status: number,
+    endpoint?: string,
+    code?: string,
+    safeToRetry?: boolean
+  ) {
     super(message);
     this.status = status;
     this.endpoint = endpoint;
+    this.code = code;
+    this.safeToRetry = safeToRetry;
   }
 }
 

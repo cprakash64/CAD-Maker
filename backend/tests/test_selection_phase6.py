@@ -54,7 +54,8 @@ def test_extract_edges_and_bodies():
     bodies = extract_selectable_bodies(solid, _bracket(), {"x": 80, "y": 40, "z": 6})
     assert bodies[0]["body_id"] == "main_body"
     assert bodies[0]["volume_mm3"] > 0
-    assert "material" in bodies[0]["allowed_operations"]
+    # Capability matrix: body edits aren't implemented yet → no advertised ops.
+    assert bodies[0]["allowed_operations"] == []
 
 
 def test_extract_features_excludes_faces_and_bodies():

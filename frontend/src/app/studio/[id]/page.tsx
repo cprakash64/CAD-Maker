@@ -146,7 +146,16 @@ export default function StudioPage({ params }: { params: { id: string } }) {
         return { ok: true, message: "Edit applied." };
       } catch (e) {
         const msg = e instanceof ApiError ? e.message : "Could not apply this edit safely.";
-        setError(msg);
+        // A "safe" failure (unsupported/needs-selection/invalid-edit) left the
+        // design intact — surface it as a calm inline notice via the returned
+        // message (the viewer shows a toast), NOT the page-level red error banner.
+        const calm =
+          e instanceof ApiError &&
+          (e.safeToRetry === true ||
+            e.code === "unsupported_operation" ||
+            e.code === "needs_selection" ||
+            e.code === "invalid_edit");
+        if (!calm) setError(msg);
         return { ok: false, message: msg };
       } finally {
         setBusy(false);
