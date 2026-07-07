@@ -340,11 +340,44 @@ def apply_face_edit(
 
 # CadPlan object_types that are clean flat plates (single plate/box base): a
 # centered Z-through hole and vertical-edge treatment are well-defined on these.
+# Kept as canonical names; free-form labels are matched via _plan_is_plate_like.
 _PLAN_PLATE_TYPES = {
     "mounting_plate", "rectangular_bracket", "adapter_plate", "drill_jig", "plate",
 }
 # Feature kinds that can serve as the flat base of a plate.
 _PLAN_BASE_KINDS = {"plate", "box", "extruded_profile"}
+# Additive feature kinds that keep a body genuinely flat (safe to drill through).
+# Anything else (pipe/cylinder/flange/boss/wall/shell/…) makes it not a plain plate.
+_PLAN_FLAT_BODY_KINDS = {"plate", "box", "extruded_profile"}
+# Normalized family tokens that must NEVER be treated as a drillable flat plate,
+# even if a plate-shaped body sneaks into the graph (round/curved/threaded/tube/
+# assembly parts). Substring match on the normalized family.
+_NON_PLATE_TOKENS = (
+    "tire", "wheel", "rim", "pipe", "tube", "flange", "elbow", "spool", "bolt",
+    "nut", "screw", "stud", "rod", "gear", "pulley", "coupler", "standoff",
+    "spacer", "bearing", "shaft", "crankshaft", "hinge", "enclosure", "casing",
+    "housing", "cylinder", "sphere", "cone", "dome", "assembly", "boss", "hammer",
+    "wrench", "handle", "knob", "hook",
+)
+# Normalized families explicitly recognised as plate-like (exact match).
+_PLATE_LIKE_FAMILIES = {
+    "mounting_plate", "adapter_plate", "adapter_mounting_plate", "flat_plate",
+    "plate", "base_plate", "cover_plate", "top_plate", "bottom_plate",
+    "rectangular_bracket", "bracket", "mounting_bracket", "flat_bracket",
+    "drill_jig", "jig_plate", "gusset_plate", "spacer_plate",
+}
+
+
+def _normalize_family(name) -> str:
+    """Lower-case a free-form family/label and unify separators (``/``, ``-``,
+    spaces) to ``_`` so 'adapter/mounting plate', 'Adapter Plate' and
+    'adapter_plate' all normalize to the same comparable token."""
+    s = (name or "").strip().lower()
+    for ch in ("/", "\\", "-", " ", ".", ","):
+        s = s.replace(ch, "_")
+    while "__" in s:
+        s = s.replace("__", "_")
+    return s.strip("_")
 
 
 def _plan_base_plate(plan):
@@ -353,6 +386,43 @@ def _plan_base_plate(plan):
         if not f.is_subtractive and f.kind.value in _PLAN_BASE_KINDS:
             return f
     return None
+
+
+def _plan_all_bodies_flat(plan) -> bool:
+    """True when every additive *body* in the graph is a flat plate/box/profile
+    (modifiers like fillet/chamfer/mirror and subtractive cuts/holes are ignored),
+    i.e. the part is a genuine flat plate — no walls, pipes, bosses or curved
+    bodies that would make a Z-through hole unsafe or meaningless."""
+    saw_body = False
+    for f in plan.features:
+        if f.is_subtractive:
+            continue
+        kind = f.kind.value
+        if kind in ("fillet", "chamfer", "mirror", "union", "subtract"):
+            continue  # modifiers don't add a body
+        if kind not in _PLAN_FLAT_BODY_KINDS:
+            return False
+        saw_body = True
+    return saw_body
+
+
+def _plan_is_plate_like(plan) -> bool:
+    """Whether this CadPlan part is a flat plate we can safely drill / edge-treat.
+
+    Prefers a STRUCTURAL check over the display name: a genuine flat-plate feature
+    graph (a plate/box base, all bodies flat) qualifies even when the LLM labelled
+    it oddly (e.g. 'adapter/mounting plate'). A recognised plate family name also
+    qualifies. Round/curved/threaded/tube/assembly families are always rejected,
+    so this never opens hole-adding up to tires, pipes, bolts, etc."""
+    fam = _normalize_family(getattr(plan, "object_type", ""))
+    if any(tok in fam for tok in _NON_PLATE_TOKENS):
+        return False
+    if fam in _PLAN_PLATE_TYPES or fam in _PLATE_LIKE_FAMILIES:
+        return True
+    if "plate" in fam:  # any *_plate label (cover_plate, adapter_mounting_plate…)
+        return True
+    # Structural fallback: an unrecognised name but a genuinely flat plate graph.
+    return _plan_base_plate(plan) is not None and _plan_all_bodies_flat(plan)
 
 
 def _plan_hole_features(plan) -> list:
@@ -373,7 +443,7 @@ def _plan_unique_id(base: str, plan) -> str:
 def _plan_add_hole(plan, sel: FaceSelectionSpec, instruction: str, bbox: dict | None):
     from app.cad.plan.schema import Feature
 
-    if plan.object_type not in _PLAN_PLATE_TYPES:
+    if not _plan_is_plate_like(plan):
         raise FaceEditReview(
             f"Adding a hole isn't supported on a '{plan.object_type}' yet — this "
             "works on flat plate / mounting-plate parts."
@@ -450,7 +520,7 @@ def _plan_delete_hole(plan, sel: FaceSelectionSpec):
 def _plan_edge_treatment(plan, instruction: str, bbox: dict | None, chamfer: bool):
     from app.cad.plan.schema import Feature
 
-    if plan.object_type not in _PLAN_PLATE_TYPES:
+    if not _plan_is_plate_like(plan):
         kind = "Chamfer" if chamfer else "Fillet"
         raise FaceEditReview(f"{kind} edits aren't supported on a '{plan.object_type}' yet.")
     size = _first_number(instruction)

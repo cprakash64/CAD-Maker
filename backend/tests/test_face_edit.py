@@ -506,3 +506,99 @@ def test_face_edit_409_only_when_no_editable_source(client, auth):
         headers=h,
     )
     assert r.status_code == 409, r.text
+
+
+# --- plate-like family normalization (CadPlan add_hole / edge treatment) ----
+# The LLM planner labels parts freely (e.g. "adapter/mounting plate"), so the
+# editable-plate gate must recognise plate-like families structurally, not by an
+# exact object_type match — while still refusing round/threaded/tube/assembly
+# parts. These are pure (no DB) tests over the plan handlers.
+from app.cad.plan.schema import CadPlan, Feature  # noqa: E402
+from app.editing.face_edit import (  # noqa: E402
+    _plan_is_plate_like,
+    apply_face_edit_to_plan,
+)
+
+
+def _flat_plate_plan(object_type: str) -> CadPlan:
+    """An 80×40×6 flat plate with two holes, labelled `object_type`."""
+    return CadPlan(
+        object_type=object_type,
+        name=object_type,
+        features=[
+            Feature(id="base_plate", kind="plate",
+                    params={"width": 80, "depth": 40, "thickness": 6}, at=[0, 0, 0]),
+            Feature(id="mh0", kind="hole", op="cut", through=True, axis="z",
+                    params={"diameter": 6}, at=[-25, 0, 0]),
+            Feature(id="mh1", kind="hole", op="cut", through=True, axis="z",
+                    params={"diameter": 6}, at=[25, 0, 0]),
+        ],
+    )
+
+
+def _plan_hole_req() -> FaceLocalizedEditRequest:
+    return FaceLocalizedEditRequest(
+        instruction="Add a 10 mm through hole centered on this face",
+        quick_action="hole",
+        selection={"feature_id": "face_top", "face_kind": "planar", "normal": [0, 0, 1]},
+    )
+
+
+_PLATE_BBOX = {"x": 80.0, "y": 40.0, "z": 6.0}
+
+
+@pytest.mark.parametrize(
+    "object_type",
+    [
+        "adapter/mounting plate",   # the exact live-failure label
+        "adapter mounting plate",
+        "adapter_mounting_plate",
+        "adapter plate",
+        "adapter_plate",
+        "mounting plate",
+        "mounting_plate",
+        "flat plate",
+        "rectangular_bracket",
+        "Cover Plate",              # arbitrary *_plate label + odd casing
+    ],
+)
+def test_plan_add_hole_supported_on_plate_like_families(object_type):
+    plan = _flat_plate_plan(object_type)
+    new_plan, outcome = apply_face_edit_to_plan(plan, _plan_hole_req(), _PLATE_BBOX)
+    assert outcome.op == "add_hole"
+    assert len([f for f in new_plan.features if f.kind.value == "hole"]) == 3
+
+
+def test_plan_add_hole_structural_fallback_for_unknown_flat_name():
+    """An unrecognised label but a genuinely flat box graph is still drillable."""
+    plan = _flat_plate_plan("weird_widget_xyz")
+    new_plan, outcome = apply_face_edit_to_plan(plan, _plan_hole_req(), _PLATE_BBOX)
+    assert outcome.op == "add_hole"
+    assert len([f for f in new_plan.features if f.kind.value == "hole"]) == 3
+
+
+@pytest.mark.parametrize(
+    "object_type",
+    ["tire", "flanged_pipe_branch", "bolt", "hex_nut", "timing_pulley_gt2", "wheel_assembly"],
+)
+def test_plan_add_hole_rejected_on_non_plate_families(object_type):
+    """Round / threaded / tube / assembly parts are refused even if a plate-shaped
+    body sneaks into the graph — hole-adding must never open up to these."""
+    plan = _flat_plate_plan(object_type)  # deliberately a plate body + disallowed name
+    assert _plan_is_plate_like(plan) is False
+    with pytest.raises(FaceEditReview) as exc:
+        apply_face_edit_to_plan(plan, _plan_hole_req(), _PLATE_BBOX)
+    # The rejection stays helpful for genuinely unsupported parts.
+    assert "flat plate" in str(exc.value).lower()
+
+
+def test_plan_add_hole_rejected_on_structurally_non_flat_body():
+    """A non-plate body (pipe) with an unknown name is rejected structurally."""
+    plan = CadPlan(
+        object_type="mystery_part",
+        name="mystery",
+        features=[Feature(id="body", kind="pipe", params={"od": 40, "length": 60})],
+    )
+    assert _plan_is_plate_like(plan) is False
+    with pytest.raises(FaceEditReview):
+        apply_face_edit_to_plan(plan, _plan_hole_req(), _PLATE_BBOX)
