@@ -233,12 +233,11 @@ class LLMProvider(ABC):
         Data only — compiled by the backend, never executed as code."""
         return None
 
-    def cad_program(self, prompt: str, feedback: str | None = None):
-        """Return (CADDesignBrief, CADProgramSpec) for the CAD compiler, or None.
-        The program's restricted code is sandbox-executed — never run in-process
-        for untrusted providers. ``feedback`` carries semantic-verifier failures
-        for the repair loop."""
-        return None
+    # NOTE: There is deliberately no `cad_program()` hook on this interface.
+    # Providers must never return executable source. Geometry comes only from
+    # reviewed deterministic builders and the allowlisted feature-graph
+    # interpreter; provider output is structured data that is Pydantic-validated
+    # before it can reach any builder. See docs/production-readiness.md (F-1).
 
     def interpret_drawing(
         self, image_b64: str, media_type: str = "image/png", hint: str | None = None

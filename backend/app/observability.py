@@ -25,7 +25,6 @@ if not logger.handlers:
 _SECRET_KEYS = {
     "api_key",
     "openai_api_key",
-    "anthropic_api_key",
     "password",
     "password_hash",
     "access_token",

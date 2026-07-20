@@ -1872,87 +1872,6 @@ def create_design_from_plan(
     return design
 
 
-def _try_compiler(db: Session, design: Design, prompt: str, parse_start: float) -> Design | None:
-    """Run the CAD compiler if it has a program for this prompt. Returns the
-    finished design on success/clarification, or None to fall back to planning."""
-    from app.generation.cad_programs import generate_program
-    from app.generation.compiler import compile_prompt
-    from app.llm.factory import get_provider
-
-    # Gears / pulleys go through the dedicated module-based template (consistent
-    # tooth geometry, prompt-dimension fidelity, and the semantic tooth audit) —
-    # never the program path, which hard-coded thickness and skipped the audit.
-    if re.search(r"\b(gear|pulley|sprocket|cog)\b", prompt.lower()):
-        return None
-
-    if generate_program(prompt) is None:
-        return None  # no compiler family -> fall back to templates/feature-graph
-    out = compile_prompt(prompt, get_provider())
-    if out is None:
-        return None
-    log_event("prompt_parsed", design_id=design.id, provider=settings.llm_provider,
-              routed="cadquery_program", produced_spec=out.ok,
-              latency_ms=elapsed_ms(parse_start))
-    if out.ok:
-        _store_program(db, design, out)
-        db.commit()
-        db.refresh(design)
-        return design
-    # Compiler ran but the model failed semantic checks after repairs.
-    design.route = "cadquery_program"
-    design.assumptions = out.assumptions
-    design.semantic_json = out.report.model_dump() if out.report else None
-    design.repair_attempts = out.repair_attempts
-    design.clarification_question = out.clarification
-    db.commit()
-    db.refresh(design)
-    return design
-
-
-def _store_program(db: Session, design: Design, out) -> None:
-    """Persist a sandbox-generated program design (geometry from STL/STEP bytes)."""
-    result = out.result
-    storage = get_storage()
-    design.object_type = out.brief.object_type
-    design.spec_json = None
-    design.spec_hash = result.spec_hash
-    design.explanation = out.explanation or (out.brief.mechanical_function or None)
-    design.bounding_box = result.bounding_box_mm
-    design.provider = settings.llm_provider
-    design.route = "cadquery_program"
-    design.route_reason = "Sandboxed CadQuery program, semantically verified."
-    design.assumptions = out.assumptions
-    design.auto_repaired = out.repair_attempts > 0
-    design.repair_attempts = out.repair_attempts
-    design.export_formats = out.export_formats
-    design.program_code = out.code
-    design.semantic_json = out.report.model_dump() if out.report else None
-    design.features_json = result.features
-    design.clarification_question = None
-    design.preview_json = {
-        "positions": result.preview.positions,
-        "indices": result.preview.indices,
-        "vertex_count": result.preview.vertex_count,
-        "triangle_count": result.preview.triangle_count,
-    }
-    for old in list(design.exports):
-        db.delete(old)
-    db.flush()
-    fmts = [("stl", result.stl_bytes)]
-    if "step" in out.export_formats and result.step_bytes:
-        fmts.append(("step", result.step_bytes))
-    for fmt, data in fmts:
-        key = f"{design.id}/{result.spec_hash}.{fmt}"
-        storage.save(key, data)
-        db.add(ExportFile(
-            design_id=design.id, fmt=fmt, storage_key=key,
-            url=f"{settings.public_base_url}/api/designs/{design.id}/files/{fmt}",
-            size_bytes=len(data),
-        ))
-    log_event("geometry_generated", design_id=design.id, object_type=design.object_type,
-              provider=settings.llm_provider, route="cadquery_program",
-              triangle_count=result.preview.triangle_count)
-
 
 def _try_assembly(db: Session, design: Design, prompt: str) -> Design:
     """Generate a simplified CONCEPT assembly for a supported complex family
@@ -2891,11 +2810,9 @@ def _run_generation(db: Session, design: Design, prompt: str, parse_start: float
     # can't build the part — kept as a safety net.
     from app.parsing.complex_plan import looks_complex, plan_prompt
 
-    if not looks_complex(prompt):
-        compiled = _try_compiler(db, design, prompt, parse_start)
-        if compiled is not None:
-            return compiled
-
+    # The former `cadquery_program` compiler route (provider-authored Python run
+    # in a sandbox) was removed — see docs/production-readiness.md (F-1). Simple
+    # prompts now fall through to the deterministic template/planner path below.
     routed = "complex_plan" if looks_complex(prompt) else "unified_plan"
     result = _plan_long_prompt(prompt) if routed == "complex_plan" else plan_prompt(prompt)
     design.assumptions = result.assumptions

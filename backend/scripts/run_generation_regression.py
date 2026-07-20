@@ -107,7 +107,7 @@ def evaluate(entry: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", default="mock", choices=["mock", "anthropic", "openai"])
+    ap.add_argument("--provider", default="mock", choices=["mock", "openai"])
     ap.add_argument("--limit", type=int, default=200)
     args = ap.parse_args()
     settings.llm_provider = args.provider

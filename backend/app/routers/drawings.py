@@ -32,6 +32,17 @@ router = APIRouter(prefix="/api/drawings", tags=["drawings"])
 alias_router = APIRouter(tags=["drawings"])
 
 _MAX_IMAGE_BYTES = 12 * 1024 * 1024
+
+# Canonical media type per sniffed file type. Derived from the file's own bytes
+# so a client-supplied Content-Type can never mislabel content downstream.
+_MEDIA_TYPE_BY_FILE_TYPE = {
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "pdf": "application/pdf",
+    "svg": "image/svg+xml",
+    "dxf": "image/vnd.dxf",
+}
 _MAX_DRAWING_BYTES = 20 * 1024 * 1024  # PDFs/DXFs run larger than images
 
 
@@ -59,7 +70,17 @@ async def interpret(
         raise HTTPException(status_code=400, detail="Empty file")
     if len(data) > _MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image too large (max 12 MB)")
-    media_type = file.content_type or "image/png"
+    # Content-sniff before anything parses the bytes. The client's Content-Type
+    # is a hint, never the decision — unsupported content must be rejected
+    # explicitly (415) rather than degrading into an "unknown / low confidence"
+    # interpretation. See docs/production-readiness.md.
+    from app.services.drawing_ingest import UnsupportedDrawingFile, detect_file_type
+
+    try:
+        ftype = detect_file_type(data, file.filename, file.content_type)
+    except UnsupportedDrawingFile as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    media_type = _MEDIA_TYPE_BY_FILE_TYPE.get(ftype, file.content_type or "image/png")
     interp = interpret_image(data, media_type, hint=hint)
     log_event(
         "drawing_interpreted",
@@ -210,7 +231,14 @@ async def generate(
         raise HTTPException(status_code=400, detail="Empty file")
     if len(data) > _MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image too large (max 12 MB)")
-    media_type = file.content_type or "image/png"
+    # Sniff content before the pipeline touches it (see /interpret above).
+    from app.services.drawing_ingest import UnsupportedDrawingFile, detect_file_type
+
+    try:
+        ftype = detect_file_type(data, file.filename, file.content_type)
+    except UnsupportedDrawingFile as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    media_type = _MEDIA_TYPE_BY_FILE_TYPE.get(ftype, file.content_type or "image/png")
 
     if sync:
         job = drawing_jobs.DrawingJob(id="sync", user_id=user.id)

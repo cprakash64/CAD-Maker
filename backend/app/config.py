@@ -114,10 +114,8 @@ class Settings:
     rate_limit_package: str = "60/60"       # exports, packages, drawing views
     rate_limit_default: str = "120/60"      # fallback for any other category
 
-    # LLM provider: "mock" (default, offline), "anthropic", or "openai"
+    # LLM provider: "openai" in production, or "mock" (offline, dev/test only).
     llm_provider: str = "mock"
-    anthropic_api_key: str | None = None
-    anthropic_model: str = "claude-sonnet-4-6"
     openai_api_key: str | None = None
     openai_base_url: str | None = None
     openai_model: str = "gpt-4o-mini"
@@ -275,17 +273,20 @@ class Settings:
         problems: list[str] = []
 
         # --- LLM provider + credentials ---
+        # Production supports OpenAI only. "mock" is a deterministic offline
+        # provider for dev/test and is refused outside development.
         if self.llm_provider == "mock":
             problems.append(
                 f"LLM_PROVIDER=mock is not allowed when APP_ENV={self.app_env}; "
-                "set LLM_PROVIDER=openai (or anthropic) with an API key."
+                "set LLM_PROVIDER=openai with an API key."
             )
         elif self.llm_provider == "openai" and not self.openai_api_key:
             problems.append("LLM_PROVIDER=openai requires OPENAI_API_KEY.")
-        elif self.llm_provider == "anthropic" and not self.anthropic_api_key:
-            problems.append("LLM_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
-        elif self.llm_provider not in {"openai", "anthropic"}:
-            problems.append(f"Unknown LLM_PROVIDER={self.llm_provider!r}.")
+        elif self.llm_provider != "openai":
+            problems.append(
+                f"Unknown LLM_PROVIDER={self.llm_provider!r}; the only supported "
+                "production provider is 'openai'."
+            )
 
         # --- JWT signing secret ---
         if self.is_default_jwt_secret:

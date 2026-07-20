@@ -112,12 +112,6 @@ def provider_status() -> dict:
             provider_error = "OPENAI_API_KEY is missing — set it in .env."
             text_available = image_understanding = structured_available = False
         label = "OpenAI vision active" if image_understanding else (provider_error or "OpenAI unavailable")
-    elif provider == "anthropic":
-        model = settings.anthropic_model
-        text_available = bool(settings.anthropic_api_key)
-        if not text_available:
-            provider_error = "ANTHROPIC_API_KEY is missing."
-        label = "Anthropic (text only — image understanding unavailable)"
     else:
         label = "Mock mode — image understanding blocked"
 

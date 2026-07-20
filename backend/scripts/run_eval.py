@@ -26,7 +26,7 @@ from app.parsing.prompt_parser import parse_prompt  # noqa: E402
 
 DATA = Path(__file__).resolve().parent.parent / "tests" / "data" / "eval_prompts.json"
 
-# Rough output-side cost estimate per 1K tokens (USD). Mock/anthropic-less runs
+# Rough output-side cost estimate per 1K tokens (USD). Mock runs
 # have no usage and score 0. Tune per model as needed.
 _COST_PER_1K = {"gpt-4o-mini": 0.0006, "gpt-4o": 0.01}
 
@@ -135,7 +135,7 @@ def _provider(name: str):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="SourceCAD prompt eval harness")
-    ap.add_argument("--provider", default="mock", choices=["mock", "anthropic", "openai"])
+    ap.add_argument("--provider", default="mock", choices=["mock", "openai"])
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--out", default=settings.eval_report_dir)
     args = ap.parse_args()

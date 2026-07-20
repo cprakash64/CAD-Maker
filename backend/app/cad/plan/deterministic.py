@@ -836,6 +836,69 @@ def _plan_plate(t: str) -> CadPlan:
     )
 
 
+def _plan_drill_jig(t: str) -> CadPlan:
+    """Drill jig / drilling template: a plate carrying a GRID of guide holes.
+
+    Distinct from `_plan_plate`, which only knows corner holes and a centre
+    bore. A drill jig's defining feature is the hole pattern and its spacing, so
+    dropping the holes silently turns the part into a blank plate — the exact
+    failure this family exists to prevent.
+    """
+    length = _near(t, "long", "length") or _near(t, "mm by", "by")
+    width = _near(t, "wide", "width")
+    thk = _near(t, "thick", "thickness")
+    if not (length and width and thk):
+        ns = _nums(t)
+        if len(ns) >= 3:
+            length, width, thk = length or ns[0], width or ns[1], thk or ns[2]
+    if not (length and width and thk):
+        return _clarify("drill_jig",
+                        "What are the jig plate length, width and thickness (mm)?")
+
+    sc = _screws(t)
+    hole_d = _near(t, "mm holes", "mm guide holes", "mm hole") or (sc[0] if sc else 6.0)
+    spacing = (_near(t, "mm apart", "mm spacing", "mm centers", "mm centres",
+                     "mm pitch", "mm grid")
+               or _near(t, "spaced", "pitch", "spacing"))
+    assumptions: list[str] = []
+    if spacing is None:
+        spacing = 25.0
+        assumptions.append("Assumed 25mm guide-hole spacing")
+
+    margin = max(hole_d, 8.0)
+    usable_x, usable_y = length - 2 * margin, width - 2 * margin
+    if usable_x <= 0 or usable_y <= 0 or spacing <= 0:
+        return _clarify("drill_jig",
+                        "The plate is too small for the requested hole spacing — "
+                        "what plate size and spacing should I use?")
+
+    nx = int(usable_x // spacing) + 1
+    ny = int(usable_y // spacing) + 1
+    x0 = -(nx - 1) * spacing / 2.0
+    y0 = -(ny - 1) * spacing / 2.0
+
+    features = [Feature(id="base_plate", kind="plate", description="jig plate",
+                        params={"width": length, "depth": width, "thickness": thk})]
+    n = 0
+    for j in range(ny):
+        for i in range(nx):
+            features.append(Feature(
+                id=f"guide_hole_{n}", kind="hole", through=True,
+                description="drill guide hole",
+                params={"diameter": hole_d},
+                at=[round(x0 + i * spacing, 3), round(y0 + j * spacing, 3), 0]))
+            n += 1
+
+    assumptions.insert(0, f"{n}× Ø{hole_d}mm guide holes on a {spacing}mm grid "
+                          f"({nx}×{ny}), {margin:g}mm edge margin")
+    return CadPlan(
+        object_type="drill_jig", name="drill jig plate",
+        assumptions=assumptions, features=features,
+        expected=Expected(bbox_mm={"x": length, "y": width, "z": thk},
+                          hole_count=n, through_hole_count=n),
+    )
+
+
 # --- everyday concept-fallback families ------------------------------------
 # These produce a SINGLE connected concept solid (overlapping primitives) for
 # common objects, so a casual prompt yields safe, valid, clearly-labelled concept
@@ -1120,6 +1183,11 @@ _FAMILIES = [
     (lambda t: bool(re.search(r"\bstand\b", t)), _plan_stand),
     (lambda t: (bool(re.search(r"\bhandle\b|\bgrip\b", t)) or "drawer pull" in t
                 or "door pull" in t) and "screwdriver" not in t, _plan_handle_grip),
+    # Drill jigs must be matched BEFORE the generic "plate" rule, otherwise a
+    # "drill jig plate ..." prompt degrades to a blank plate and the guide-hole
+    # grid is silently dropped.
+    (lambda t: bool(re.search(r"\bdrill(?:ing)?\s*(?:jig|template|guide)\b|\bjig\s*plate\b", t)),
+     _plan_drill_jig),
     (lambda t: "plate" in t, _plan_plate),
 ]
 

@@ -375,11 +375,6 @@ class MockLLMProvider(LLMProvider):
 
         return from_prompt(prompt)
 
-    def cad_program(self, prompt: str, feedback: str | None = None):
-        from app.generation.cad_programs import generate_program
-
-        return generate_program(prompt)
-
     def plan_general_cad(self, prompt: str) -> dict | None:
         """Deterministic GeneralCADPlan for a few generic mechanical shapes (the
         SCAD-generator route). Offline stand-in for the real LLM planner."""

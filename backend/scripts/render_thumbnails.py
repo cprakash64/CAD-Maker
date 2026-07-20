@@ -20,9 +20,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # noqa: E402
 
-from app.generation.compiler import compile_prompt  # noqa: E402
-from app.generation.code_sandbox import run_program  # noqa: E402
-from app.generation.cad_programs import generate_program  # noqa: E402
 from app.generation.mesh_analysis import _triangles, analyze_stl  # noqa: E402
 from app.llm.mock_provider import MockLLMProvider  # noqa: E402
 
@@ -70,41 +67,23 @@ def main() -> int:
     provider = MockLLMProvider()
     index = []
     for prompt in PROMPTS:
-        if generate_program(prompt) is not None:
-            out = compile_prompt(prompt, provider)
-            if not (out and out.ok):
-                index.append({"prompt": prompt, "ok": False,
-                              "reason": out.report.summary() if out and out.report else "no program"})
-                continue
-            stl = out.result.stl_bytes
-            family = out.brief.object_family
-            stats = analyze_stl(stl)
-            tris = _triangles(stl)
-            png = OUT / f"{family}.png"
-            _render(tris, png, family)
-            index.append({
-                "prompt": prompt, "ok": True, "family": family, "thumbnail": png.name,
-                "through_holes": stats.through_holes, "components": stats.components,
-                "outer_corners": stats.outer_corner_count, "watertight": stats.watertight,
-                "semantic_passed": out.report.passed,
-            })
-            print(f"  {family:20s} holes={stats.through_holes} comps={stats.components} -> {png.name}")
-        else:  # template path (e.g. crankshaft)
-            from app.parsing.complex_plan import plan_prompt
-            from app.export.exporter import generate
-            r = plan_prompt(prompt)
-            if r.spec is None:
-                index.append({"prompt": prompt, "ok": False, "reason": "no spec"})
-                continue
-            gen = generate(r.spec)
-            stats = analyze_stl(gen.stl_bytes)
-            tris = _triangles(gen.stl_bytes)
-            png = OUT / f"{r.spec.object_type}.png"
-            _render(tris, png, r.spec.object_type)
-            index.append({"prompt": prompt, "ok": True, "family": r.spec.object_type,
-                          "thumbnail": png.name, "through_holes": stats.through_holes,
-                          "components": stats.components})
-            print(f"  {r.spec.object_type:20s} (template) -> {png.name}")
+        # The cadquery_program compiler route was removed (F-1); all
+        # thumbnails now come from the deterministic planner/templates.
+        from app.parsing.complex_plan import plan_prompt
+        from app.export.exporter import generate
+        r = plan_prompt(prompt)
+        if r.spec is None:
+            index.append({"prompt": prompt, "ok": False, "reason": "no spec"})
+            continue
+        gen = generate(r.spec)
+        stats = analyze_stl(gen.stl_bytes)
+        tris = _triangles(gen.stl_bytes)
+        png = OUT / f"{r.spec.object_type}.png"
+        _render(tris, png, r.spec.object_type)
+        index.append({"prompt": prompt, "ok": True, "family": r.spec.object_type,
+                      "thumbnail": png.name, "through_holes": stats.through_holes,
+                      "components": stats.components})
+        print(f"  {r.spec.object_type:20s} (template) -> {png.name}")
 
     (OUT / "index.json").write_text(json.dumps(index, indent=2))
     print(f"Wrote {len(index)} thumbnails + index.json to {OUT}")
