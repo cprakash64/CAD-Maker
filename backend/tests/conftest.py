@@ -23,10 +23,29 @@ from app.database import init_db  # noqa: E402
 
 init_db()
 
+import io  # noqa: E402
 import itertools  # noqa: E402
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
+
+def _make_tiny_png() -> bytes:
+    """A real (decodable) 16×16 PNG for tests that just need a valid raster to
+    pass the upload guard. The offline mock provider classifies drawings from the
+    notes/hint text, not the pixels, so the image content is irrelevant — but the
+    upload guard (correctly) rejects bytes that are not a real image, so tests
+    must carry a genuine one."""
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (16, 16), (210, 210, 210)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# Real PNG bytes shared by the drawing tests (replaces the old fake-byte carrier
+# `b"\x89PNG fake image bytes"`, which the strict upload guard now rejects).
+TINY_PNG = _make_tiny_png()
 
 _email_counter = itertools.count()
 

@@ -9,6 +9,8 @@ decimals, and fidelity keeps assumed-scale builds at REVIEW.
 """
 from __future__ import annotations
 
+from tests.conftest import TINY_PNG
+
 import io
 from pathlib import Path
 
@@ -148,7 +150,7 @@ def test_vision_timeout_still_generates_flanged_branch(client, auth, vision_outa
 def test_vision_timeout_on_unrecognizable_image_still_fails_cleanly(
         client, auth, vision_outage):
     """No pixel evidence + outage → controlled failure (no fabrication)."""
-    r = _post(client, auth, b"\x89PNG fake image bytes")
+    r = _post(client, auth, TINY_PNG)
     out = r.json()
     assert out["generated"] is False and out["design"] is None
 

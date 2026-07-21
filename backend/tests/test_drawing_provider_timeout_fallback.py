@@ -22,6 +22,8 @@ flanged_pipe_branch_sheet.png (multi-view flanged fitting).
 """
 from __future__ import annotations
 
+from tests.conftest import TINY_PNG
+
 import io
 import time
 from pathlib import Path
@@ -216,7 +218,7 @@ def test_sketch_ir_features_not_silently_dropped(client, auth, vision_outage):
 
 def test_no_usable_linework_still_fails_cleanly(client, auth, vision_outage):
     """The ONLY remaining generated=false case: no detectable geometry."""
-    out = _post_sync(client, auth, "noise.png", b"\x89PNG not a real image").json()
+    out = _post_sync(client, auth, "noise.png", TINY_PNG).json()
     assert out["generated"] is False
     assert out["design"] is None
     assert out["message"]

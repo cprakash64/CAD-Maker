@@ -13,6 +13,8 @@ The provided flanged pipe branch drawing is dimensioned in drawing-scale units
 """
 from __future__ import annotations
 
+from tests.conftest import TINY_PNG
+
 import io
 
 from app.drawing.scale import infer_scale
@@ -76,7 +78,7 @@ def _generate(client, auth, hint: str | None = None, body: dict | None = None):
     """One-shot endpoint with a tiny png; mock provider classifies via hint.
     Uses the opt-in sync form (the default is an async 202 + job flow, covered
     by test_drawing_jobs.py)."""
-    files = {"file": ("drawing.png", io.BytesIO(b"\x89PNG fake image bytes"), "image/png")}
+    files = {"file": ("drawing.png", io.BytesIO(TINY_PNG), "image/png")}
     data = {"sync": "true", **({"hint": hint} if hint else {})}
     r = client.post("/api/drawings/generate", files=files, data=data,
                     headers=auth["headers"])

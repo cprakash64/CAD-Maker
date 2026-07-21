@@ -26,24 +26,49 @@ from app.schemas.drawing_spec import (
     DrawingInterpretationSpec,
 )
 from app.services import design_service
+from app.services.upload_guard import (
+    InspectedUpload,
+    UploadRejected,
+    inspect_upload,
+    read_upload_bounded,
+    sanitize_text_field,
+)
+
+
+def _inspect_or_raise(file: UploadFile, data: bytes) -> InspectedUpload:
+    """Run the shared upload gate, mapping a typed rejection to its HTTP status.
+
+    Never leaks internal paths or tracebacks — only the rejection's user-safe
+    message reaches the client."""
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    try:
+        return inspect_upload(data, file.filename, file.content_type)
+    except UploadRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+async def _read_or_raise(file: UploadFile) -> bytes:
+    """Bounded read: refuses to buffer an over-budget body into memory at all."""
+    try:
+        return await read_upload_bounded(file)
+    except UploadRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+def _clean_or_raise(value: str | None, field: str) -> str | None:
+    """Bound and sanitise an untrusted multipart text field."""
+    try:
+        return sanitize_text_field(value, field=field)
+    except UploadRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 router = APIRouter(prefix="/api/drawings", tags=["drawings"])
 # Unprefixed alias router so the endpoint is also reachable at /api/drawing-to-cad.
 alias_router = APIRouter(tags=["drawings"])
 
-_MAX_IMAGE_BYTES = 12 * 1024 * 1024
-
-# Canonical media type per sniffed file type. Derived from the file's own bytes
-# so a client-supplied Content-Type can never mislabel content downstream.
-_MEDIA_TYPE_BY_FILE_TYPE = {
-    "png": "image/png",
-    "jpeg": "image/jpeg",
-    "webp": "image/webp",
-    "pdf": "application/pdf",
-    "svg": "image/svg+xml",
-    "dxf": "image/vnd.dxf",
-}
-_MAX_DRAWING_BYTES = 20 * 1024 * 1024  # PDFs/DXFs run larger than images
+# Upload size/pixel/page/complexity limits and content checks live in the shared
+# app.services.upload_guard gate (used by every drawing endpoint).
 
 
 @router.post("/interpret", response_model=DrawingInterpretationSpec,
@@ -65,23 +90,25 @@ async def interpret(
                 "in development to use the text-hint workaround)."
             ),
         )
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty file")
-    if len(data) > _MAX_IMAGE_BYTES:
-        raise HTTPException(status_code=413, detail="Image too large (max 12 MB)")
-    # Content-sniff before anything parses the bytes. The client's Content-Type
-    # is a hint, never the decision — unsupported content must be rejected
-    # explicitly (415) rather than degrading into an "unknown / low confidence"
-    # interpretation. See docs/production-readiness.md.
-    from app.services.drawing_ingest import UnsupportedDrawingFile, detect_file_type
-
-    try:
-        ftype = detect_file_type(data, file.filename, file.content_type)
-    except UnsupportedDrawingFile as exc:
-        raise HTTPException(status_code=415, detail=str(exc)) from exc
-    media_type = _MEDIA_TYPE_BY_FILE_TYPE.get(ftype, file.content_type or "image/png")
-    interp = interpret_image(data, media_type, hint=hint)
+    hint = _clean_or_raise(hint, "hint")
+    data = await _read_or_raise(file)
+    # Single shared gate: verifies type from bytes, enforces size/pixel/page
+    # limits, decodes rasters, and rejects unsafe SVG/DXF/PDF (413/415/422).
+    inspected = _inspect_or_raise(file, data)
+    # Vision reads rasters and rasterised PDFs. A vector-only upload (SVG/DXF)
+    # on the vision endpoint has no image to interpret — route it to /to-cad.
+    if inspected.is_raster:
+        image_bytes, media_type = inspected.safe_bytes, inspected.media_type
+    elif inspected.file_type == "pdf":
+        from app.services.drawing_ingest import ingest_drawing
+        ing = ingest_drawing(inspected.safe_bytes, file.filename, file.content_type)
+        image_bytes, media_type = ing.image_bytes, ing.media_type or "image/png"
+    else:
+        raise HTTPException(
+            status_code=415,
+            detail=(f"{inspected.file_type.upper()} is a vector drawing — use the "
+                    "Drawing-to-CAD endpoint, which reads vector geometry directly."))
+    interp = interpret_image(image_bytes, media_type, hint=hint)
     log_event(
         "drawing_interpreted",
         suggested_object_type=interp.suggested_object_type,
@@ -122,7 +149,7 @@ def confirm(
     return _to_dto(design, user)
 
 
-@router.get("/jobs/{job_id}")
+@router.get("/jobs/{job_id}", dependencies=[rate_limit("poll")])
 def job_status(job_id: str, user: User = Depends(get_current_user)):
     """Poll a drawing-generation job: {status, stage, progress, message, error,
     design_id, result?}. ``result`` (the full generate/to-cad payload) is
@@ -137,7 +164,7 @@ def job_status(job_id: str, user: User = Depends(get_current_user)):
     return job.to_json()
 
 
-@router.get("/debug/{design_id}")
+@router.get("/debug/{design_id}", dependencies=[rate_limit("read")])
 def sketch_debug(design_id: str, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
     """DEV debug: the reconstructed MechanicalSketchIR for a drawing-built design
@@ -165,7 +192,7 @@ def sketch_debug(design_id: str, db: Session = Depends(get_db),
     }
 
 
-@router.get("/debug/{design_id}/overlay")
+@router.get("/debug/{design_id}/overlay", dependencies=[rate_limit("read")])
 def sketch_debug_overlay(design_id: str, db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
     """DEV debug: the colour-coded detection overlay PNG for a sketch design."""
@@ -226,19 +253,14 @@ async def generate(
     # Provider availability is decided INSIDE the canonical pipeline: an image
     # whose outline is deterministically traceable still generates without a
     # vision provider; only vision-dependent drawings surface the 409.
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty file")
-    if len(data) > _MAX_IMAGE_BYTES:
-        raise HTTPException(status_code=413, detail="Image too large (max 12 MB)")
-    # Sniff content before the pipeline touches it (see /interpret above).
-    from app.services.drawing_ingest import UnsupportedDrawingFile, detect_file_type
-
-    try:
-        ftype = detect_file_type(data, file.filename, file.content_type)
-    except UnsupportedDrawingFile as exc:
-        raise HTTPException(status_code=415, detail=str(exc)) from exc
-    media_type = _MEDIA_TYPE_BY_FILE_TYPE.get(ftype, file.content_type or "image/png")
+    hint = _clean_or_raise(hint, "hint")
+    data = await _read_or_raise(file)
+    # Shared upload gate (see /interpret). The generate pipeline handles raster,
+    # PDF and vector inputs, so any inspected type may proceed; the gate has
+    # already enforced the safety limits and rejected malformed content.
+    inspected = _inspect_or_raise(file, data)
+    data = inspected.safe_bytes
+    media_type = inspected.media_type
 
     if sync:
         job = drawing_jobs.DrawingJob(id="sync", user_id=user.id)
@@ -580,22 +602,20 @@ async def drawing_to_cad(
     from fastapi.responses import JSONResponse
 
     from app.services import drawing_jobs
-    from app.services.drawing_ingest import UnsupportedDrawingFile, detect_file_type
 
     if units not in (None, "", "mm", "inch"):
         raise HTTPException(status_code=422, detail="units must be 'mm' or 'inch'")
     if thickness_mm is not None and not 0 < thickness_mm <= 5000:
         raise HTTPException(status_code=422,
                             detail="thickness_mm must be between 0 and 5000")
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty file")
-    if len(data) > _MAX_DRAWING_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
-    try:
-        detect_file_type(data, file.filename, file.content_type)
-    except UnsupportedDrawingFile as exc:
-        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    notes = _clean_or_raise(notes, "notes")
+    family = _clean_or_raise(family, "family")
+    data = await _read_or_raise(file)
+    # Same shared upload gate as /interpret and /generate — one consistent set of
+    # size/pixel/page/complexity limits and content checks across every drawing
+    # endpoint and the /api/drawing-to-cad alias.
+    inspected = _inspect_or_raise(file, data)
+    data = inspected.safe_bytes
 
     if sync:
         job = drawing_jobs.DrawingJob(id="sync", user_id=user.id)

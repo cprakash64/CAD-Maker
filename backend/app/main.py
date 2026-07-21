@@ -7,11 +7,13 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
 from app.database import init_db
 from app.llm.base import LLMUnavailableError
-from app.observability import log_event
+from app.observability import log_event, logger
+from app.rate_limit import rate_limit
 from app.routers import auth, capabilities, designs, drawings, templates
 
 # Fail fast on unsafe production config (mock provider in prod, default JWT
@@ -26,6 +28,39 @@ async def _llm_unavailable(request: Request, exc: LLMUnavailableError) -> JSONRe
     """Surface AI-provider outages as a clean 503 (never a raw stack trace)."""
     log_event("llm_unavailable", path=request.url.path)
     return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(SQLAlchemyError)
+async def _database_error(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+    """Database faults become a structured 503, never a driver message.
+
+    A raw SQLAlchemy error text carries the failing SQL, table and column names,
+    and often the connection URL — schema and infrastructure disclosure. The
+    full exception is still logged server-side with a traceback; only the
+    generic message crosses the API boundary.
+    """
+    logger.exception("database error on %s", request.url.path)
+    log_event("database_error", path=request.url.path, error_type=type(exc).__name__)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "A database error occurred. Please try again."},
+    )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+    """Last-resort boundary: log the full traceback, return a generic 500.
+
+    This does not swallow anything — the failure is still a 500 and the complete
+    traceback goes to the application log. It only stops the traceback, file
+    paths, and local variables from being rendered into the HTTP response.
+    """
+    logger.exception("unhandled error on %s", request.url.path)
+    log_event("unhandled_error", path=request.url.path, error_type=type(exc).__name__)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error."},
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -86,7 +121,7 @@ def health() -> dict:
     return body
 
 
-@app.get("/api/provider-status")
+@app.get("/api/provider-status", dependencies=[rate_limit("read")])
 def provider_status() -> dict:
     """Capability status the frontend uses to enable/block AI flows.
 
@@ -115,22 +150,41 @@ def provider_status() -> dict:
     else:
         label = "Mock mode — image understanding blocked"
 
-    return {
+    # This route is unauthenticated (the UI calls it before/without a session),
+    # so the payload is split: capability booleans the frontend needs to
+    # enable/block AI flows are always public, while the deployment's internals
+    # — environment, model id, timeouts, retry counts and the operator-facing
+    # remediation text — are only returned in dev_mode. In production those
+    # would tell an anonymous caller which model and configuration to target,
+    # and provider_error names the exact env vars that are unset.
+    body = {
         "provider": provider,
-        "app_env": settings.app_env,
-        "model": model,
         "image_understanding": image_understanding,
         "image_understanding_available": image_understanding,
         "text_generation_available": text_available,
         "structured_outputs_available": structured_available,
         "drawing_to_cad_enabled": settings.drawing_to_cad_enabled(),
-        "mock_allowed": settings.mock_allowed,
-        "provider_error": provider_error,
-        "status_label": label,
-        # Reliability surface. The model id is NOT verified against the provider
-        # at startup; an invalid id degrades through the fallback chain and, if
-        # exhausted, returns a 503 rather than crashing.
-        "request_timeout_seconds": settings.openai_timeout_seconds,
-        "max_retries": settings.openai_max_retries,
         "model_verified": False,
     }
+    if settings.dev_mode:
+        body.update({
+            "app_env": settings.app_env,
+            "model": model,
+            "mock_allowed": settings.mock_allowed,
+            "provider_error": provider_error,
+            "status_label": label,
+            # Reliability surface. The model id is NOT verified against the
+            # provider at startup; an invalid id degrades through the fallback
+            # chain and, if exhausted, returns a 503 rather than crashing.
+            "request_timeout_seconds": settings.openai_timeout_seconds,
+            "max_retries": settings.openai_max_retries,
+        })
+    else:
+        # Enough for the UI to explain itself, with no configuration detail.
+        body["provider_error"] = (
+            None if not provider_error else "AI features are unavailable."
+        )
+        body["status_label"] = (
+            "AI features active" if image_understanding else "AI features unavailable"
+        )
+    return body

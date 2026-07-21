@@ -7,6 +7,8 @@ validation run, STEP/STL exported, critical failures gated.
 """
 from __future__ import annotations
 
+from tests.conftest import TINY_PNG
+
 import io
 from pathlib import Path
 
@@ -163,7 +165,7 @@ def test_units_inch_scales_vector_geometry(client, auth):
 
 def test_image_with_hint_generates(client, auth):
     """Mock provider classifies from the notes text (offline vision stand-in)."""
-    r = _post(client, auth, "plate.png", b"\x89PNG fake image bytes", "image/png",
+    r = _post(client, auth, "plate.png", TINY_PNG, "image/png",
               notes="rectangular mounting plate 90mm long 40mm wide 5mm thick "
                     "with 4 corner holes 5mm")
     assert r.status_code == 200, r.text
@@ -176,7 +178,7 @@ def test_image_with_hint_generates(client, auth):
 def test_unreadable_image_returns_failed_state_with_guidance(client, auth):
     """Mock mode can't read pixels: no hint → graceful failed state (no 5xx),
     with a message telling the user what to do."""
-    r = _post(client, auth, "plate.png", b"\x89PNG fake image bytes", "image/png")
+    r = _post(client, auth, "plate.png", TINY_PNG, "image/png")
     assert r.status_code == 200, r.text
     out = r.json()
     assert out["generated"] is False

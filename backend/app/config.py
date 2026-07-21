@@ -106,12 +106,26 @@ class Settings:
     # "<requests>/<window_seconds>", applied per authenticated user (or per IP
     # when anonymous).
     rate_limit_enabled: bool = False
+    # Honour X-Forwarded-For when keying anonymous limits. Enable ONLY when the
+    # app sits behind a reverse proxy that OVERWRITES the header (nginx
+    # `proxy_set_header X-Forwarded-For $remote_addr`, an ALB, or Cloudflare).
+    # Left off, the direct socket address is used. If it were on by default a
+    # client talking to the app directly could forge a new address per request
+    # and get a fresh rate-limit bucket every time.
+    trust_proxy_headers: bool = False
     rate_limit_auth: str = "10/60"          # login + signup (per IP)
     rate_limit_create: str = "30/60"        # design creation (expensive: CAD gen)
     rate_limit_regenerate: str = "60/60"    # deterministic param rebuilds
     rate_limit_modify: str = "30/60"        # plain-English / localized / circle edits
     rate_limit_drawing: str = "12/60"       # drawing interpretation (vision, costly)
     rate_limit_package: str = "60/60"       # exports, packages, drawing views
+    # Job polling: clients poll roughly once a second while a drawing job runs,
+    # so this is deliberately generous — it exists to stop an unbounded polling
+    # loop, not to pace the normal UI.
+    rate_limit_poll: str = "600/60"
+    # Cheap authenticated reads (design fetch/list/checks/feedback). High enough
+    # to be invisible in normal use, low enough to bound scripted scraping.
+    rate_limit_read: str = "300/60"
     rate_limit_default: str = "120/60"      # fallback for any other category
 
     # LLM provider: "openai" in production, or "mock" (offline, dev/test only).
@@ -315,6 +329,13 @@ class Settings:
         if not _env_is_set("CORS_ORIGINS") or "localhost" in self.cors_origins or "127.0.0.1" in self.cors_origins:
             problems.append(
                 "CORS_ORIGINS must be set to your real frontend origin(s), not localhost."
+            )
+        # A wildcard origin combined with allow_credentials=True (main.py) would
+        # let any site issue authenticated cross-origin calls.
+        if "*" in self.cors_origins:
+            problems.append(
+                "CORS_ORIGINS must not contain '*' — the API sends credentials, "
+                "so every allowed origin has to be named explicitly."
             )
         if "localhost" in self.public_base_url or "127.0.0.1" in self.public_base_url:
             problems.append(

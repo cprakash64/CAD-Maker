@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.cad.families import all_families
+from app.rate_limit import rate_limit
 
 router = APIRouter(prefix="/api", tags=["capabilities"])
 
@@ -86,7 +87,7 @@ _NEEDS_CLARIFICATION_EXAMPLES = [
 ]
 
 
-@router.get("/capabilities")
+@router.get("/capabilities", dependencies=[rate_limit("read")])
 def list_capabilities() -> dict:
     """Return the full CAD family catalog with maturity, examples and limits, plus
     grouped views (production-ready / concept-ready), clarification examples,

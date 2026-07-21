@@ -1,4 +1,5 @@
 """P0-3/5: Drawing-to-CAD correctness (no bad bracket fallback, confidence gating)."""
+from tests.conftest import TINY_PNG
 from app.drawing.interpret import interpret_image, to_design_spec
 from app.export.exporter import generate
 from app.llm.mock_provider import MockLLMProvider
@@ -73,7 +74,7 @@ def test_interpret_with_hint_and_confirm(client, auth):
     h = auth["headers"]
     r = client.post(
         "/api/drawings/interpret",
-        files={"file": ("drawing.png", b"x" * 3000, "image/png")},
+        files={"file": ("drawing.png", TINY_PNG, "image/png")},
         data={"hint": "flanged pipe branch, main pipe 90mm, 8 bolts per flange"},
         headers=h,
     )
@@ -92,7 +93,7 @@ def test_interpret_without_hint_cannot_confirm(client, auth):
     h = auth["headers"]
     r = client.post(
         "/api/drawings/interpret",
-        files={"file": ("complex.png", b"x" * 5000, "image/png")},
+        files={"file": ("complex.png", TINY_PNG, "image/png")},
         headers=h,
     )
     interp = r.json()

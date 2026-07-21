@@ -49,6 +49,7 @@ from app.schemas.editing_spec import (
     LocalizedModificationSpec,
 )
 from app.services.package_service import build_package_zip
+from app.services.upload_guard import safe_download_name
 from app.schemas.api import (
     CheckDTO,
     CreateDesignRequest,
@@ -308,7 +309,7 @@ def export_design(
     return _to_dto(design, user)
 
 
-@router.get("/{design_id}/files/{fmt}")
+@router.get("/{design_id}/files/{fmt}", dependencies=[rate_limit("package")])
 def download_file(
     design_id: str,
     fmt: str,
@@ -338,11 +339,16 @@ def download_file(
     except StorageError as exc:
         raise HTTPException(status_code=404, detail="File missing") from exc
     media = "model/stl" if fmt == "stl" else "application/step"
-    filename = f"{design.object_type or 'part'}.{fmt}"
+    # object_type is free-form text the planner fills in, so it can carry quotes,
+    # semicolons or CR/LF that would break out of the quoted header value.
+    filename = safe_download_name(design.object_type, fmt)
     return Response(
         content=data,
         media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -367,7 +373,11 @@ def get_view(
     except CadGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     media = "image/png" if fmt == "png" else "image/svg+xml"
-    return Response(content=data, media_type=media)
+    # The SVG is rendered server-side from the stored model (never uploaded
+    # bytes), but it is still served from the API origin — nosniff stops a
+    # content-type downgrade from turning it into an active document.
+    return Response(content=data, media_type=media,
+                    headers={"X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/{design_id}/package", dependencies=[rate_limit("package")])
@@ -453,11 +463,14 @@ def download_package(
                if is_assembly else "")
         )
         data = build_files_package(base, files, metadata, readme, extra)
-    name = f"{base}_package.zip"
+    name = safe_download_name(f"{base}_package", "zip", fallback="part_package")
     return Response(
         content=data,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -720,7 +733,8 @@ def face_edit(
     return _to_dto(design, user)
 
 
-@router.post("/{design_id}/checks", response_model=list[CheckDTO])
+@router.post("/{design_id}/checks", response_model=list[CheckDTO],
+             dependencies=[rate_limit("read")])
 def run_design_checks(
     design_id: str,
     db: Session = Depends(get_db),
@@ -736,7 +750,8 @@ def run_design_checks(
     ]
 
 
-@router.post("/{design_id}/feedback", response_model=FeedbackDTO)
+@router.post("/{design_id}/feedback", response_model=FeedbackDTO,
+             dependencies=[rate_limit("read")])
 def submit_feedback(
     design_id: str,
     req: FeedbackRequest,
@@ -750,7 +765,8 @@ def submit_feedback(
     return _feedback_dto(fb)
 
 
-@router.get("/{design_id}/feedback", response_model=Optional[FeedbackDTO])
+@router.get("/{design_id}/feedback", response_model=Optional[FeedbackDTO],
+            dependencies=[rate_limit("read")])
 def get_feedback(
     design_id: str,
     db: Session = Depends(get_db),
@@ -761,7 +777,8 @@ def get_feedback(
     return _feedback_dto(mine) if mine else None
 
 
-@router.get("/{design_id}", response_model=DesignDTO)
+@router.get("/{design_id}", response_model=DesignDTO,
+            dependencies=[rate_limit("read")])
 def get_design(
     design_id: str,
     db: Session = Depends(get_db),
@@ -770,7 +787,8 @@ def get_design(
     return _to_dto(_owned_or_404(db, design_id, user), user)
 
 
-@router.get("", response_model=list[DesignSummaryDTO])
+@router.get("", response_model=list[DesignSummaryDTO],
+            dependencies=[rate_limit("read")])
 def list_designs(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

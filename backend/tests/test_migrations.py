@@ -55,9 +55,14 @@ def test_upgrade_head_creates_full_schema():
 
     # Spot-check the wide Design table's columns survived autogenerate.
     design_cols = {c["name"] for c in insp.get_columns("designs")}
-    for col in ("spec_json", "semantic_json", "program_code", "repair_attempts",
+    for col in ("spec_json", "semantic_json", "repair_attempts",
                 "route", "bounding_box", "thumbnail_key"):
         assert col in design_cols, f"designs.{col} missing from migration"
+    # The legacy model-authored-source column must be gone at head.
+    assert "program_code" not in design_cols, (
+        "designs.program_code is back — executable model output must never be "
+        "persisted (migration b1c4e7a92f38)"
+    )
 
     # The unique email index exists on users.
     user_indexes = {ix["name"] for ix in insp.get_indexes("users")}
@@ -77,6 +82,69 @@ def test_migration_matches_models_no_drift():
         diffs = compare_metadata(ctx, Base.metadata)
     engine.dispose()
     assert diffs == [], f"schema drift between models and migration: {diffs}"
+
+
+def _design_columns(url: str) -> set[str]:
+    engine = create_engine(url)
+    try:
+        return {c["name"] for c in inspect(engine).get_columns("designs")}
+    finally:
+        engine.dispose()
+
+
+def test_program_code_present_at_baseline_then_dropped_by_upgrade():
+    """Prove the drop actually migrates an EXISTING database, not just a fresh one.
+
+    Upgrade to the baseline revision (which still has the column), then upgrade
+    to head and confirm it is gone. This is the path a production database takes.
+    """
+    url = _temp_db()
+    cfg = _config(url)
+
+    command.upgrade(cfg, "7fbf0c6446aa")
+    assert "program_code" in _design_columns(url), "baseline should still have it"
+
+    command.upgrade(cfg, "head")
+    assert "program_code" not in _design_columns(url), "upgrade did not drop the column"
+
+
+def test_downgrade_recreates_only_an_inert_nullable_column():
+    """Downgrade support is retained, but it restores schema shape only — an
+    empty nullable column, never data, an executor, or an API field."""
+    url = _temp_db()
+    cfg = _config(url)
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "7fbf0c6446aa")
+
+    engine = create_engine(url)
+    try:
+        cols = {c["name"]: c for c in inspect(engine).get_columns("designs")}
+        assert "program_code" in cols
+        assert cols["program_code"]["nullable"] is True
+        # Nothing was resurrected into it.
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT program_code FROM designs")).fetchall()
+        assert all(r[0] is None for r in rows)
+    finally:
+        engine.dispose()
+
+
+def test_upgrade_downgrade_upgrade_round_trips():
+    """The migration is re-runnable: head → baseline → head must not error."""
+    url = _temp_db()
+    cfg = _config(url)
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "7fbf0c6446aa")
+    command.upgrade(cfg, "head")
+    assert "program_code" not in _design_columns(url)
+
+
+def test_orm_declares_no_program_column():
+    """The model and the migration must agree that the column is gone."""
+    from app.models import Design
+
+    assert not hasattr(Design, "program_code")
+    assert "program_code" not in Design.__table__.columns
 
 
 def test_downgrade_base_is_clean():

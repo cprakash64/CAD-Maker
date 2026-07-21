@@ -73,15 +73,11 @@ class Design(Base):
     route_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     auto_repaired: Mapped[bool] = mapped_column(default=False)
     export_formats: Mapped[list | None] = mapped_column(SAJSON, nullable=True)
-    # QUARANTINED (see docs/production-readiness.md F-1). This column once held
-    # the model-authored Python that was executed to build the part. That path is
-    # removed: nothing writes this column, nothing reads it, and it is not
-    # exposed through any DTO — a persisted program would be a replay surface.
-    # The mapping is retained only so the ORM matches the existing migration;
-    # dropping it needs its own migration (Phase 2).
+    # NOTE: there is deliberately no column here for model-authored source. The
+    # legacy `program_code` column was dropped in migration b1c4e7a92f38 — a
+    # persisted program is a replay surface, and executable model output is no
+    # longer a supported product artifact. Do not add a replacement field.
     # Enforced by tests/test_phase1_llm_trust_boundary.py.
-    program_code: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Semantic verification of the compiled model.
     semantic_json: Mapped[dict | None] = mapped_column(SAJSON, nullable=True)
     repair_attempts: Mapped[int] = mapped_column(default=0)
     preview_json: Mapped[dict | None] = mapped_column(SAJSON, nullable=True)

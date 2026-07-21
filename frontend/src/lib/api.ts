@@ -507,9 +507,13 @@ export const DRAWING_ASSUMPTIONS_THRESHOLD = 0.45;
 
 export interface ProviderStatus {
   provider: string;
-  app_env: string;
   image_understanding: boolean;
   drawing_to_cad_enabled: boolean;
-  mock_allowed: boolean;
   status_label: string;
+  // Deployment detail — only returned when the backend runs with DEV_MODE on.
+  // Absent in production, so these must be treated as optional.
+  app_env?: string;
+  model?: string;
+  mock_allowed?: boolean;
+  provider_error?: string | null;
 }

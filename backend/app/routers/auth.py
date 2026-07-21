@@ -73,6 +73,6 @@ def login(req: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     )
 
 
-@router.get("/me", response_model=UserDTO)
+@router.get("/me", response_model=UserDTO, dependencies=[rate_limit("read")])
 def me(user: User = Depends(get_current_user)) -> UserDTO:
     return UserDTO(id=user.id, email=user.email)

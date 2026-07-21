@@ -6,6 +6,8 @@ stage/progress until done/failed with the full result payload attached.
 """
 from __future__ import annotations
 
+from tests.conftest import TINY_PNG
+
 import io
 import time
 from pathlib import Path
@@ -31,7 +33,7 @@ def _poll(client, auth, job_id: str) -> dict:
 
 
 def test_generate_returns_202_and_job_completes(client, auth):
-    files = {"file": ("drawing.png", io.BytesIO(b"\x89PNG fake image bytes"), "image/png")}
+    files = {"file": ("drawing.png", io.BytesIO(TINY_PNG), "image/png")}
     r = client.post("/api/drawings/generate", files=files,
                     data={"hint": "flanged pipe branch, 12 holes per flange, "
                                   "90mm main pipe"},
@@ -72,7 +74,7 @@ def test_to_cad_job_reports_progress_stages(client, auth):
 def test_failed_job_lands_in_clean_failed_state(client, auth):
     """An unreadable image (mock provider, no hint) must produce a DONE job with
     generated=false + message — the client exits the generating state cleanly."""
-    files = {"file": ("drawing.png", io.BytesIO(b"\x89PNG fake image bytes"), "image/png")}
+    files = {"file": ("drawing.png", io.BytesIO(TINY_PNG), "image/png")}
     r = client.post("/api/drawings/generate", files=files, headers=auth["headers"])
     assert r.status_code == 202
     job = _poll(client, auth, r.json()["job_id"])
@@ -88,7 +90,7 @@ def test_pipeline_exception_fails_job_with_message(client, auth, monkeypatch):
         raise RuntimeError("kernel exploded")
 
     monkeypatch.setattr(dr, "interpret_image", boom)
-    files = {"file": ("drawing.png", io.BytesIO(b"\x89PNG fake image bytes"), "image/png")}
+    files = {"file": ("drawing.png", io.BytesIO(TINY_PNG), "image/png")}
     r = client.post("/api/drawings/generate", files=files, headers=auth["headers"])
     assert r.status_code == 202
     job = _poll(client, auth, r.json()["job_id"])
@@ -97,7 +99,7 @@ def test_pipeline_exception_fails_job_with_message(client, auth, monkeypatch):
 
 
 def test_job_is_owner_scoped(client, auth, auth2):
-    files = {"file": ("drawing.png", io.BytesIO(b"\x89PNG fake image bytes"), "image/png")}
+    files = {"file": ("drawing.png", io.BytesIO(TINY_PNG), "image/png")}
     r = client.post("/api/drawings/generate", files=files, headers=auth["headers"])
     job_id = r.json()["job_id"]
     r2 = client.get(f"/api/drawings/jobs/{job_id}", headers=auth2["headers"])

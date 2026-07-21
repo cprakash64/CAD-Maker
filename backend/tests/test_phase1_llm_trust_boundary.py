@@ -81,17 +81,22 @@ def test_cad_program_spec_is_gone():
     assert not hasattr(brief, "CADGenerationMode")
 
 
-def test_legacy_program_column_is_never_written_or_read():
-    """`Design.program_code` is the quarantined remnant of the removed executor.
+def test_no_orm_column_can_persist_model_authored_source():
+    """The legacy `Design.program_code` column is dropped (migration
+    b1c4e7a92f38) and no replacement may appear — a persisted program is a
+    replay surface."""
+    from app.models import Design
 
-    It stays mapped only so the ORM matches the shipped migration (dropping it
-    needs its own migration). The invariant that matters is that no application
-    code touches it — a persisted program would be a replay surface.
-    """
+    offenders = [
+        c.key for c in Design.__table__.columns
+        if set(c.key.lower().split("_")) & _SOURCE_FIELD_TOKENS
+    ]
+    assert not offenders, f"Design persists model source in: {offenders}"
+
+
+def test_no_application_code_references_a_program_column():
     offenders: list[str] = []
     for path in _app_sources():
-        if path.name == "models.py":  # the declaration itself
-            continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError):  # pragma: no cover
@@ -100,13 +105,13 @@ def test_legacy_program_column_is_never_written_or_read():
             if isinstance(node, ast.Attribute) and node.attr == "program_code":
                 offenders.append(f"{path.relative_to(APP_ROOT.parent)}:{node.lineno}")
     assert not offenders, (
-        "application code touches the quarantined program_code column:\n"
+        "application code references the removed program_code column:\n"
         + "\n".join(offenders)
     )
 
 
-def test_no_design_is_ever_persisted_with_a_program(client, auth):
-    """End-to-end: generating a part writes no program source to the database."""
+def test_generating_a_part_persists_no_source_bearing_value(client, auth):
+    """End-to-end: a real generation writes nothing source-shaped to the row."""
     from app.database import SessionLocal
     from app.models import Design
 
@@ -116,8 +121,12 @@ def test_no_design_is_ever_persisted_with_a_program(client, auth):
     assert r.status_code == 200, r.text
 
     with SessionLocal() as db:
-        stored = [d.program_code for d in db.query(Design).all()]
-    assert all(v is None for v in stored), "a generated program was persisted"
+        design = db.query(Design).filter(Design.id == r.json()["id"]).one()
+        stored = {c.key for c in Design.__table__.columns}
+    assert not (
+        {tok for col in stored for tok in col.lower().split("_")} & _SOURCE_FIELD_TOKENS
+    )
+    assert not hasattr(design, "program_code")
 
 
 def test_design_dto_does_not_advertise_a_program(client, auth):

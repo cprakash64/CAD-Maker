@@ -15,6 +15,8 @@ job reported generated=false/design_id=null — yet a generic 60×40×6 plate wi
 """
 from __future__ import annotations
 
+from tests.conftest import TINY_PNG
+
 import io
 from pathlib import Path
 
@@ -59,7 +61,7 @@ def test_vision_timeout_returns_generated_false_and_creates_no_design(
         client, auth, vision_outage):
     """Un-traceable image + provider timeout → clean failure, zero designs."""
     before = _design_count(client, auth)
-    r = _post(client, auth, "drawing.png", b"\x89PNG fake image bytes")
+    r = _post(client, auth, "drawing.png", TINY_PNG)
     assert r.status_code == 200, r.text
     out = r.json()
     assert out["generated"] is False
@@ -72,7 +74,7 @@ def test_vision_timeout_with_hint_does_not_fabricate_part(client, auth, vision_o
     """THE regression: guidance text must not become an invented part when the
     provider timed out — the hint describes intent, not the drawing."""
     before = _design_count(client, auth)
-    r = _post(client, auth, "drawing.png", b"\x89PNG fake image bytes",
+    r = _post(client, auth, "drawing.png", TINY_PNG,
               notes="mounting plate 60mm x 40mm x 6mm with 12 holes")
     out = r.json()
     assert out["generated"] is False, "hint fabrication after timeout is forbidden"
@@ -84,7 +86,7 @@ def test_generate_endpoint_shares_the_same_gating(client, auth, vision_outage):
     """/api/drawings/generate is a thin wrapper over the same pipeline."""
     r = client.post(
         "/api/drawings/generate",
-        files={"file": ("drawing.png", io.BytesIO(b"\x89PNG fake image bytes"), "image/png")},
+        files={"file": ("drawing.png", io.BytesIO(TINY_PNG), "image/png")},
         data={"sync": "true", "hint": "bracket with holes"},
         headers=auth["headers"])
     assert r.status_code == 200, r.text
@@ -194,7 +196,7 @@ def test_hint_classified_design_is_never_a_clean_pass(client, auth):
     """Dev-workaround builds (classified from text, not the image) are REVIEW."""
     r = client.post(
         "/api/drawings/generate",
-        files={"file": ("drawing.png", io.BytesIO(b"\x89PNG fake image bytes"), "image/png")},
+        files={"file": ("drawing.png", io.BytesIO(TINY_PNG), "image/png")},
         data={"sync": "true",
               "hint": "flanged pipe branch, 12 holes per flange, 90mm main pipe"},
         headers=auth["headers"])
