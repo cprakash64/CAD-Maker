@@ -16,9 +16,6 @@ os.environ.setdefault("LLM_PROVIDER", "mock")
 os.environ.setdefault("TESTING", "true")
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("DEV_ALLOW_MOCK_DRAWING", "true")
-# Trusted, deterministic mock programs run in-process (still AST-linted) for CI
-# speed. Untrusted LLM code always uses the subprocess sandbox regardless.
-os.environ.setdefault("CADMAKER_SANDBOX", "inprocess")
 
 # Create tables for the isolated test DB (TestClient at module scope does not
 # fire FastAPI startup events).

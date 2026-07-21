@@ -147,7 +147,6 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         semantic_checks=(design.semantic_json or {}).get("checks", []),
         semantic_passed=(design.semantic_json or {}).get("passed"),
         repair_attempts=int(design.repair_attempts or 0),
-        has_program=bool(design.program_code),
         warnings=[
             (f"{c['name'].replace('_', ' ')}: expected {c['expected']}, got {c['actual']}"
              if c.get("expected") is not None

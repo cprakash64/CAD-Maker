@@ -93,7 +93,6 @@ export interface Design {
   semantic_checks: SemanticCheck[];
   semantic_passed: boolean | null;
   repair_attempts: number;
-  has_program: boolean;
   warnings: string[];
   feature_audit: FeatureAuditItem[];
   feature_audit_passed: boolean | null;

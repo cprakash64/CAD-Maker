@@ -1,23 +1,16 @@
-"""v0.5-GEN2 schemas: design brief, CAD program plan, and semantic report.
+"""Design brief and semantic report schemas.
 
-Pipeline: prompt → CADDesignBrief → CADProgramSpec → sandboxed generation →
-SemanticReport → (repair). The LLM emits only validated JSON / restricted code;
-the backend compiles and runs it in a locked sandbox.
+Pipeline: prompt → CADDesignBrief → trusted repository-owned builder →
+SemanticReport. The LLM emits only validated JSON describing *what the part is*;
+it never supplies a program, and there is deliberately no schema field anywhere
+capable of carrying model-authored source (the removed `CADProgramSpec` once
+had `generated_code` / `generated_scad` — see docs/production-readiness.md F-1).
 """
 from __future__ import annotations
 
-from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
-
-
-class CADGenerationMode(str, Enum):
-    precision_template = "precision_template"
-    cadquery_program = "cadquery_program"
-    openscad_program = "openscad_program"
-    feature_graph = "feature_graph"
-    clarification = "clarification"
 
 
 class BriefHole(BaseModel):
@@ -52,22 +45,6 @@ class CADDesignBrief(BaseModel):
     visual_notes: Optional[str] = Field(default=None, max_length=4000)
     missing_noncritical_info: list[str] = Field(default_factory=list)
     missing_critical_info: list[str] = Field(default_factory=list)
-
-
-class CADProgramSpec(BaseModel):
-    """A structured plan for generating the part as code (data only — the code is
-    restricted and sandbox-executed)."""
-
-    generation_mode: CADGenerationMode = CADGenerationMode.cadquery_program
-    kernel: str = Field(default="cadquery", max_length=16)  # cadquery | openscad
-    operations_summary: list[str] = Field(default_factory=list)
-    expected_features: list[str] = Field(default_factory=list)
-    expected_dimensions: dict[str, float] = Field(default_factory=dict)
-    expected_exports: list[str] = Field(default_factory=lambda: ["stl", "step"])
-    generated_code: Optional[str] = Field(default=None, max_length=20000)
-    generated_scad: Optional[str] = Field(default=None, max_length=20000)
-    assumptions: list[str] = Field(default_factory=list)
-    semantic_checks: list[str] = Field(default_factory=list)
 
 
 class SemanticCheck(BaseModel):

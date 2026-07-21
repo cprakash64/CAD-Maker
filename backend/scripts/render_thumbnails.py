@@ -1,6 +1,6 @@
 """Render screenshot/thumbnail regression outputs for the 10 manual prompts.
 
-    CADMAKER_SANDBOX=inprocess python -m scripts.render_thumbnails
+    python -m scripts.render_thumbnails
 
 Compiles each prompt, renders a shaded 3D thumbnail PNG, and writes an index JSON
 with the geometric facts (genus/through-holes, components, profile corners) so a

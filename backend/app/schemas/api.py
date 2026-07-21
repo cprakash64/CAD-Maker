@@ -217,7 +217,6 @@ class DesignDTO(BaseModel):
     semantic_checks: list[dict] = []
     semantic_passed: Optional[bool] = None
     repair_attempts: int = 0
-    has_program: bool = False
     # Assumption-first: non-blocking advisory warnings for a compiled model.
     warnings: list[str] = []
     # Feature-level audit: requested mechanical features vs. the compiled model

@@ -26,3 +26,6 @@ backend/reports/thread_debug/
 
 # Generated drawing/CAD debug artifacts
 backend/eval_reports/drawing_debug/
+
+# Local release-gate output (test/lint/build logs)
+artifacts/

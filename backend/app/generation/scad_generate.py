@@ -1,9 +1,10 @@
 """GeneralCADPlan -> buildable design.
 
-The validated plan is first compiled to a trusted feature graph (CadQuery) so we
-get STL **and** STEP. If the plan needs constructs the feature graph can't
-express and OpenSCAD is installed, we fall back to the sandboxed SCAD runner
-(STL only — STEP is never faked).
+The validated plan is compiled to a trusted feature graph (CadQuery), which is
+the only route to geometry: every primitive kind is checked against
+``_PRIMITIVE_KINDS`` and anything else fails closed. A plan that the feature
+graph cannot express becomes a clarification — there is no code-emitting or
+external-kernel fallback.
 """
 from __future__ import annotations
 

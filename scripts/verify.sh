@@ -8,9 +8,6 @@ cd "$ROOT"
 # verify.sh runs OFFLINE only — force the mock provider so it never makes live
 # API calls (the real OpenAI path is exercised by the opt-in smoke scripts).
 export LLM_PROVIDER=mock APP_ENV=development TESTING=true DEV_ALLOW_MOCK_DRAWING=true
-# Trusted deterministic mock CAD programs run in-process (still AST-linted) for
-# speed; untrusted LLM code always uses the subprocess sandbox.
-export CADMAKER_SANDBOX=inprocess
 
 echo "==> Backend: pytest"
 backend/.venv/bin/python -m pytest -q backend
@@ -205,79 +202,18 @@ DesignSpec(object_type="inline_4_crankshaft", material="forged polished steel st
 Hole(diameter=5, x=0, y=0, hole_type="countersink", countersink_diameter=10, countersink_angle=None)
 # numeric-string coercion from vision
 DesignSpec(object_type="rectangular_bracket", dimensions={"width": "80", "depth": "approx 40mm"})
-# restricted SCAD lint blocks dangerous tokens
-from app.generation.scad_runner import lint_scad
-from app.cad.base import CadGenerationError
-try:
-    lint_scad('include <evil.scad>'); raise SystemExit("SCAD lint did not block include")
-except CadGenerationError:
-    pass
-print("   OK  hex-gear!=pulley; countersink/null & numeric-strings repaired; SCAD lint blocks include")
+print("   OK  hex-gear!=pulley; countersink/null & numeric-strings repaired")
 PY
 
-echo "==> Backend: v0.5-GEN2 CAD compiler — sandbox lint + semantic verification"
-backend/.venv/bin/python - <<'PY'
-import sys; sys.path.insert(0, "backend")
-from app.generation.code_sandbox import lint_code
-from app.cad.base import CadGenerationError
-for bad in ("import os", "open('/x')", "__import__('os')", "exec('x=1')", "x=os.system('ls')"):
-    try:
-        lint_code(bad); raise SystemExit(f"LINT MISS: {bad}")
-    except CadGenerationError:
-        pass
-print("   OK  sandbox AST lint rejects imports/open/exec/os")
+echo "==> Backend: no model-authored code execution (hardening gate)"
+backend/.venv/bin/python -m pytest -q \
+  backend/tests/test_no_model_code_execution.py \
+  backend/tests/test_phase1_security_regressions.py >/dev/null
+echo "   OK  no exec/eval/compile/__import__ in app; no source-returning provider hook; hostile op names + params rejected"
 
-from app.llm.mock_provider import MockLLMProvider
-from app.generation.compiler import compile_prompt
-prov = MockLLMProvider()
-families = {
- "a simple bearing housing for a 20mm shaft": "bearing_housing",
- "a rectangular block with a stepped slot and two counterbored holes": "block_with_slot",
- "a flange plate with 8 holes on a 100mm bolt circle": "flange_plate",
- "a hexagonal gear with a 10mm shaft": "hexagonal_gear",
- "a pulley with a 10mm shaft hole and 60mm outer diameter": "pulley",
- "a shaft collar with an M6 clamp screw": "shaft_collar",
- "a 90 degree pipe elbow with circular flanges": "pipe_elbow",
- "a small vise jaw with two mounting holes and a V groove": "vise_jaw",
- "a motor mounting plate for a NEMA 17 stepper": "motor_mount_plate",
-}
-for prompt, fam in families.items():
-    out = compile_prompt(prompt, prov)
-    assert out and out.ok, f"{prompt}: {out.report.summary() if out and out.report else 'none'}"
-    assert out.report.passed and fam in out.brief.object_family
-    assert len(out.result.stl_bytes) > 0 and out.result.step_bytes[:5] == b"ISO-1"
-print(f"   OK  {len(families)} compiler families generate + pass semantic checks")
-
-# GEOMETRIC (visual-semantic) verification — holes must be visibly cut.
-from app.generation.mesh_analysis import analyze_stl
-from app.generation.semantic_verifier import verify
-from app.schemas.brief import CADDesignBrief, BriefHole, CADProgramSpec
-fp = compile_prompt("a flange plate with 8 holes on a 100mm bolt circle", prov)
-fstats = analyze_stl(fp.result.stl_bytes)
-assert fstats.through_holes >= 9, f"flange plate only genus {fstats.through_holes}"  # 8 holes + bore
-hg = compile_prompt("a hexagonal gear with a 10mm shaft", prov)
-assert analyze_stl(hg.result.stl_bytes).outer_corner_count <= 8, "hex gear is circular!"
-# a plain cylinder that CLAIMS 8 holes must be REJECTED by the geometric verifier
-class _Fake(MockLLMProvider):
-    name = "mock"
-    def cad_program(self, prompt, feedback=None):
-        b = CADDesignBrief(object_type="flange_plate", object_family="flange_plate", bores=[40],
-            holes=[BriefHole(count=8, pattern="bolt_circle", bolt_circle_diameter_mm=100)],
-            required_features=["bolt_circle"])
-        return b, CADProgramSpec(generated_code="result=cq.Workplane('XY').circle(72).extrude(12)\n"
-            "meta={'object_type':'flange_plate','solid_count':1,'holes':8,'feature_counts':{'holes':8}}\n")
-out = compile_prompt("flange plate 8 holes", _Fake(), max_repairs=1)
-assert out is not None and not out.ok, "faked plain cylinder wrongly passed!"
-print("   OK  geometric verify: flange genus>=9, hex!=circle, faked-holes REJECTED")
-
-# real subprocess sandbox produces STL+STEP+metadata (production safety path)
-from app.generation.code_sandbox import run_program
-from app.generation.cad_programs import generate_program
-_, prog = generate_program("a hexagonal spacer with a 6mm through hole")
-stl, step, meta = run_program(prog.generated_code, trusted=False, timeout=60)
-assert len(stl) > 0 and step[:5] == b"ISO-1" and meta["solid_count"] == 1
-print("   OK  subprocess sandbox exports STL+STEP+metadata")
-PY
+echo "==> Backend: geometric (visual-semantic) verification"
+backend/.venv/bin/python -m pytest -q backend/tests/test_geometric_verifier.py >/dev/null
+echo "   OK  geometric verify: holes must be visibly cut; faked hole counts REJECTED"
 
 echo "==> Backend: plain-English -> CAD feature-graph evals (the 10 task prompts)"
 backend/.venv/bin/python -m pytest -q backend/tests/test_plain_english_cad.py >/dev/null
