@@ -1,5 +1,8 @@
 # Python
-backend/.venv/
+# No trailing slash: backend/.venv is a symlink to ~/.venvs/lunaicad-backend
+# on dev machines, not a real directory -- a trailing-slash pattern only
+# matches directories and silently lets a symlink through as untracked.
+backend/.venv
 __pycache__/
 *.pyc
 backend/cadmaker.db
@@ -26,6 +29,12 @@ backend/reports/thread_debug/
 
 # Generated drawing/CAD debug artifacts
 backend/eval_reports/drawing_debug/
+
+# Loose, uncurated one-off eval scratch runs (top-level eval_reports/ only --
+# curated milestone snapshots live in eval_reports/baseline_phase*/ and stay
+# tracked; see docs/release-change-inventory.md Step 3/18)
+backend/eval_reports/generation_regression_mock_*.json
+backend/eval_reports/semantic_benchmark_mock_*.json
 
 # Local release-gate output (test/lint/build logs)
 artifacts/
