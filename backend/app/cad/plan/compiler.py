@@ -468,13 +468,41 @@ def _csk_cbore_tools(f: Feature, base: cq.Workplane) -> tuple[cq.Workplane, int]
 def _apply_fillet(f: Feature, base: cq.Workplane, warnings: list[str]) -> cq.Workplane:
     r = _require(f.p("radius", 0, "size", "r"), "fillet radius")
     sel = (f.description or "vertical").lower()
-    selector = ">Z and |Z" if "top" in sel else ("|Z" if "vert" in sel else "")
+    # Default to VERTICAL edges unless the description is unambiguous about
+    # something else. A plate/box base + an unqualified "rounded corners"
+    # fillet feature (e.g. from a drawing's traced outer profile) almost
+    # always means the classic rounded-RECTANGLE cross-section -- round the
+    # side edges, leave the top/bottom faces crisp. Filleting EVERY edge
+    # (the previous default when the description didn't happen to contain
+    # "top"/"vert") also rounds the top/bottom edges, which for anything
+    # thinner than ~2x the radius overlaps itself and produces a
+    # self-intersecting/invalid solid (confirmed: an 80x60x6mm plate with a
+    # 5mm all-edges fillet fails cadquery's own isValid() check, while the
+    # same fillet restricted to vertical edges is valid). "all edges" is
+    # kept as an explicit opt-in for the rare case that genuinely wants it.
+    if "top" in sel:
+        selector = ">Z and |Z"
+    elif "all" in sel:
+        selector = ""
+    else:
+        selector = "|Z"
     try:
         edges = base.edges(selector) if selector else base.edges()
-        return edges.fillet(r)
+        filleted = edges.fillet(r)
     except Exception as exc:  # noqa: BLE001 - keep the body, warn
         warnings.append(f"fillet r={r} skipped: {exc}")
         return base
+    # cadquery's .fillet() can return a Workplane wrapping an INVALID solid
+    # (self-intersecting) without raising -- verified empirically for the
+    # over-broad "all edges" case above. Catch that here too, not only at
+    # export time, so a bad fillet degrades to "skipped" (still a buildable,
+    # correct-elsewhere part) rather than poisoning the whole compile.
+    solid = filleted.val()
+    if hasattr(solid, "isValid") and not solid.isValid():
+        warnings.append(f"fillet r={r} selector={selector or 'all'} produced an "
+                        "invalid solid -- skipped")
+        return base
+    return filleted
 
 
 def _apply_chamfer(f: Feature, base: cq.Workplane, warnings: list[str]) -> cq.Workplane:

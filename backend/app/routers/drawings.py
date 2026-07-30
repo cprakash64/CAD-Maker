@@ -1623,29 +1623,104 @@ def _audit_state(design) -> tuple[bool, list[str]]:
     return bool(audit.get("passed")), fails
 
 
+def _drawing_semantic_contract_state(design, interp: DrawingInterpretationSpec) -> tuple[bool, list[str]]:
+    """Strategy-agnostic semantic check, run for EVERY design that reaches
+    here regardless of which strategy built it (template, feature-graph, or
+    the generic prompt route) -- unlike ``_audit_state`` below, which only
+    means anything for feature-graph designs (it silently no-ops for a
+    template-built design, since those never populate ``feature_audit``).
+
+    That silent no-op is exactly how a real bug slipped through once: a
+    vector-parsed drawing whose primary CadPlan compile produced a
+    self-intersecting solid fell back to this function's caller, built a
+    perfectly plausible-looking template part, and was marked fully
+    successful with no hole-count check ever recorded or verified --
+    because feature-graph-shaped validation was the only kind that existed.
+
+    Always records an observable "hole_count" check on the design (pass OR
+    fail) so a fallback can never again succeed silently with no validation
+    record -- see docs/release-change-inventory.md Blocker 2.
+
+    Deliberately SKIPPED (recorded as passed, not compared) for
+    ``_FLANGED_FAMILIES``: a flanged/pipe-branch part legitimately multiplies
+    one bolt-circle callout's count across 2-3 flanges (top/bottom/branch),
+    so a naive "total holes in the drawing == total holes built" comparison
+    is not just wrong but SYSTEMATICALLY wrong for this family (measured
+    2026-07-30: a 12-bolt callout correctly builds 39 holes across 3
+    flanges + bores, which naive summing misreads as a failure). These
+    families already have dedicated, topology-aware validation
+    (``validate_pipe_branch`` in app.cad.plan.validate, ``_audit_state``
+    below, ``_annotate_pipe_branch``) -- this generic check would only ever
+    be a false positive here, never a real catch."""
+    is_flanged = (getattr(design, "object_type", None) in _FLANGED_FAMILIES
+                  or interp.suggested_object_type in _FLANGED_FAMILIES)
+    expected = (sum(h.count for h in interp.holes) if interp.holes and not is_flanged
+                else None)
+    measured = ((design.semantic_json or {}).get("dimension_report") or {}).get("measured") or {}
+    actual = measured.get("hole_count")
+    # Nothing to compare against (interp carried no hole callouts, this
+    # design type doesn't populate a measured hole count, or it's a flanged/
+    # pipe family where per-flange multiplication makes a flat total
+    # meaningless) -- not a failure, just nothing this check can assert.
+    passed = expected is None or actual is None or actual == expected
+    semantic = dict(design.semantic_json or {"checks": [], "passed": True})
+    semantic.setdefault("checks", [])
+    semantic["checks"] = [
+        c for c in semantic["checks"] if c.get("name") != "hole_count"
+    ] + [{
+        "name": "hole_count", "passed": passed,
+        "expected": expected, "actual": actual,
+        "severity": "critical",
+    }]
+    design.semantic_json = semantic
+    fails = []
+    if not passed:
+        fails.append(f"hole_count: the drawing shows {expected} hole(s), "
+                     f"the built model has {actual}")
+    return passed, fails
+
+
+def _combined_drawing_audit_state(design, interp: DrawingInterpretationSpec) -> tuple[bool, list[str]]:
+    """AND of the feature-graph audit (when applicable) and the strategy-
+    agnostic semantic contract (always applicable) -- the fallback path must
+    satisfy the same required assertions as the primary strategy, not a
+    strict subset of them."""
+    fg_passed, fg_fails = _audit_state(design)
+    sc_passed, sc_fails = _drawing_semantic_contract_state(design, interp)
+    return (fg_passed and sc_passed), (fg_fails + sc_fails)
+
+
 def _require_drawing_accuracy(db: Session, design, interp: DrawingInterpretationSpec,
                               scaled: ScaledDrawing, prompt: str) -> None:
-    """Drawing mode: a failed required-feature audit is an ERROR, not a warning.
+    """Drawing mode: a failed required-feature audit OR semantic contract is
+    an ERROR, not a warning.
 
     The planner already repaired once; here we rebuild from the deterministic
     fallback (structured drawing spec for pipe branches, deterministic planner
-    otherwise). If the fallback can't pass either, delete the design and refuse
-    with diagnostics — never show a wrong model for a drawing."""
+    otherwise). If the fallback can't pass either -- checked against the SAME
+    combined audit, not just the feature-graph one -- delete the design and
+    refuse with diagnostics. Never show a wrong or unverified model as a
+    drawing's "success", and never publish downloadable exports for it."""
     from app.drawing.fallback import drawing_fallback_plan
 
     if design.clarification_question:
         return  # engine asked a fatal question; nothing was generated
-    passed, fails = _audit_state(design)
+    passed, fails = _combined_drawing_audit_state(design, interp)
     if passed:
+        db.commit()  # persist the recorded hole_count check even on the pass path
         return
     fallback = drawing_fallback_plan(interp, scaled, prompt)
     if fallback is not None and design_service.rebuild_design_from_plan(
             db, design, fallback, prompt):
-        log_event("drawing_fallback_rebuild", design_id=design.id,
-                  object_type=design.object_type, ok=True)
-        return
-    passed_after, fails_after = _audit_state(design)
+        passed_after, fails_after = _combined_drawing_audit_state(design, interp)
+        if passed_after:
+            db.commit()
+            log_event("drawing_fallback_rebuild", design_id=design.id,
+                      object_type=design.object_type, ok=True)
+            return
+    passed_after, fails_after = _combined_drawing_audit_state(design, interp)
     if passed_after:
+        db.commit()
         return
     detail = ("Could not generate accurate CAD from this drawing — the model "
               "is missing required features even after repair and deterministic "

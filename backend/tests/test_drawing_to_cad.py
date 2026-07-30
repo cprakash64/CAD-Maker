@@ -331,3 +331,192 @@ def test_analysis_shape_is_stable(client, auth):
                 "clarification_questions", "dimension_annotations"):
         assert key in a, f"missing analysis key {key}"
     assert a["features"].keys() >= {"through_holes", "patterns", "slots"}
+
+
+# --------------------------------------------------- fallback semantic contract
+# Regression coverage for the release-candidate stabilization fix: a drawing
+# whose PRIMARY CadPlan compile fails (e.g. self-intersecting geometry) used
+# to fall back to a lower-fidelity path that never verified or recorded
+# hole-count validation. See docs/release-change-inventory.md Blocker 2.
+
+def test_fillet_all_edges_of_a_thin_plate_is_no_longer_self_intersecting():
+    """Root cause of the original bug: an 80x60x6mm plate with an
+    unqualified ("rounded corners", no "vertical"/"top" keyword) 5mm fillet
+    used to fillet ALL 12 box edges, including the top/bottom edges of the
+    6mm-thin cross-section -- geometrically impossible at that radius,
+    producing an invalid (self-intersecting) solid. The compiler must now
+    default an ambiguous fillet description to vertical-edges-only."""
+    import cadquery as cq
+
+    from app.cad.plan.compiler import _apply_fillet
+    from app.cad.plan.schema import Feature, FeatureKind
+
+    base = cq.Workplane("XY").box(80, 60, 6, centered=(True, True, False))
+    f = Feature(id="corner_fillet", kind=FeatureKind.fillet, op="add",
+                description="rounded corners from the drawing",
+                params={"radius": 5.0})
+    warnings: list[str] = []
+    result = _apply_fillet(f, base, warnings)
+    assert not warnings, f"fillet should succeed cleanly, got warnings: {warnings}"
+    assert result.val().isValid(), "filleted plate must be a valid solid"
+
+
+def test_fillet_explicit_all_edges_still_honored_but_falls_back_safely():
+    """"all edges" stays an explicit opt-in (not removed), but a fillet that
+    would produce an invalid solid must degrade to "skipped" (a warning, the
+    base shape kept) rather than silently returning corrupt geometry."""
+    import cadquery as cq
+
+    from app.cad.plan.compiler import _apply_fillet
+    from app.cad.plan.schema import Feature, FeatureKind
+
+    base = cq.Workplane("XY").box(80, 60, 6, centered=(True, True, False))
+    f = Feature(id="f", kind=FeatureKind.fillet, op="add",
+                description="fillet all edges", params={"radius": 5.0})
+    warnings: list[str] = []
+    result = _apply_fillet(f, base, warnings)
+    assert warnings, "an invalid all-edges fillet must be reported, not silently accepted"
+    assert result.val().isValid()
+
+
+def _make_interp(hole_count: int, hole_diameter: float = 6.0):
+    from app.schemas.drawing_spec import DrawingHoleCalloutSpec, DrawingInterpretationSpec
+
+    return DrawingInterpretationSpec(
+        suggested_object_type="adapter_plate",
+        overall_confidence=0.9,
+        units="mm",
+        holes=[DrawingHoleCalloutSpec(diameter=hole_diameter, count=hole_count)],
+    )
+
+
+def _make_design_stub(*, measured_hole_count, clarification_question=None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        clarification_question=clarification_question,
+        semantic_json={"checks": [], "dimension_report": {
+            "measured": {"hole_count": measured_hole_count}}},
+    )
+
+
+def test_semantic_contract_passes_when_measured_matches_drawing():
+    from app.routers.drawings import _drawing_semantic_contract_state
+
+    interp = _make_interp(hole_count=5)
+    design = _make_design_stub(measured_hole_count=5)
+    passed, fails = _drawing_semantic_contract_state(design, interp)
+    assert passed and not fails
+    checks = design.semantic_json["checks"]
+    hole_checks = [c for c in checks if c["name"] == "hole_count"]
+    assert len(hole_checks) == 1
+    assert hole_checks[0]["passed"] is True
+    assert hole_checks[0]["expected"] == 5
+    assert hole_checks[0]["actual"] == 5
+
+
+def test_semantic_contract_fails_when_fallback_undercounts_holes():
+    """The exact class of bug this fix closes: a fallback path builds SOME
+    plausible geometry, but with the wrong hole count relative to what the
+    drawing actually showed."""
+    from app.routers.drawings import _drawing_semantic_contract_state
+
+    interp = _make_interp(hole_count=5)
+    design = _make_design_stub(measured_hole_count=3)  # fallback dropped 2 holes
+    passed, fails = _drawing_semantic_contract_state(design, interp)
+    assert not passed
+    assert fails and "hole_count" in fails[0]
+    hole_checks = [c for c in design.semantic_json["checks"] if c["name"] == "hole_count"]
+    assert len(hole_checks) == 1
+    assert hole_checks[0]["passed"] is False
+    assert hole_checks[0]["expected"] == 5
+    assert hole_checks[0]["actual"] == 3
+
+
+def test_semantic_contract_check_is_not_duplicated_on_repeated_calls():
+    """Called once before a fallback rebuild and once after -- must not
+    accumulate duplicate check entries (no silent fallback without a SINGLE
+    observable validation record)."""
+    from app.routers.drawings import _drawing_semantic_contract_state
+
+    interp = _make_interp(hole_count=5)
+    design = _make_design_stub(measured_hole_count=3)
+    _drawing_semantic_contract_state(design, interp)
+    _drawing_semantic_contract_state(design, interp)
+    hole_checks = [c for c in design.semantic_json["checks"] if c["name"] == "hole_count"]
+    assert len(hole_checks) == 1
+
+
+def test_semantic_contract_is_a_noop_when_nothing_to_compare():
+    """A clarification-only design or an interp with no hole callouts has
+    nothing this check can assert -- must not be a false failure."""
+    from app.routers.drawings import _drawing_semantic_contract_state
+    from app.schemas.drawing_spec import DrawingInterpretationSpec
+
+    interp = DrawingInterpretationSpec(
+        suggested_object_type="adapter_plate", overall_confidence=0.9,
+        units="mm", holes=[])  # no callouts at all -- nothing to compare against
+    design = _make_design_stub(measured_hole_count=3)
+    passed, fails = _drawing_semantic_contract_state(design, interp)
+    assert passed and not fails
+
+
+def test_fallback_path_forced_still_records_and_passes_hole_count_check(client, auth, monkeypatch):
+    """Force the ORIGINAL bug's exact trigger condition (primary CadPlan
+    compile fails) via monkeypatch, independent of any specific geometry
+    edge case, and confirm the fallback path now (a) still builds correctly
+    and (b) records and passes an explicit hole_count check -- proving the
+    validation contract applies to the fallback strategy too, not just the
+    primary one."""
+    from app.cad.base import CadGenerationError
+    from app.services import design_service
+
+    def _always_fail(*a, **k):
+        raise CadGenerationError("forced failure for fallback-path testing")
+
+    monkeypatch.setattr(design_service, "create_design_from_plan", _always_fail)
+
+    svg = (DATA / "simple_adapter_plate.svg").read_bytes()
+    r = _post(client, auth, "simple_adapter_plate.svg", svg)
+    assert r.status_code == 200, r.text
+    d = r.json()["design"]
+    hole_checks = [c for c in d["semantic_checks"] if c["name"] == "hole_count"]
+    assert hole_checks, "the fallback path must record an observable hole_count check"
+    assert all(c["passed"] for c in hole_checks), (
+        "the fallback correctly preserved all 5 holes from the drawing")
+
+
+def test_export_blocked_and_user_facing_error_when_drawing_generation_rejected(
+        client, auth, monkeypatch):
+    """When even the deterministic fallback can't satisfy the semantic
+    contract, the design must be deleted (no downloadable export possible)
+    and the user gets a clear, non-internal error message."""
+    from app.cad.base import CadGenerationError
+    from app.drawing import fallback as fallback_mod
+    from app.routers import drawings as drawings_router
+    from app.services import design_service
+
+    def _always_fail_primary(*a, **k):
+        raise CadGenerationError("forced failure for fallback-rejection testing")
+
+    def _always_fails_combined_audit(design, interp):
+        return False, ["hole_count: the drawing shows 5 hole(s), the built model has 0"]
+
+    # Force the PRIMARY path to fail too, or this fixture (geometry now
+    # fixed) never reaches _generate_from_interpretation /
+    # _require_drawing_accuracy at all -- the code path this test targets.
+    monkeypatch.setattr(design_service, "create_design_from_plan", _always_fail_primary)
+    monkeypatch.setattr(drawings_router, "_combined_drawing_audit_state",
+                        _always_fails_combined_audit)
+    # drawing_fallback_plan is imported locally inside _require_drawing_accuracy
+    # (from app.drawing.fallback import drawing_fallback_plan) -- patch it at
+    # its source module, not on drawings_router, or the patch has no effect.
+    monkeypatch.setattr(fallback_mod, "drawing_fallback_plan", lambda *a, **k: None)
+
+    svg = (DATA / "simple_adapter_plate.svg").read_bytes()
+    r = _post(client, auth, "simple_adapter_plate.svg", svg)
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert "hole_count" in detail or "missing required features" in detail
+    # No internal trace/stack leaked to the user-facing error.
+    assert "Traceback" not in detail and "File \"" not in detail
