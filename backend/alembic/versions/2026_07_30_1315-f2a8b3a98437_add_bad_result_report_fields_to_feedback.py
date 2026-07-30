@@ -22,15 +22,40 @@ def upgrade() -> None:
     # NOTE: autogenerate also proposed dropping designs.program_code here --
     # that's stale local-dev-db drift (already handled by migration
     # b1c4e7a92f38), not a real model change. Removed from this revision.
+    #
+    # is_bad_result_report / report_consent are NOT NULL booleans on an
+    # EXISTING table -- on Postgres, ADD COLUMN ... NOT NULL with no default
+    # fails outright as soon as `feedback` has any existing rows (SQLite's
+    # more permissive batch-rebuild path let this slip past local dev/test,
+    # see docs/release-change-inventory.md Step 5). Both columns' model-level
+    # Python default is False (app/models.py) and every existing feedback
+    # row predates the "report a bad result" feature entirely -- it was
+    # never a bad-result report and never had consent recorded, so
+    # backfilling both to False is the exact, honest historical value, not
+    # a guess. Same server_default-then-drop pattern already used correctly
+    # in migration 0db7d6dd7f9b for users.data_improvement_opt_in.
     with op.batch_alter_table('feedback', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('is_bad_result_report', sa.Boolean(), nullable=False))
+        batch_op.add_column(sa.Column(
+            'is_bad_result_report', sa.Boolean(), nullable=False,
+            server_default=sa.false(),
+        ))
         batch_op.add_column(sa.Column('design_version_number', sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column('prompt_version', sa.String(length=32), nullable=True))
         batch_op.add_column(sa.Column('validation_snapshot', sa.JSON(), nullable=True))
         batch_op.add_column(sa.Column('print_success', sa.Boolean(), nullable=True))
         batch_op.add_column(sa.Column('fit_success', sa.Boolean(), nullable=True))
-        batch_op.add_column(sa.Column('report_consent', sa.Boolean(), nullable=False))
+        batch_op.add_column(sa.Column(
+            'report_consent', sa.Boolean(), nullable=False,
+            server_default=sa.false(),
+        ))
         batch_op.add_column(sa.Column('report_reason', sa.Text(), nullable=True))
+
+    # Drop the server defaults after backfill so the ORM's Python-side
+    # default (also False) governs new rows going forward -- matches
+    # 0db7d6dd7f9b exactly.
+    with op.batch_alter_table('feedback', schema=None) as batch_op:
+        batch_op.alter_column('is_bad_result_report', server_default=None)
+        batch_op.alter_column('report_consent', server_default=None)
 
     # ### end Alembic commands ###
 
