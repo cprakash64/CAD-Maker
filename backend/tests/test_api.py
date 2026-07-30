@@ -136,5 +136,5 @@ def test_list_and_templates(client, auth):
     # + square_nut + bolt + threaded_rod + shaft_coupler + timing_pulley_gt2
     # + rpi4_enclosure + rpi5_enclosure + board_enclosure + motor_mount
     # + bearing_holder + generic_fitted_box + phone_holder + tire + rim
-    # + wheel_assembly
-    assert len(t.json()) == 28
+    # + wheel_assembly = 28, + 10 physical-calibration coupons (docs/calibration.md)
+    assert len(t.json()) == 38

@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -44,6 +45,13 @@ class GenerationResult:
     selectable_holes: list[dict] = field(default_factory=list)
     selectable_bodies: list[dict] = field(default_factory=list)
     selectable_features: list[dict] = field(default_factory=list)
+    # Timing breakdown (ms) for observability (docs/ops/observability.md):
+    # compile = build_solid + bbox/volume/area; export = STL/STEP/tessellate/
+    # selectable metadata. design_service adds its own validate_ms around the
+    # post-generate dimension-report/manufacturability checks, which happen
+    # outside this function.
+    compile_ms: float = 0.0
+    export_ms: float = 0.0
 
 
 def spec_hash(spec: DesignSpec) -> str:
@@ -133,6 +141,28 @@ def mesh_only(spec: DesignSpec, tolerance: float = 0.2) -> PreviewMesh:
     return _tessellate(build_solid(spec), tolerance)
 
 
+def _assert_valid_solid(solid: "cq.Workplane", context: str) -> None:
+    """Refuse to export a broken BRep. Every geometry-producing pipeline
+    (templates/feature-graph via ``generate()``, the CadPlan compiler and
+    assembly/frame builds via ``export_solid()`` in ``app.cad.plan.compiler``)
+    must call this before any STL/STEP bytes are written, so a
+    self-intersecting or corrupt solid can never reach storage as a fake
+    "exported" file. Cheap (a single OCCT BRep check) — safe to run
+    unconditionally on every generation, not just gated object types."""
+    try:
+        shape = solid.val() if hasattr(solid, "val") else solid
+        valid = bool(shape.isValid())
+    except Exception as exc:  # noqa: BLE001 - a crash IS an invalid shape
+        raise CadGenerationError(
+            f"Geometry for {context} could not be validated as a solid: {exc}"
+        ) from exc
+    if not valid:
+        raise CadGenerationError(
+            f"Geometry for {context} is not a valid solid (self-intersecting or "
+            "corrupt BRep) — refusing to export broken CAD."
+        )
+
+
 # Complex precision templates whose output must pass ground-truth topology
 # validation (valid BRep, single fused body, non-degenerate) before export —
 # a crankshaft with unfused journals/webs must be REJECTED, not downloaded.
@@ -219,9 +249,11 @@ def _extract_selectable_metadata(solid, spec, bbox: dict) -> dict:
 
 
 def generate(spec: DesignSpec) -> GenerationResult:
+    _compile_start = time.perf_counter()
     # build_solid handles both templates and the feature-graph fallback, and
     # converts kernel failures into CadGenerationError.
     solid = build_solid(spec)
+    _assert_valid_solid(solid, spec.object_type)
     bb = solid.val().BoundingBox()
     bbox = {"x": round(bb.xlen, 3), "y": round(bb.ylen, 3), "z": round(bb.zlen, 3)}
     try:
@@ -232,6 +264,8 @@ def generate(spec: DesignSpec) -> GenerationResult:
         surface_area_mm2 = round(float(solid.val().Area()), 3)
     except Exception:  # noqa: BLE001
         surface_area_mm2 = 0.0
+    compile_ms = round((time.perf_counter() - _compile_start) * 1000, 2)
+    _export_start = time.perf_counter()
     # Modeled threads are fine helical features: a coarse mesh hides the thread
     # and tears the surface open, so export the STL (and preview) at the thread
     # tessellation tolerance. STEP is BRep and always carries the modeled thread.
@@ -280,6 +314,7 @@ def generate(spec: DesignSpec) -> GenerationResult:
     # Phase 5/6 selectable metadata — advisory, best-effort, and bounded by a hard
     # timeout so slow/hanging BRep inspection can NEVER block a basic generation.
     selectable = _extract_selectable_metadata(solid, spec, bbox)
+    export_ms = round((time.perf_counter() - _export_start) * 1000, 2)
 
     return GenerationResult(
         spec_hash=spec_hash(spec),
@@ -290,6 +325,8 @@ def generate(spec: DesignSpec) -> GenerationResult:
         features=features,
         volume_mm3=volume_mm3,
         surface_area_mm2=surface_area_mm2,
+        compile_ms=compile_ms,
+        export_ms=export_ms,
         selectable_faces=selectable["faces"],
         selectable_edges=selectable["edges"],
         selectable_holes=selectable["holes"],

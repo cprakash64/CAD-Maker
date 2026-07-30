@@ -32,6 +32,7 @@ from app.schemas.drawing_analysis import (
     normalize_family,
 )
 from app.schemas.drawing_spec import (
+    PIPE_BRANCH_DETERMINISTIC_FAMILIES,
     DrawingAssumption,
     DrawingHoleCalloutSpec,
     DrawingInterpretationSpec,
@@ -244,10 +245,29 @@ def _apply_family_and_depth(
             analysis.assume(f"Depth {depth:g}mm read from a drawing annotation")
     if not depth:
         depth = default_depth_mm(fam)
-        analysis.assume(
-            f"The drawing does not show a depth/thickness — assumed "
-            f"{depth:g}mm (typical for a {fam.replace('_', ' ')})")
-        analysis.ambiguities.append("missing depth")
+        # Pipe/flange/branch families are a pre-existing, deliberate exception
+        # (see the "PART G" comment in app.routers.drawings): this whole
+        # family is built from proportional estimates (wall/PCD/flange
+        # thickness/branch length) as a documented, accepted characteristic,
+        # capped at "review" rather than "failed" -- unlike a flat part's
+        # primary Z-depth, which genuinely defines the whole solid and has no
+        # such family-level allowance.
+        if fam in PIPE_BRANCH_DETERMINISTIC_FAMILIES:
+            analysis.assume(
+                f"The drawing does not show a depth/thickness — assumed "
+                f"{depth:g}mm (typical for a {fam.replace('_', ' ')}); pipe/"
+                f"flange dimensions are routinely estimated from drawing "
+                f"proportions for this family (review, not a hard block).")
+            analysis.ambiguities.append("missing depth")
+        else:
+            analysis.assume(
+                f"The drawing does not show a depth/thickness — assumed "
+                f"{depth:g}mm (typical for a {fam.replace('_', ' ')}). This is "
+                f"a CRITICAL unresolved dimension: the final export is "
+                f"blocked until a real thickness is confirmed (upload a "
+                f"clearer drawing, or resubmit with an explicit thickness "
+                f"override).")
+            analysis.mark_critical_ambiguity("depth", "missing depth")
     analysis.inferred_depth_mm = depth
     analysis.overall_dimensions.depth_mm = analysis.overall_dimensions.depth_mm or depth
 
@@ -698,6 +718,14 @@ def to_interpretation(analysis: DrawingToCADAnalysis) -> DrawingInterpretationSp
         for p in analysis.features.patterns
     ]
     fam = analysis.recommended_family or "generic_extruded_part"
+    from app.schemas.drawing_spec import UnresolvedDimension
+
+    unresolved = [
+        UnresolvedDimension(field=cat, category=cat, reason="missing",
+                            detail=f"'{cat}' was not shown on the source drawing",
+                            critical=True)
+        for cat in analysis.critical_ambiguities
+    ]
     return DrawingInterpretationSpec(
         title=analysis.title,
         units="mm",
@@ -707,6 +735,7 @@ def to_interpretation(analysis: DrawingToCADAnalysis) -> DrawingInterpretationSp
         holes=holes,
         assumptions=[DrawingAssumption(field="drawing", assumption=a)
                      for a in analysis.assumptions],
+        unresolved_dimensions=unresolved,
         overall_confidence=max(analysis.confidence_score, 0.5),
         drawing_units_confidence=analysis.scale_confidence,
     )

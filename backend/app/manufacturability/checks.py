@@ -62,6 +62,56 @@ def _plate_extent_mm(spec: DesignSpec) -> tuple[float, float] | None:
         return None
 
 
+# object_type -> (measurement_type, feature, fit_class) for the ONE fit value
+# that most drives that family's geometry. Kept intentionally small: this is
+# a provenance SURFACE, not a re-implementation of every template's fit logic.
+# NOTE: calibration_mechanism_coupon is deliberately NOT here -- its provenance
+# is resolved with real DB access and reported directly by
+# app.routers.calibration.generate_coupon (as a design assumption), which
+# this DB-less heuristic cannot see and would otherwise misreport as "generic
+# estimate" even when a real validated profile was actually used.
+_CALIBRATION_RELEVANT_OBJECT_TYPES: dict[str, tuple[str, str, str | None]] = {
+    "bearing_holder": ("diametral_clearance", "bearing_seat", None),  # fit_class read from spec
+    "phone_holder": ("diametral_clearance", "holder_case_clearance", "normal"),
+}
+
+
+def _calibration_provenance_check(spec: DesignSpec) -> "CheckResult | None":
+    """Surface WHERE this design's fit-critical clearance came from: a named,
+    physically-validated calibration profile, or the generic estimate
+    (docs/calibration.md) — never leave that provenance implicit."""
+    entry = _CALIBRATION_RELEVANT_OBJECT_TYPES.get(spec.object_type)
+    if entry is None:
+        return None
+    from app.cad.calibration.resolver import resolve_measurement
+    from app.schemas.calibration import CalibrationMeasurementType, FitClass
+
+    measurement_type, feature, fit_class = entry
+    if spec.object_type == "bearing_holder":
+        clr = spec.dimensions.get("fit_clearance", 0.0)
+        fit_class = "press" if clr < 0 else "normal"
+    try:
+        resolved = resolve_measurement(
+            [], measurement_type=CalibrationMeasurementType(measurement_type),
+            feature=feature, fit_class=FitClass(fit_class) if fit_class else None)
+    except LookupError:
+        return None
+    message = (
+        f"Fit clearance for this part is a generic engineering estimate "
+        f"({resolved.value_mm:+g}mm), not a physical measurement — see "
+        "docs/calibration.md to calibrate and validate a real profile for "
+        "your printer/material."
+        if resolved.is_estimate else
+        f"Fit clearance for this part ({resolved.value_mm:+g}mm) is from "
+        f"validated calibration profile '{resolved.provenance['label']}' "
+        f"({resolved.provenance['sample_count']} samples)."
+    )
+    return CheckResult(
+        check="calibration_profile_provenance",
+        severity=Severity.warning if resolved.is_estimate else Severity.info,
+        passed=not resolved.is_estimate, message=message)
+
+
 def run_checks(spec: DesignSpec) -> list[CheckResult]:
     results: list[CheckResult] = []
     method = spec.manufacturing_method
@@ -288,6 +338,11 @@ def run_checks(spec: DesignSpec) -> list[CheckResult]:
             ),
         )
     )
+
+    # --- Calibration-profile provenance (docs/calibration.md) ---
+    calibration_check = _calibration_provenance_check(spec)
+    if calibration_check is not None:
+        results.append(calibration_check)
 
     # --- Template can actually build it (defaults + ranges) ---
     try:

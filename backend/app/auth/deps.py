@@ -25,6 +25,11 @@ def get_current_user(
         )
     user_id = decode_access_token(creds.credentials)
     if not user_id:
+        from app.metrics import auth_failures_total
+        from app.observability import log_event
+
+        log_event("auth_invalid_token")
+        auth_failures_total.labels(reason="invalid_token").inc()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

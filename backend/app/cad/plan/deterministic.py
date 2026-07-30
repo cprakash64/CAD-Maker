@@ -1205,5 +1205,45 @@ def plan(prompt: str) -> CadPlan | None:
     t = prompt.lower()
     for predicate, builder in _FAMILIES:
         if predicate(t):
-            return builder(t)
+            result = builder(t)
+            if result is not None:
+                _tag_ambiguity(t, result)
+            return result
     return None
+
+
+# --- product-contract ambiguity tagging -------------------------------------
+# Deterministic keyword tags for app.cad.plan.clarification_categories, applied
+# on top of whatever a family builder already produced. This is a coarse,
+# explicit phrase table (not an inference), exercising the SAME override path
+# a real LLM's ambiguity_flags would take through decide_clarification(): an
+# ask-required category is fatal even for an otherwise-buildable plan, and a
+# safe-default category never escalates to asking.
+_FIT_PHRASES = ("unspecified fit", "press fit", "slip fit", "unclear fit")
+_BEARING_SHAFT_PHRASES = (
+    "unspecified bearing interface", "unspecified shaft interface",
+    "bearing interface unspecified", "shaft interface unspecified",
+)
+_COSMETIC_FILLET_PHRASES = ("unspecified fillet", "cosmetic fillet size")
+
+
+def _tag_ambiguity(t: str, result: CadPlan) -> None:
+    from app.cad.plan.clarification_categories import questions_for
+
+    ask_flags = []
+    if any(p in t for p in _FIT_PHRASES):
+        ask_flags.append("fit")
+    if any(p in t for p in _BEARING_SHAFT_PHRASES):
+        ask_flags.append("bearing_shaft_interface")
+    if ask_flags:
+        result.ambiguity_flags = ask_flags
+        result.clarification_required = True
+        if not result.clarification_questions:
+            result.clarification_questions = questions_for(ask_flags)
+        return  # an ask-required tag always wins over a cosmetic one below
+
+    if any(p in t for p in _COSMETIC_FILLET_PHRASES):
+        result.ambiguity_flags = ["cosmetic_fillet"]
+        if "Fillet radius not specified; used a safe cosmetic default." not in result.assumptions:
+            result.assumptions.append(
+                "Fillet radius not specified; used a safe cosmetic default.")

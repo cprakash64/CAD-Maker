@@ -50,6 +50,10 @@ MAX_DXF_LAYERS = 2_000
 MAX_DXF_COORDINATE = 1e9
 
 MAX_TEXT_FIELD_CHARS = 4000                # hint/notes/family form fields
+# All the limits above bound the INPUT (bytes/pixels/entities/pages); none of
+# them bound how long a pathological-but-within-limits file takes to actually
+# parse. This wall-clock budget is the backstop.
+UPLOAD_PARSE_TIMEOUT_SECONDS = 10.0
 
 _RASTER_TYPES = {"png", "jpeg", "webp"}
 
@@ -84,6 +88,10 @@ class UnsupportedUpload(UploadRejected):
 
 
 class MalformedUpload(UploadRejected):
+    status_code = 422
+
+
+class UploadTimeout(UploadRejected):
     status_code = 422
 
 
@@ -427,3 +435,33 @@ def inspect_upload(data: bytes, filename: str | None,
               bytes=len(data), width=result.width, height=result.height,
               pages=result.page_count)
     return result
+
+
+def inspect_upload_with_timeout(
+    data: bytes, filename: str | None, content_type: str | None,
+    timeout: float = UPLOAD_PARSE_TIMEOUT_SECONDS,
+) -> InspectedUpload:
+    """Run :func:`inspect_upload` under a hard wall-clock budget.
+
+    The size/entity/pixel/page limits above bound the INPUT; they do not bound
+    how long a pathological-but-within-limits file (deeply nested SVG groups
+    under the node cap, a slow-to-open PDF, ...) takes to actually parse.
+    Running the parse in a worker thread with a timeout caps worst-case
+    latency regardless of what the parser itself does — and, because the
+    calling endpoints are ``async def``, it also moves this CPU-bound work off
+    the asyncio event loop, so one slow upload can never stall every other
+    in-flight request on the same process.
+    """
+    import concurrent.futures
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    fut = executor.submit(inspect_upload, data, filename, content_type)
+    try:
+        return fut.result(timeout=timeout)
+    except concurrent.futures.TimeoutError as exc:
+        raise UploadTimeout(
+            "This file took too long to process and was rejected.") from exc
+    finally:
+        # Never join/wait on an abandoned worker: a hung parse must not block
+        # the request thread any longer than `timeout`.
+        executor.shutdown(wait=False)

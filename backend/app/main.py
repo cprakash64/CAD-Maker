@@ -12,9 +12,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.config import settings
 from app.database import init_db
 from app.llm.base import LLMUnavailableError
-from app.observability import log_event, logger
+from app.observability import (
+    log_event,
+    log_exception_redacted,
+    new_request_id,
+    set_request_id,
+)
 from app.rate_limit import rate_limit
-from app.routers import auth, capabilities, designs, drawings, templates
+from app.routers import auth, calibration, capabilities, designs, drawings, jobs, ops, templates
 
 # Fail fast on unsafe production config (mock provider in prod, default JWT
 # secret, missing DATABASE_URL / CORS / storage, dev_mode on, etc.).
@@ -39,7 +44,7 @@ async def _database_error(request: Request, exc: SQLAlchemyError) -> JSONRespons
     full exception is still logged server-side with a traceback; only the
     generic message crosses the API boundary.
     """
-    logger.exception("database error on %s", request.url.path)
+    log_exception_redacted(f"database error on {request.url.path}", exc)
     log_event("database_error", path=request.url.path, error_type=type(exc).__name__)
     return JSONResponse(
         status_code=503,
@@ -55,7 +60,7 @@ async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
     traceback goes to the application log. It only stops the traceback, file
     paths, and local variables from being rendered into the HTTP response.
     """
-    logger.exception("unhandled error on %s", request.url.path)
+    log_exception_redacted(f"unhandled error on {request.url.path}", exc)
     log_event("unhandled_error", path=request.url.path, error_type=type(exc).__name__)
     return JSONResponse(
         status_code=500,
@@ -82,15 +87,45 @@ app.include_router(drawings.router)
 app.include_router(drawings.alias_router)  # POST /api/drawing-to-cad
 app.include_router(templates.router)
 app.include_router(capabilities.router)
+app.include_router(calibration.router)
+app.include_router(jobs.router)
+app.include_router(ops.router)
+
+
+@app.middleware("http")
+async def _request_context(request: Request, call_next):
+    """Assign a request id (honoring an inbound X-Request-Id from the reverse
+    proxy/client, so a trace started upstream stays one id end to end) BEFORE
+    any handler or log_event call runs, so every log line for this request —
+    across routers, services, and the job it may submit — carries the same
+    id automatically (see app.observability's contextvar)."""
+    rid = request.headers.get("x-request-id") or new_request_id()
+    set_request_id(rid)
+    try:
+        response = await call_next(request)
+    finally:
+        set_request_id(None)
+    response.headers["X-Request-Id"] = rid
+    return response
 
 
 @app.middleware("http")
 async def _timing(request: Request, call_next):
+    from app.metrics import http_request_duration_seconds, http_requests_total, status_class
+
     start = time.perf_counter()
     response = await call_next(request)
-    response.headers["X-Response-Time-ms"] = str(
-        round((time.perf_counter() - start) * 1000, 1)
-    )
+    latency_s = time.perf_counter() - start
+    response.headers["X-Response-Time-ms"] = str(round(latency_s * 1000, 1))
+
+    route = request.scope.get("route")
+    route_template = getattr(route, "path", request.url.path)
+    http_requests_total.labels(
+        method=request.method, route=route_template,
+        status_class=status_class(response.status_code),
+    ).inc()
+    http_request_duration_seconds.labels(route=route_template).observe(latency_s)
+
     # Log non-trivial API calls (skip health/docs noise). No secrets logged.
     if request.url.path.startswith("/api/"):
         log_event(
@@ -98,7 +133,7 @@ async def _timing(request: Request, call_next):
             method=request.method,
             path=request.url.path,
             status=response.status_code,
-            latency_ms=round((time.perf_counter() - start) * 1000, 2),
+            latency_ms=round(latency_s * 1000, 2),
         )
     return response
 

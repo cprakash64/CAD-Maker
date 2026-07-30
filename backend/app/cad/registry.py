@@ -24,6 +24,18 @@ from app.cad.templates.tire import TireTemplate
 from app.cad.templates.wheel_assembly import WheelAssemblyTemplate
 from app.cad.templates.flanged_pipe_branch import FlangedPipeBranchTemplate
 from app.cad.templates.gear_pulley import GearPulleyTemplate
+from app.cad.templates.calibration_coupons import (
+    ClearanceFitLadder,
+    FastenerPlate,
+    HorizontalHolePlate,
+    MasterCoupon,
+    MechanismCoupon,
+    OverhangBridgeTower,
+    SnapFitKit,
+    TextPlate,
+    VerticalHoleGauge,
+    WallPinGapCoupon,
+)
 from app.cad.templates.enclosure import EnclosureTemplate
 from app.cad.templates.bolt import BoltTemplate
 from app.cad.templates.handle import HandleTemplate
@@ -68,6 +80,16 @@ _TEMPLATES: dict[str, BaseTemplate] = {
         CrankshaftTemplate(),
         FlangedPipeBranchTemplate(),
         GearPulleyTemplate(),
+        MasterCoupon(),
+        VerticalHoleGauge(),
+        HorizontalHolePlate(),
+        ClearanceFitLadder(),
+        WallPinGapCoupon(),
+        OverhangBridgeTower(),
+        FastenerPlate(),
+        SnapFitKit(),
+        MechanismCoupon(),
+        TextPlate(),
     )
 }
 

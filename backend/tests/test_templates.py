@@ -93,6 +93,16 @@ SAMPLES = {
                                       "set_screw_count": 2}),
     "timing_pulley_gt2": dict(dimensions={"teeth": 20, "belt_width": 8,
                                           "bore_diameter": 6, "flange": 1}),
+    "calibration_master_coupon": dict(dimensions={}),
+    "calibration_vertical_hole_gauge": dict(dimensions={}),
+    "calibration_horizontal_hole_plate": dict(dimensions={}),
+    "calibration_fit_ladder": dict(dimensions={}),
+    "calibration_wall_pin_gap_coupon": dict(dimensions={}),
+    "calibration_overhang_bridge_tower": dict(dimensions={}),
+    "calibration_fastener_plate": dict(dimensions={}),
+    "calibration_snap_fit_kit": dict(dimensions={}),
+    "calibration_mechanism_coupon": dict(dimensions={}),
+    "calibration_text_plate": dict(dimensions={}),
 }
 
 

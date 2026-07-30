@@ -1,0 +1,12 @@
+[Unit]
+Description=Run lunaicad-retention.service nightly (docs/ops/data-retention.md)
+
+[Timer]
+# 03:00 server time, BEFORE the backup at 03:05 (see lunaicad-backup.timer)
+# -- so the backup reflects post-sweep state, not a larger DB than steady-state.
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

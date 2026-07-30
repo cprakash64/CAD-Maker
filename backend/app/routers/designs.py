@@ -13,12 +13,14 @@ POST /api/designs/{id}/feedback   — thumbs up/down + categories + comment
 GET  /api/designs/{id}/feedback   — this user's feedback for the design
 GET  /api/designs/{id}            — full design
 GET  /api/designs                 — list this user's designs
+GET  /api/designs/{id}/versions   — version history, newest first
+POST /api/designs/{id}/versions/{version_id}/restore — restore an earlier version
 """
 from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, load_only
@@ -40,6 +42,7 @@ from app.editing.localized import (
     apply_localized,
     apply_localized_request,
 )
+from app.export.glb import build_glb_from_preview_json
 from app.manufacturability.checks import run_checks
 from app.models import Design, ExportFile, Feedback, Project, User
 from app.rate_limit import rate_limit
@@ -55,15 +58,18 @@ from app.schemas.api import (
     CreateDesignRequest,
     DesignDTO,
     DesignSummaryDTO,
+    DesignVersionDTO,
     ExportDTO,
     FeedbackDTO,
     FeedbackRequest,
+    ReportBadResultDTO,
+    ReportBadResultRequest,
     ModifyRequest,
     PreviewMeshDTO,
     RegenerateRequest,
 )
 from app.schemas.design_spec import DesignSpec
-from app.services import design_service
+from app.services import design_service, version_service
 from app.storage.storage import StorageError, get_storage
 
 router = APIRouter(prefix="/api/designs", tags=["designs"])
@@ -80,6 +86,35 @@ def _feedback_dto(fb: Feedback) -> FeedbackDTO:
     )
 
 
+def _version_dto(v) -> DesignVersionDTO:
+    return DesignVersionDTO(
+        id=v.id,
+        version_number=v.version_number,
+        edit_kind=v.edit_kind,
+        summary=v.summary,
+        spec_hash=v.spec_hash,
+        diff=[{"field": d["field"], "old": d.get("old"), "new": d.get("new")} for d in (v.diff_json or [])],
+        created_at=v.created_at.isoformat(),
+    )
+
+
+def _glb_preview_export(design: Design) -> ExportDTO | None:
+    """The on-the-fly GLB preview format (see app.export.glb) — deliberately
+    NOT part of ``design.exports`` (real, persisted ExportFile rows for
+    manufacturable STL/STEP; many tests and callers rely on that list being
+    exactly those). GLB is synthesized fresh from preview_json on every
+    request, never persisted, and never a manufacturable file, so it gets its
+    own DTO field instead."""
+    data = build_glb_from_preview_json(design.preview_json)
+    if data is None:
+        return None
+    return ExportDTO(
+        fmt="glb",
+        url=f"{settings.public_base_url}/api/designs/{design.id}/files/glb",
+        size_bytes=len(data),
+    )
+
+
 def _dim_validation(design: Design) -> dict:
     """The dimension report's validation block ({status, critical_failures,
     warnings}), or an empty dict when no report exists."""
@@ -87,11 +122,12 @@ def _dim_validation(design: Design) -> dict:
     return report.get("validation") or {}
 
 
-def _to_dto(design: Design, user: User) -> DesignDTO:
+def _to_dto(design: Design, user: User, db: Session | None = None) -> DesignDTO:
     spec = DesignSpec(**design.spec_json) if design.spec_json else None
     preview = PreviewMeshDTO(**design.preview_json) if design.preview_json else None
     editable = design_service._editable_parameters(spec) if spec else {}
     mine = next((f for f in design.feedback if f.user_id == user.id), None)
+    latest_version = version_service.get_latest_version(db, design.id) if db is not None else None
     return DesignDTO(
         id=design.id,
         project_id=design.project_id,
@@ -110,6 +146,7 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
             ExportDTO(fmt=e.fmt, url=e.url, size_bytes=e.size_bytes)
             for e in design.exports
         ],
+        preview_export=_glb_preview_export(design),
         checks=[
             CheckDTO(check=c.check, severity=c.severity, passed=c.passed, message=c.message)
             for c in design.checks
@@ -168,7 +205,9 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         recovery_strategy=design_service.recovery_info(design).get("strategy"),
         recovery_succeeded=bool(design_service.recovery_info(design).get("succeeded")),
         download_blocked_reason=(
-            design_service.DOWNLOAD_BLOCKED_MESSAGE
+            design_service.design_safety_decision(design).message
+            if design_service.safety_blocks_export(design)
+            else design_service.DOWNLOAD_BLOCKED_MESSAGE
             if design_service.is_critical_failure(design) else None
         ),
         needs_decomposition=design.route == "needs_decomposition",
@@ -191,24 +230,45 @@ def _to_dto(design: Design, user: User) -> DesignDTO:
         sketch_ir=(design.semantic_json or {}).get("sketch_ir"),
         feature_contract=(design.semantic_json or {}).get("feature_contract"),
         presentation=design_service.presentation_descriptor(design),
+        **design_service.product_contract_fields(design),
+        latest_version_number=latest_version.version_number if latest_version else None,
+        last_edit_diff=[
+            {"field": d["field"], "old": d.get("old"), "new": d.get("new")}
+            for d in (latest_version.diff_json or [])
+        ] if latest_version else [],
     )
 
 
 def _owned_or_404(db: Session, design_id: str, user: User) -> Design:
-    """Fetch a design only if it belongs to the current user, else 404."""
-    design = db.get(Design, design_id)
-    if design is None or not design_service.user_owns_design(db, design, user.id):
+    """Fetch a design only if it belongs to the current user, else 404.
+
+    Ownership is enforced by the query itself (a JOIN filter on
+    Project.user_id), not by fetching the row and checking it afterwards."""
+    design = design_service.get_owned_design(db, design_id, user.id)
+    if design is None:
         raise HTTPException(status_code=404, detail="Design not found")
     return design
 
 
 def _block_export_if_critical(design: Design, allow_failed: bool = False) -> None:
-    """Refuse to hand out a manufacturable file for a critical-failure design.
+    """Refuse to hand out a manufacturable file for a critical-failure design,
+    OR one whose safety classification blocks export (app.safety).
 
     The design stays fully inspectable (GET /{id}, preview, drawing views); only
     the STEP/STL/package exports are gated. A dev-only override (`?allow_failed=
-    true`, honored solely when DEV_MODE is on) lets engineers pull the broken file
-    for debugging — never available in staging/production."""
+    true`, honored solely when DEV_MODE is on) lets engineers pull the broken
+    file for debugging -- never available in staging/production, and NEVER
+    honored for a safety block: that override exists for geometry-validation
+    debugging only, not for bypassing a policy refusal."""
+    safety_decision = design_service.design_safety_decision(design)
+    if safety_decision.blocks_export:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=safety_decision.message or (
+                "Export requires acknowledging the engineering-review notice "
+                "for this design."
+            ),
+        )
     if not design_service.is_critical_failure(design):
         return
     if allow_failed and settings.dev_mode:
@@ -219,33 +279,88 @@ def _block_export_if_critical(design: Design, allow_failed: bool = False) -> Non
     )
 
 
-@router.post("/create", response_model=DesignDTO, dependencies=[rate_limit("create")])
+@router.post("/create", dependencies=[rate_limit("create")])
 def create_design(
     req: CreateDesignRequest,
+    wait: bool = True,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> DesignDTO:
+):
+    """Submits a job (docs/adr/0001-job-queue-database-backed.md) -- CAD
+    compilation never runs inline in this request. By default (``wait=true``)
+    the handler poll-waits, via cheap DB reads only, for up to
+    ``settings.job_sync_wait_seconds`` and returns the SAME synchronous
+    ``DesignDTO`` shape as before (plus ``job_id``) when the job finishes
+    in time -- unchanged ergonomics for the common (fast) case. A job that
+    doesn't finish in the wait window, or a caller passing ``wait=false``,
+    gets a plain 202 ``{job_id, status, poll}`` to poll via
+    ``GET /api/jobs/{job_id}``, exactly like the drawing pipeline already did.
+    """
     import time as _time
 
+    from fastapi.responses import JSONResponse
+
     from app.observability import log_event
+    from app.services import job_service
 
     _t0 = _time.perf_counter()
-    # Timing bookends around the whole create pipeline. The inner stages already
-    # log their own latency (prompt_parsed, geometry_generated,
-    # selectable_metadata_extracted), so a stall is now pinpointable end-to-end.
     log_event("design_create_received", user_id=user.id, prompt_len=len(req.prompt or ""))
     try:
-        design = design_service.create_design(
-            db, req.prompt, req.project_id, req.name, user.id
-        )
-    except CadGenerationError as exc:
-        log_event("design_create_failed", detail=str(exc)[:200],
+        submission = job_service.submit_job(
+            db, user_id=user.id, job_type="design_create",
+            payload={"prompt": req.prompt, "project_id": req.project_id,
+                    "name": req.name, "user_id": user.id},
+            idempotency_key=idempotency_key)
+    except job_service.JobQueueSaturated as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except job_service.UserConcurrencyLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except job_service.QuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    job = submission.job
+
+    if settings.testing and submission.created:
+        # No separate worker process exists under the test harness -- run the
+        # job inline, in THIS process, with no resource limits (see
+        # app.worker.runner.run_inline). Real deployments never take this
+        # branch; a genuine worker process claims the job instead.
+        from app.worker.runner import run_inline
+
+        run_inline(job.id)
+
+    poll_path = f"/api/jobs/{job.id}"
+    if wait:
+        deadline = _time.perf_counter() + settings.job_sync_wait_seconds
+        while _time.perf_counter() < deadline:
+            db.expire_all()
+            job = job_service.get_job(db, job.id)
+            if job.status in job_service.TERMINAL_STATUSES:
+                break
+            _time.sleep(settings.job_sync_poll_interval_seconds)
+
+    if job.status == job_service.STATUS_SUCCEEDED:
+        dto_dict = dict(job.result_json["design"])
+        dto_dict["job_id"] = job.id
+        log_event("design_create_completed", design_id=dto_dict.get("id"), job_id=job.id,
                   ms=int((_time.perf_counter() - _t0) * 1000))
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    dto = _to_dto(design, user)
-    log_event("design_create_completed", design_id=design.id,
-              ms=int((_time.perf_counter() - _t0) * 1000))
-    return dto
+        return dto_dict
+    if job.status in job_service.TERMINAL_STATUSES:
+        log_event("design_create_failed", job_id=job.id, status=job.status,
+                  category=job.error_category,
+                  ms=int((_time.perf_counter() - _t0) * 1000))
+        # A provider outage/timeout is a clean 503 (matching the FastAPI-level
+        # LLMUnavailableError handler this used to reach directly, before the
+        # job queue put a layer between the request and the exception) --
+        # everything else is a job-shaped 422, safe message only.
+        status_code = 503 if job.error_category == "provider_unavailable" else 422
+        raise HTTPException(status_code=status_code, detail=job.error_message or
+                            "Generation did not succeed.")
+    # Still queued/running past the bounded wait (or wait=false): hand back
+    # the job for the client to poll, same contract the drawing jobs use.
+    return JSONResponse(status_code=202, content={
+        "job_id": job.id, "status": job.status, "poll": poll_path,
+    })
 
 
 @router.post("/{design_id}/regenerate", response_model=DesignDTO,
@@ -269,7 +384,7 @@ def regenerate_design(
         )
     except (CadGenerationError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _to_dto(design, user)
+    return _to_dto(design, user, db)
 
 
 @router.post("/{design_id}/modify", response_model=DesignDTO,
@@ -285,7 +400,7 @@ def modify_design(
         design, clarification = design_service.modify_design(db, design, req.prompt)
     except (CadGenerationError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    dto = _to_dto(design, user)
+    dto = _to_dto(design, user, db)
     if clarification:
         dto.clarification_question = clarification
     return dto
@@ -306,7 +421,7 @@ def export_design(
         design_service._regenerate_geometry(db, design, DesignSpec(**design.spec_json))
         db.commit()
         db.refresh(design)
-    return _to_dto(design, user)
+    return _to_dto(design, user, db)
 
 
 @router.get("/{design_id}/files/{fmt}", dependencies=[rate_limit("package")])
@@ -321,8 +436,30 @@ def download_file(
     short-lived S3 presigned URL. Private files are never publicly addressable.
 
     Blocked (409) for critical-failure designs so a failed result is never handed
-    out as a manufacturable file."""
+    out as a manufacturable file — EXCEPT glb, a preview/web format (never
+    manufacturable) built on the fly from the mesh already on the design, so
+    it stays available even for a concept or critical-failure design that a
+    user still wants to look at in 3D."""
     design = _owned_or_404(db, design_id, user)
+    if fmt == "glb":
+        data = build_glb_from_preview_json(design.preview_json)
+        if data is None:
+            raise HTTPException(status_code=404, detail="No such export")
+        design_service.log_design_telemetry(
+            design, "design_exported", export_clicked=True, export_format="glb",
+            export_kind=design_service.presentation_descriptor(design)["export_kind"])
+        from app.metrics import design_downloads_total
+
+        design_downloads_total.labels(fmt="glb").inc()
+        filename = safe_download_name(design.object_type, "glb")
+        return Response(
+            content=data,
+            media_type="model/gltf-binary",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
     _block_export_if_critical(design, allow_failed)
     export = next((e for e in design.exports if e.fmt == fmt), None)
     if export is None:
@@ -330,6 +467,9 @@ def download_file(
     design_service.log_design_telemetry(
         design, "design_exported", export_clicked=True, export_format=fmt,
         export_kind=design_service.presentation_descriptor(design)["export_kind"])
+    from app.metrics import design_downloads_total
+
+    design_downloads_total.labels(fmt=fmt).inc()
     storage = get_storage()
     signed = storage.signed_url(export.storage_key)
     if signed:
@@ -463,6 +603,9 @@ def download_package(
                if is_assembly else "")
         )
         data = build_files_package(base, files, metadata, readme, extra)
+    from app.metrics import design_downloads_total
+
+    design_downloads_total.labels(fmt="package").inc()
     name = safe_download_name(f"{base}_package", "zip", fallback="part_package")
     return Response(
         content=data,
@@ -494,14 +637,14 @@ def localized_edit(
     try:
         new_spec, message = apply_localized(current, mod)
     except UnsupportedLocalizedEdit as exc:
-        dto = _to_dto(design, user)
+        dto = _to_dto(design, user, db)
         dto.clarification_question = str(exc)
         return dto
     try:
         design = design_service.apply_spec_edit(db, design, new_spec, note=message)
     except CadGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _to_dto(design, user)
+    return _to_dto(design, user, db)
 
 
 @router.post("/{design_id}/generate-with-defaults", response_model=DesignDTO,
@@ -523,7 +666,7 @@ def generate_with_defaults(
         design = design_service.apply_spec_edit(db, design, spec, note="Generated with defaults")
     except CadGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _to_dto(design, user)
+    return _to_dto(design, user, db)
 
 
 @router.post("/{design_id}/circle-edit", response_model=DesignDTO,
@@ -543,14 +686,14 @@ def circle_edit(
     current = DesignSpec(**design.spec_json)
     new_spec, result = apply_localized_request(current, req, design.bounding_box)
     if new_spec is None:
-        dto = _to_dto(design, user)
+        dto = _to_dto(design, user, db)
         dto.clarification_question = result.message
         return dto
     try:
         design = design_service.apply_spec_edit(db, design, new_spec, note=result.message)
     except CadGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _to_dto(design, user)
+    return _to_dto(design, user, db)
 
 
 def _face_edit_detail(
@@ -691,7 +834,7 @@ def face_edit(
             ) from exc
         _record_face_edit(db, design, req, "applied", outcome.message)
         db.refresh(design)
-        return _to_dto(design, user)
+        return _to_dto(design, user, db)
 
     # --- DesignSpec edit path ----------------------------------------------
     current = DesignSpec(**design.spec_json)
@@ -730,7 +873,7 @@ def face_edit(
 
     _record_face_edit(db, design, req, "applied", outcome.message)
     db.refresh(design)
-    return _to_dto(design, user)
+    return _to_dto(design, user, db)
 
 
 @router.post("/{design_id}/checks", response_model=list[CheckDTO],
@@ -777,6 +920,91 @@ def get_feedback(
     return _feedback_dto(mine) if mine else None
 
 
+@router.post("/{design_id}/report-bad-result", response_model=ReportBadResultDTO,
+             dependencies=[rate_limit("read")])
+def report_bad_result(
+    design_id: str,
+    req: ReportBadResultRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ReportBadResultDTO:
+    """Structured "report a bad result" -- a superset of thumbs-down feedback
+    that snapshots the design/prompt version and validation state, and
+    optionally records reported physical print/fit outcomes. See
+    design_service.report_bad_result for the privacy/consent contract."""
+    design = _owned_or_404(db, design_id, user)
+    fb = design_service.report_bad_result(
+        db, design, user.id, req.categories, req.reason, req.consent,
+        print_success=req.print_success, fit_success=req.fit_success,
+    )
+    return ReportBadResultDTO(
+        id=fb.id, design_id=fb.design_id, categories=fb.categories or [],
+        reason=fb.report_reason, consent=fb.report_consent,
+        print_success=fb.print_success, fit_success=fb.fit_success,
+        design_version_number=fb.design_version_number,
+        prompt_version=fb.prompt_version, created_at=fb.created_at.isoformat(),
+    )
+
+
+@router.post("/{design_id}/acknowledge-safety", response_model=DesignDTO,
+             dependencies=[rate_limit("modify")])
+def acknowledge_safety(
+    design_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DesignDTO:
+    """Record an explicit engineering-review acknowledgment (app.safety) for
+    a design gated at policy=require_acknowledgment, unblocking its export.
+    404/409-safe: a design with no pending acknowledgment (never flagged, or
+    flagged at a policy acknowledgment cannot unblock) returns 409."""
+    design = _owned_or_404(db, design_id, user)
+    try:
+        design = design_service.record_safety_acknowledgment(db, design, user.id)
+    except design_service.NoAcknowledgmentRequired as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _to_dto(design, user, db)
+
+
+@router.get("/{design_id}/versions", response_model=list[DesignVersionDTO],
+            dependencies=[rate_limit("read")])
+def list_design_versions(
+    design_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[DesignVersionDTO]:
+    """Version history, newest first. Empty until the design has been edited at
+    least once — see app.services.version_service for why."""
+    design = _owned_or_404(db, design_id, user)
+    return [_version_dto(v) for v in version_service.list_versions(db, design.id)]
+
+
+@router.post("/{design_id}/versions/{version_id}/restore", response_model=DesignDTO,
+             dependencies=[rate_limit("modify")])
+def restore_design_version(
+    design_id: str,
+    version_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DesignDTO:
+    """Restore an earlier version, replayed through the same validation/
+    regeneration pipeline as any other edit (never a raw write of old JSON)."""
+    design = _owned_or_404(db, design_id, user)
+    version = version_service.get_version(db, design.id, version_id)
+    if version is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+    try:
+        design = version_service.restore_version(db, design, version)
+    except version_service.VersionRestoreError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except design_service.CriticalEditRejected as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except CadGenerationError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Could not restore this version safely: {exc}"
+        ) from exc
+    return _to_dto(design, user, db)
+
+
 @router.get("/{design_id}", response_model=DesignDTO,
             dependencies=[rate_limit("read")])
 def get_design(
@@ -784,7 +1012,7 @@ def get_design(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DesignDTO:
-    return _to_dto(_owned_or_404(db, design_id, user), user)
+    return _to_dto(_owned_or_404(db, design_id, user), user, db)
 
 
 @router.get("", response_model=list[DesignSummaryDTO],

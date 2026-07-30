@@ -21,12 +21,16 @@ DEFAULTS_SOURCE = "SourceCAD internal defaults (not ASME/ISO/Machinery's Handboo
 # "normal" is the everyday default; "close"/"loose" bracket it. Internal values
 # in the spirit of common medium-fit clearance drilling, not a certified table.
 METRIC_CLEARANCE_HOLES: dict[str, dict[str, float]] = {
+    "M1.6": {"close": 1.7, "normal": 1.8, "loose": 2.1},
+    "M2": {"close": 2.2, "normal": 2.4, "loose": 2.7},
+    "M2.5": {"close": 2.7, "normal": 2.9, "loose": 3.2},
     "M3": {"close": 3.2, "normal": 3.4, "loose": 3.8},
     "M4": {"close": 4.3, "normal": 4.5, "loose": 4.8},
     "M5": {"close": 5.3, "normal": 5.5, "loose": 5.8},
     "M6": {"close": 6.4, "normal": 6.6, "loose": 7.0},
     "M8": {"close": 8.4, "normal": 9.0, "loose": 10.0},
     "M10": {"close": 10.5, "normal": 11.0, "loose": 12.0},
+    "M12": {"close": 13.0, "normal": 13.5, "loose": 14.5},
 }
 
 

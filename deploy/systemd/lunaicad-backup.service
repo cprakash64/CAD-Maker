@@ -1,0 +1,19 @@
+[Unit]
+Description=LunaiCAD nightly database backup (docs/ops/backup-and-restore.md)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=lunaicad
+Group=lunaicad
+WorkingDirectory=/opt/lunaicad/backend
+# DATABASE_URL comes from the full backend env (the backup script only reads
+# DATABASE_URL/BACKUP_DIR/BACKUP_REMOTE/BACKUP_RETAIN_DAYS from it, but this
+# is the file that already has DATABASE_URL set for this box).
+EnvironmentFile=/opt/lunaicad/backend/.env
+ExecStart=/opt/lunaicad/src/scripts/backup.sh
+
+# A failed backup must be loud, not silent -- journalctl -u lunaicad-backup
+# shows the failure, and OnFailure= below can point at an alert/notify unit
+# if one is configured for this deployment.
+# OnFailure=lunaicad-alert@%n.service

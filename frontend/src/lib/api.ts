@@ -4,7 +4,10 @@ import type {
   DesignSummary,
   Feedback,
   Hole,
+  PrivacySummary,
+  ReportBadResult,
   TemplateInfo,
+  VersionSummary,
 } from "./types";
 import {
   pollDrawingJob,
@@ -148,7 +151,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  me: () => request<{ id: string; email: string }>("/api/auth/me"),
+  me: () =>
+    request<{ id: string; email: string; data_improvement_opt_in: boolean }>(
+      "/api/auth/me"
+    ),
+
+  // Privacy controls (app.services.account_service)
+  setDataImprovementOptIn: (optIn: boolean) =>
+    request<{ id: string; email: string; data_improvement_opt_in: boolean }>(
+      "/api/auth/me/data-improvement-opt-in",
+      { method: "PUT", body: JSON.stringify({ opt_in: optIn }) }
+    ),
+  getPrivacySummary: () => request<PrivacySummary>("/api/auth/privacy-summary"),
+  deleteAccount: (password: string) =>
+    request<void>("/api/auth/me", {
+      method: "DELETE",
+      body: JSON.stringify({ password }),
+    }),
 
   // Designs — generation endpoints use the longer timeout (CAD can take a while).
   createDesign: (prompt: string) =>
@@ -185,6 +204,12 @@ export const api = {
     ),
   templates: () => request<TemplateInfo[]>("/api/templates"),
 
+  // Safety policy (app.safety): records an explicit engineering-review
+  // acknowledgment for a design gated at policy="require_acknowledgment",
+  // unblocking its export.
+  acknowledgeSafety: (id: string) =>
+    request<Design>(`/api/designs/${id}/acknowledge-safety`, { method: "POST" }),
+
   // Feedback
   submitFeedback: (
     id: string,
@@ -195,6 +220,24 @@ export const api = {
     request<Feedback>(`/api/designs/${id}/feedback`, {
       method: "POST",
       body: JSON.stringify({ rating, categories, comment: comment || null }),
+    }),
+
+  // Structured "report a bad result" -- see app.services.design_service
+  // .report_bad_result. reason is only ever stored server-side when
+  // consent is true; sending it without consent is safe (dropped server-side).
+  reportBadResult: (
+    id: string,
+    body: {
+      categories: string[];
+      reason: string;
+      consent: boolean;
+      print_success: boolean | null;
+      fit_success: boolean | null;
+    }
+  ) =>
+    request<ReportBadResult>(`/api/designs/${id}/report-bad-result`, {
+      method: "POST",
+      body: JSON.stringify({ ...body, reason: body.reason || null }),
     }),
 
   // Owner-checked download URL (sends bearer via fetch in the component).
@@ -227,6 +270,17 @@ export const api = {
     request<Design>(
       `/api/designs/${id}/face-edit`,
       { method: "POST", body: JSON.stringify(body) },
+      GENERATION_TIMEOUT_MS
+    ),
+
+  // Version history: list newest-first, restore replays through the same
+  // validation pipeline as any other edit.
+  listVersions: (id: string) =>
+    request<VersionSummary[]>(`/api/designs/${id}/versions`),
+  restoreVersion: (id: string, versionId: string) =>
+    request<Design>(
+      `/api/designs/${id}/versions/${versionId}/restore`,
+      { method: "POST" },
       GENERATION_TIMEOUT_MS
     ),
 

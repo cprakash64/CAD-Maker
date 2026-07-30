@@ -232,17 +232,35 @@ def _plate_top_z(spec) -> float:
     return 0.0
 
 
+def _stable_hole_id(dia: float, cx: float, cy: float, cz: float, hole_type) -> str:
+    """Deterministic id: hash of rounded diameter + center + type, so edits that
+    add/remove/reorder OTHER holes don't shift this hole's identity (mirrors
+    ``_stable_face_id``). Genuinely identical holes (same diameter and center)
+    collide on this base id; callers disambiguate with a trailing ``_<n>``
+    suffix in declaration order, same as before for that rare case only."""
+    sig = f"hole:{round(dia, 3)}:{round(cx, 2)},{round(cy, 2)},{round(cz, 2)}:{hole_type}"
+    return f"hole_{hashlib.sha1(sig.encode()).hexdigest()[:8]}"
+
+
+def _dedupe_hole_id(base_id: str, seen: dict[str, int]) -> str:
+    n = seen.get(base_id, 0)
+    seen[base_id] = n + 1
+    return base_id if n == 0 else f"{base_id}_{n}"
+
+
 def extract_selectable_holes(spec) -> list[dict]:
     """Selectable holes straight from the validated spec (deterministic, in mm).
 
-    Holes are parametric features the edit pipeline already understands, so ids
-    are the stable ``hole_<i>`` used elsewhere."""
+    Holes are parametric features the edit pipeline already understands. Ids are
+    content-hashed from diameter/position/type (see ``_stable_hole_id``) so they
+    stay stable across edits that add, remove, or reorder other holes."""
     out: list[dict] = []
     try:
         holes = list(getattr(spec, "holes", []) or [])
     except Exception:  # noqa: BLE001
         return []
     top_z = _plate_top_z(spec)
+    seen: dict[str, int] = {}
     for i, h in enumerate(holes):
         try:
             dia = spec.to_mm(h.diameter)
@@ -250,9 +268,14 @@ def extract_selectable_holes(spec) -> list[dict]:
             hole_type = getattr(h.hole_type, "value", h.hole_type)
         except Exception:  # noqa: BLE001
             continue
+        base_id = _stable_hole_id(dia, cx, cy, top_z, hole_type)
         out.append(
             {
-                "hole_id": f"hole_{i}",
+                "hole_id": _dedupe_hole_id(base_id, seen),
+                # True index into spec.holes -- edit handlers resolve a hole_id
+                # back to this to mutate the right list entry, since the id
+                # itself no longer encodes position (see app.editing.face_edit).
+                "hole_index": i,
                 "feature_id": "holes",
                 "diameter_mm": round(dia, 3),
                 "center": [round(cx, 3), round(cy, 3), round(top_z, 3)],
@@ -285,17 +308,21 @@ def extract_selectable_holes_from_plan(plan) -> list[dict]:
     """Selectable holes from a CadPlan feature graph (CadPlan-built parts have no
     DesignSpec, so :func:`extract_selectable_holes` can't read them).
 
-    Enumerates the plan's ``hole`` features in declaration order and assigns
-    ``hole_<i>`` ids in that SAME order — this is exactly how the face-edit plan
-    handlers index holes (``app.editing.face_edit._plan_hole_features`` +
-    ``_hole_index``), so resize/delete map to the right feature. Advisory; returns
-    ``[]`` on any failure and never breaks generation."""
+    Ids are content-hashed from diameter/position/type (see ``_stable_hole_id``),
+    same as :func:`extract_selectable_holes`, so they stay stable across edits
+    that add, remove, or reorder other holes. Each entry also carries
+    ``feature_index``, the declaration-order index into ALL of the plan's
+    hole-kind features (matching ``app.editing.face_edit._plan_hole_features``
+    exactly, including entries this function itself skips as degenerate), which
+    is what edit handlers use to map a resize/delete back to the right feature.
+    Advisory; returns ``[]`` on any failure and never breaks generation."""
     out: list[dict] = []
     try:
         features = list(getattr(plan, "features", []) or [])
     except Exception:  # noqa: BLE001
         return []
     top_z = _plan_top_z(plan)
+    seen: dict[str, int] = {}
     i = 0
     for f in features:
         kind = getattr(f.kind, "value", f.kind)
@@ -315,15 +342,18 @@ def extract_selectable_holes_from_plan(plan) -> list[dict]:
         axis_vec = {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0]}.get(axis, [0.0, 0.0, 1.0])
         # A Z-axis hole opens on the plate's top face; a side hole keeps its own z.
         cz = top_z if axis == "z" else at[2]
+        hole_type = "through" if through else "blind"
+        base_id = _stable_hole_id(dia, at[0], at[1], cz, hole_type)
         out.append(
             {
-                "hole_id": f"hole_{i}",
+                "hole_id": _dedupe_hole_id(base_id, seen),
+                "feature_index": i,
                 "feature_id": "holes",
                 "diameter_mm": round(dia, 3),
                 "center": [round(at[0], 3), round(at[1], 3), round(cz, 3)],
                 "axis": axis_vec,
                 "through": through,
-                "hole_type": "through" if through else "blind",
+                "hole_type": hole_type,
                 "allowed_operations": list(_HOLE_OPS),
                 "confidence": 0.9,
             }

@@ -168,10 +168,11 @@ backend/app/cad/plan/deterministic.py # offline planner for common families
 ### 3. CAD families and capability registry
 
 LunaiCAD uses a central family registry so the app can be honest about what it can generate well.
+See `docs/product-contract.md` for the canonical product contract (capability levels, clarification policy, API contract).
 
 Every family has:
 
-- Maturity: `production_ready`, `beta`, `concept`, or `unsupported`
+- Maturity: `production_ready`, `validated_beta`, `experimental`, or `unsupported`
 - Required dimensions
 - Default assumptions
 - Example prompts

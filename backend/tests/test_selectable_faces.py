@@ -122,7 +122,10 @@ def test_plan_holes_extracted_with_aligned_ids():
     from app.cad.selectable_faces import extract_selectable_holes_from_plan
 
     holes = extract_selectable_holes_from_plan(_plate_plan())
-    assert [h["hole_id"] for h in holes] == ["hole_0", "hole_1"]
+    ids = [h["hole_id"] for h in holes]
+    assert len(ids) == 2
+    assert len(set(ids)) == 2, "hole ids must be unique"
+    assert all(hid.startswith("hole_") for hid in ids)
     for h in holes:
         assert h["diameter_mm"] > 0
         assert h["through"] is True
@@ -133,8 +136,10 @@ def test_plan_holes_extracted_with_aligned_ids():
 
 
 def test_plan_hole_ids_match_face_edit_indices():
-    """The hole_<i> ids must index the SAME hole features the face-edit plan
-    handlers enumerate, or resize/delete would hit the wrong hole."""
+    """Each hole's ``feature_index`` must index the SAME hole features the
+    face-edit plan handlers enumerate, or resize/delete would hit the wrong
+    hole. The ``hole_id`` itself is content-hashed and carries no positional
+    meaning (see app.cad.selectable_faces._stable_hole_id)."""
     from app.cad.selectable_faces import extract_selectable_holes_from_plan
     from app.editing.face_edit import _plan_hole_features
 
@@ -143,7 +148,7 @@ def test_plan_hole_ids_match_face_edit_indices():
     feats = _plan_hole_features(plan)
     assert len(holes) == len(feats)
     for i, h in enumerate(holes):
-        assert h["hole_id"] == f"hole_{i}"
+        assert h["feature_index"] == i
 
 
 def test_plan_hole_extraction_robust_on_garbage():

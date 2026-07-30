@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
 from app.cad.base import CadGenerationError
+from app.config import settings
 from app.database import get_db
 from app.drawing.interpret import interpret_image, to_design_spec
 from app.drawing.scale import ScaledDrawing, infer_scale
@@ -23,13 +24,14 @@ from app.rate_limit import rate_limit
 from app.schemas.drawing_spec import (
     CONFIDENCE_THRESHOLD,
     GENERATE_WITH_ASSUMPTIONS_CONFIDENCE,
+    PIPE_BRANCH_DETERMINISTIC_FAMILIES,
     DrawingInterpretationSpec,
 )
 from app.services import design_service
 from app.services.upload_guard import (
     InspectedUpload,
     UploadRejected,
-    inspect_upload,
+    inspect_upload_with_timeout,
     read_upload_bounded,
     sanitize_text_field,
 )
@@ -39,11 +41,12 @@ def _inspect_or_raise(file: UploadFile, data: bytes) -> InspectedUpload:
     """Run the shared upload gate, mapping a typed rejection to its HTTP status.
 
     Never leaks internal paths or tracebacks — only the rejection's user-safe
-    message reaches the client."""
+    message reaches the client. Runs under a hard wall-clock timeout so a
+    pathological-but-within-limits file can never hang the request."""
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
     try:
-        return inspect_upload(data, file.filename, file.content_type)
+        return inspect_upload_with_timeout(data, file.filename, file.content_type)
     except UploadRejected as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -149,19 +152,92 @@ def confirm(
     return _to_dto(design, user)
 
 
+# Job-queue-backed status -> the drawing-job wire vocabulary this endpoint has
+# always used (queued/running/done/failed), predating the generic job queue
+# (docs/adr/0001-job-queue-database-backed.md) and kept EXACTLY as-is here so
+# the existing frontend poller (frontend/src/lib/drawingJob.ts) and tests
+# never see a contract change -- only the internals (real DB-backed Job rows,
+# a worker subprocess) changed underneath it.
+_DRAWING_JOB_STATUS_MAP = {
+    "queued": "queued",
+    "running": "running",
+    "validating": "running",
+    "exporting": "running",
+    "succeeded": "done",
+    "failed": "failed",
+    "timed_out": "failed",
+    "cancelled": "failed",
+}
+
+
+def _drawing_job_json(job) -> dict:
+    from app.services.drawing_jobs import STAGE_PROGRESS
+
+    status = _DRAWING_JOB_STATUS_MAP.get(job.status, "failed")
+    # Terminal jobs report the SAME "done"/"failed" stage label the old
+    # in-memory DrawingJob used, regardless of whichever stage they were last
+    # in -- both because that's what STAGE_PROGRESS keys on for 100%, and
+    # because a client that only tracks the last-seen stage string expects
+    # exactly this value to know the job is over.
+    stage = status if status in ("done", "failed") else (job.stage or "queued")
+    out = {
+        "job_id": job.id,
+        "status": status,
+        "stage": stage,
+        "progress": STAGE_PROGRESS.get(stage, 50),
+        "message": job.message,
+        "error": job.error_message,
+        "design_id": ((job.result_json or {}).get("design") or {}).get("id")
+        if job.result_json else None,
+    }
+    if status in ("done", "failed"):
+        out["result"] = job.result_json
+    return out
+
+
+def _submit_drawing_job(db: Session, *, job_type: str, data: bytes, user: User,
+                        extra_payload: dict):
+    """Upload the file bytes to storage (job payloads carry a storage key, not
+    raw bytes -- see docs/adr/0001-job-queue-database-backed.md), submit the
+    job, and -- test-only, no separate worker process exists under the test
+    harness -- run it on a background thread so the response returns
+    ``status: "queued"`` immediately (preserving the existing contract) while
+    the job still actually completes for the poller to observe."""
+    import uuid
+
+    from app.services import job_service
+    from app.storage.storage import get_storage
+
+    storage_key = f"job_uploads/{uuid.uuid4().hex}.bin"
+    get_storage().save(storage_key, data)
+    submission = job_service.submit_job(
+        db, user_id=user.id, job_type=job_type,
+        payload={"user_id": user.id, "upload_storage_key": storage_key, **extra_payload})
+    job = submission.job
+    if settings.testing and submission.created:
+        import threading
+
+        from app.worker.runner import run_inline
+
+        threading.Thread(target=run_inline, args=(job.id,), daemon=True,
+                         name=f"test-inline-job-{job.id[:8]}").start()
+    return job
+
+
 @router.get("/jobs/{job_id}", dependencies=[rate_limit("poll")])
-def job_status(job_id: str, user: User = Depends(get_current_user)):
+def job_status(job_id: str, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
     """Poll a drawing-generation job: {status, stage, progress, message, error,
     design_id, result?}. ``result`` (the full generate/to-cad payload) is
     attached once the job is done or failed. Owner-scoped: other users' job ids
     404."""
-    from app.services import drawing_jobs
+    from app.services import job_service
 
-    job = drawing_jobs.get_job(job_id, user.id)
+    job = job_service.get_owned_job(db, job_id, user.id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found (it may have "
                             "expired or the server restarted) — start a new generation.")
-    return job.to_json()
+    return _drawing_job_json(job)
 
 
 @router.get("/debug/{design_id}", dependencies=[rate_limit("read")])
@@ -171,12 +247,11 @@ def sketch_debug(design_id: str, db: Session = Depends(get_db),
     (outer profile, classified cuts, grouped counterbores, ignored entities) plus
     whether a colour-coded overlay was saved. Owner-scoped; 404 otherwise."""
     from app.config import settings
-    from app.models import Design
 
     if not settings.dev_mode:
         raise HTTPException(status_code=404, detail="Debug is dev-only")
-    design = db.get(Design, design_id)
-    if design is None or not design_service.user_owns_design(db, design, user.id):
+    design = design_service.get_owned_design(db, design_id, user.id)
+    if design is None:
         raise HTTPException(status_code=404, detail="Design not found")
     sketch = (design.semantic_json or {}).get("sketch_ir")
     if not sketch:
@@ -199,12 +274,11 @@ def sketch_debug_overlay(design_id: str, db: Session = Depends(get_db),
     from fastapi.responses import FileResponse
 
     from app.config import settings
-    from app.models import Design
 
     if not settings.dev_mode:
         raise HTTPException(status_code=404, detail="Debug is dev-only")
-    design = db.get(Design, design_id)
-    if design is None or not design_service.user_owns_design(db, design, user.id):
+    design = design_service.get_owned_design(db, design_id, user.id)
+    if design is None:
         raise HTTPException(status_code=404, detail="Design not found")
     overlay = _sketch_debug_dir(design_id) / "overlay.png"
     if not overlay.exists():
@@ -237,18 +311,21 @@ async def generate(
     file: UploadFile = File(...),
     hint: str | None = Form(default=None),
     sync: bool = Form(default=False),
+    db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """ONE-SHOT drawing → CAD as an ASYNC JOB: fast checks run inline, then the
-    interpret+generate pipeline runs on a worker thread. Returns 202 +
-    ``{job_id, status, poll}`` immediately; poll GET /api/drawings/jobs/{id}
-    until done/failed — ``result`` is ``{generated, interpretation, design}``.
+    """ONE-SHOT drawing → CAD as an ASYNC JOB (docs/adr/
+    0001-job-queue-database-backed.md): fast checks run inline, then the
+    interpret+generate pipeline runs in an isolated worker subprocess.
+    Returns 202 + ``{job_id, status, poll}`` immediately; poll
+    GET /api/drawings/jobs/{id} until done/failed — ``result`` is
+    ``{generated, interpretation, design}``.
 
     ``sync=true`` (opt-in, scripts/tests) runs inline and returns the result
     payload directly with status 200."""
     from fastapi.responses import JSONResponse
 
-    from app.services import drawing_jobs
+    from app.services import job_service
 
     # Provider availability is decided INSIDE the canonical pipeline: an image
     # whose outline is deterministically traceable still generates without a
@@ -263,12 +340,21 @@ async def generate(
     media_type = inspected.media_type
 
     if sync:
-        job = drawing_jobs.DrawingJob(id="sync", user_id=user.id)
+        from app.services.drawing_jobs import DrawingJob
+
+        job = DrawingJob(id="sync", user_id=user.id)
         return _run_generate_pipeline(job, data, media_type, hint, user.id)
 
-    job = drawing_jobs.create_job(user.id)
-    drawing_jobs.run_job(
-        job, lambda j: _run_generate_pipeline(j, data, media_type, hint, user.id))
+    try:
+        job = _submit_drawing_job(
+            db, job_type="drawing_generate", data=data, user=user,
+            extra_payload={"content_type": media_type, "hint": hint})
+    except job_service.JobQueueSaturated as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except job_service.UserConcurrencyLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except job_service.QuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     return JSONResponse(status_code=202, content={
         "job_id": job.id, "status": "queued",
         "poll": f"/api/drawings/jobs/{job.id}",
@@ -587,21 +673,23 @@ async def drawing_to_cad(
     thickness_mm: float | None = Form(default=None),
     family: str | None = Form(default=None),
     sync: bool = Form(default=False),
+    db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Drawing → CAD for ALL supported file types (PNG/JPG/JPEG/WEBP/PDF/SVG/DXF),
-    as an ASYNC JOB.
+    as an ASYNC JOB (docs/adr/0001-job-queue-database-backed.md).
 
     Fast validations (type/size/params) run inline — an unsupported file is an
     immediate 415, never a queued failure. The pipeline itself (DXF/SVG
     deterministic parsing, or vision + assumption-first engine for rasters)
-    runs on a worker thread: the endpoint returns 202 + ``{job_id, poll}`` and
-    the client polls GET /api/drawings/jobs/{id}; the finished job carries the
-    same ``{generated, analysis, design, message}`` payload the sync form
-    returns. ``sync=true`` (opt-in, scripts/tests) runs inline with status 200."""
+    runs in an ISOLATED WORKER SUBPROCESS: the endpoint returns 202 +
+    ``{job_id, poll}`` and the client polls GET /api/drawings/jobs/{id}; the
+    finished job carries the same ``{generated, analysis, design, message}``
+    payload the sync form returns. ``sync=true`` (opt-in, scripts/tests) runs
+    inline with status 200."""
     from fastapi.responses import JSONResponse
 
-    from app.services import drawing_jobs
+    from app.services import job_service
 
     if units not in (None, "", "mm", "inch"):
         raise HTTPException(status_code=422, detail="units must be 'mm' or 'inch'")
@@ -618,15 +706,24 @@ async def drawing_to_cad(
     data = inspected.safe_bytes
 
     if sync:
-        job = drawing_jobs.DrawingJob(id="sync", user_id=user.id)
+        from app.services.drawing_jobs import DrawingJob
+
+        job = DrawingJob(id="sync", user_id=user.id)
         return _run_to_cad_pipeline(job, data, file.filename, file.content_type,
                                     notes, units, thickness_mm, family, user.id)
 
-    job = drawing_jobs.create_job(user.id)
-    drawing_jobs.run_job(
-        job, lambda j: _run_to_cad_pipeline(
-            j, data, file.filename, file.content_type, notes, units,
-            thickness_mm, family, user.id))
+    try:
+        job = _submit_drawing_job(
+            db, job_type="drawing_to_cad", data=data, user=user,
+            extra_payload={"filename": file.filename, "content_type": file.content_type,
+                          "notes": notes, "units": units, "thickness_mm": thickness_mm,
+                          "family": family})
+    except job_service.JobQueueSaturated as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except job_service.UserConcurrencyLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except job_service.QuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     return JSONResponse(status_code=202, content={
         "job_id": job.id, "status": "queued",
         "poll": f"/api/drawings/jobs/{job.id}",
@@ -1239,15 +1336,22 @@ def _apply_user_overrides(interp: DrawingInterpretationSpec, units: str | None,
 
 
 def _fidelity_report(confidence: float, *, provider_error: bool = False,
-                     used_default_fallback: bool = False) -> dict:
+                     used_default_fallback: bool = False,
+                     critical_unresolved: list[str] | None = None) -> dict:
     """Drawing-fidelity classification stored on every drawing-built design.
 
     * ok      — the drawing was read confidently and drove the geometry;
     * review  — generated, but from weakened evidence (low confidence, provider
                 trouble, hint classification, assumed scale) — never PASS;
-    * failed  — the drawing was effectively not read — export is blocked.
+    * failed  — the drawing was effectively not read, OR (docs/drawing-to-cad-
+                beta.md) a CRITICAL dimension (depth/thickness/bore_type/
+                view_relationship/feature_placement) was never shown on the
+                source drawing at all — export is blocked either way. The
+                design still builds and stays inspectable; only the
+                manufacturable file is withheld until resolved.
     """
-    if confidence < GENERATE_WITH_ASSUMPTIONS_CONFIDENCE:
+    critical_unresolved = critical_unresolved or []
+    if confidence < GENERATE_WITH_ASSUMPTIONS_CONFIDENCE or critical_unresolved:
         status = "failed"
     elif confidence < CONFIDENCE_THRESHOLD or provider_error or used_default_fallback:
         status = "review"
@@ -1257,6 +1361,7 @@ def _fidelity_report(confidence: float, *, provider_error: bool = False,
         "source_drawing_confidence": round(float(confidence), 3),
         "drawing_fidelity_status": status,
         "used_default_fallback": bool(used_default_fallback),
+        "critical_unresolved": list(critical_unresolved),
     }
 
 
@@ -1293,6 +1398,9 @@ def _attach_fidelity(design, semantic: dict, fidelity: dict) -> None:
     status, OR the fallback flag, and the lower confidence."""
     prev = semantic.get("drawing_fidelity")
     if prev:
+        merged_critical = list(dict.fromkeys(
+            list(prev.get("critical_unresolved") or [])
+            + list(fidelity.get("critical_unresolved") or [])))
         fidelity = {
             "source_drawing_confidence": min(
                 prev.get("source_drawing_confidence", 1.0),
@@ -1303,6 +1411,7 @@ def _attach_fidelity(design, semantic: dict, fidelity: dict) -> None:
                 key=lambda s: _FIDELITY_RANK.get(s, 1)),
             "used_default_fallback": bool(prev.get("used_default_fallback"))
             or fidelity["used_default_fallback"],
+            "critical_unresolved": merged_critical,
         }
     semantic["drawing_fidelity"] = fidelity
     if fidelity["drawing_fidelity_status"] == "failed":
@@ -1337,8 +1446,19 @@ def _annotate_from_analysis(db: Session, design, analysis,
         "confidence": analysis.confidence_score,
         "hole_count": analysis.features.hole_count(),
     }
+    critical_categories = list(analysis.critical_ambiguities)
+    if design.object_type in PIPE_BRANCH_DETERMINISTIC_FAMILIES:
+        # Same PART G exemption as _annotate_from_drawing: this analysis may
+        # be a SEPARATE, EARLIER-style pass (e.g. the best-effort fallback
+        # path re-derives an `analysis` from the same interpretation after
+        # the route-locked builder already confirmed the true family) that
+        # misclassified the family before route-locking and marked "depth"
+        # critical on that stale basis. Now that design.object_type is
+        # confirmed to be a proportion-estimated pipe branch/tee, drop it.
+        critical_categories = [c for c in critical_categories if c != "depth"]
     _attach_fidelity(design, semantic, _fidelity_report(
-        analysis.confidence_score, used_default_fallback=used_default_fallback))
+        analysis.confidence_score, used_default_fallback=used_default_fallback,
+        critical_unresolved=critical_categories))
     design.semantic_json = semantic
     db.commit()
     db.refresh(design)
@@ -1565,13 +1685,32 @@ def _annotate_from_drawing(db: Session, design, interp: DrawingInterpretationSpe
          "expected": None, "actual": w, "severity": "warning"}
         for w in (scaled.warnings if scaled else [])
     ]
+    critical_categories = [u.category for u in interp.critical_unresolved_dimensions()]
+    if design.object_type in PIPE_BRANCH_DETERMINISTIC_FAMILIES:
+        # PART G (see _build_locked_deterministic): a route-locked pipe
+        # branch/tee is built by a deterministic proportion-estimating
+        # builder that ALWAYS infers wall/PCD/flange thickness/branch length
+        # -- that is a disclosed, family-level characteristic capped at
+        # REVIEW, never FAILED (docs/drawing-to-cad-beta.md). This is
+        # narrower than PIPE_FLANGE_FAMILIES on purpose: a plain vector
+        # "flange" SVG with genuinely no depth annotation anywhere in its
+        # source (unlike a proportion-estimated pipe branch) must still be
+        # blocked -- missing is missing. An EARLIER, generic classification
+        # pass (before the route-locked builder confirmed the true family)
+        # may have flagged "depth" critical against a mistaken guess like
+        # "adapter_plate"; now that ``design.object_type`` is confirmed to be
+        # one of these deterministic-route families, that stale marker is
+        # dropped rather than permanently blocking export via
+        # _attach_fidelity's stricter-only merge.
+        critical_categories = [c for c in critical_categories if c != "depth"]
     _attach_fidelity(design, semantic, _fidelity_report(
         interp.overall_confidence,
         provider_error=bool(interp.provider_error),
         # Anything not read off the drawing itself (text classification,
         # assumed scale, user-stated notes) is REVIEW at best, never PASS.
         used_default_fallback=interp.interp_source in ("hint", "raster_assumed",
-                                                       "notes")))
+                                                       "notes"),
+        critical_unresolved=critical_categories))
     design.semantic_json = semantic
     if design.route == "cad_plan" and \
             "deterministically" not in (design.route_reason or ""):

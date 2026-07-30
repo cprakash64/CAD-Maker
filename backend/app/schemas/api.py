@@ -1,7 +1,7 @@
 """Request/response models for the HTTP API."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -62,6 +62,65 @@ class FeedbackDTO(BaseModel):
     rating: str
     categories: list[str] = []
     comment: Optional[str] = None
+    created_at: str
+
+
+class ReportBadResultRequest(BaseModel):
+    """A structured "report a bad result" submission -- see
+    app.services.design_service.report_bad_result. Privacy-conscious:
+    ``reason`` is only ever stored if ``consent`` is True (see field docs)."""
+
+    categories: list[str] = Field(default_factory=list, max_length=10)
+    reason: Optional[str] = Field(
+        default=None, max_length=2000,
+        description="Free-text explanation. Only persisted if consent=True.")
+    consent: bool = Field(
+        default=False,
+        description="Explicit consent to store the free-text `reason`. "
+                    "Without it, every other field is still recorded, but "
+                    "`reason` is dropped before it reaches the database.")
+    print_success: Optional[bool] = Field(
+        default=None, description="Did this design print successfully? "
+                                   "Omit/null if not attempted or unknown.")
+    fit_success: Optional[bool] = Field(
+        default=None, description="Did the printed part fit as expected? "
+                                   "Omit/null if not attempted or unknown.")
+
+    @field_validator("categories")
+    @classmethod
+    def _valid_categories(cls, v: list[str]) -> list[str]:
+        bad = [c for c in v if c not in FEEDBACK_CATEGORIES]
+        if bad:
+            raise ValueError(f"unknown feedback categories: {bad}")
+        return v
+
+
+class ReportBadResultDTO(BaseModel):
+    id: str
+    design_id: str
+    categories: list[str] = []
+    reason: Optional[str] = None
+    consent: bool
+    print_success: Optional[bool] = None
+    fit_success: Optional[bool] = None
+    design_version_number: Optional[int] = None
+    prompt_version: Optional[str] = None
+    created_at: str
+
+
+class VersionDiffEntryDTO(BaseModel):
+    field: str
+    old: Any = None
+    new: Any = None
+
+
+class DesignVersionDTO(BaseModel):
+    id: str
+    version_number: int
+    edit_kind: str
+    summary: str
+    spec_hash: Optional[str] = None
+    diff: list[VersionDiffEntryDTO] = []
     created_at: str
 
 
@@ -169,6 +228,11 @@ class SelectableFeatureDTO(BaseModel):
 
 
 class DesignDTO(BaseModel):
+    # The job (docs/adr/0001-job-queue-database-backed.md) that produced this
+    # design, when generation went through the job queue. Present whenever
+    # the request completed within the bounded synchronous wait; absent for
+    # designs built via a path that doesn't use the queue (e.g. edits).
+    job_id: Optional[str] = None
     id: str
     project_id: str
     prompt: str
@@ -185,6 +249,11 @@ class DesignDTO(BaseModel):
     bounding_box_mm: Optional[dict] = None
     spec_hash: Optional[str] = None
     exports: list[ExportDTO] = []
+    # GLB preview/web format (app.export.glb): synthesized on the fly from
+    # preview_json, never persisted, never a manufacturable file -- kept OUT
+    # of `exports` (real ExportFile rows) so that list's meaning (and every
+    # caller's exact-match assertions on it) stays STL/STEP only.
+    preview_export: Optional[ExportDTO] = None
     checks: list[CheckDTO] = []
     editable_parameters: dict[str, float] = {}
     provider: Optional[str] = None
@@ -303,6 +372,71 @@ class DesignDTO(BaseModel):
     # drawings built via the sketch-reconstruction pipeline (outer profile +
     # classified cuts + grouped counterbores).
     sketch_ir: Optional[dict] = None
+
+    # --- Product contract (docs/product-contract.md) — additive, new fields.
+    # None of these replace an existing field; every value here is also
+    # derivable from fields already above (kept for backward compatibility),
+    # surfaced here as a single top-level, always-in-the-same-place contract.
+    #
+    # One of Maturity's four values (production_ready/validated_beta/
+    # experimental/unsupported) from the family registry, resolved from
+    # object_type. Null only when object_type doesn't resolve to a
+    # registered family (e.g. a standard/catalog part governed instead by
+    # part_family_contract's generation_honesty_status).
+    capability_level: Optional[str] = None
+    # True whenever this design was built from an uploaded drawing (a
+    # drawing_fidelity block is present). Drawing → CAD is a beta workflow
+    # (docs/drawing-to-cad-beta.md): even a family whose text-prompt path is
+    # production_ready is capped below that here, since capability_level
+    # above already reflects that cap -- this flag is the explicit signal the
+    # frontend uses to render the "Beta" label regardless of the numeric cap.
+    drawing_beta: bool = False
+    # True when this drawing-built design needs a human to review the
+    # interpretation before trusting it: drawing_fidelity_status != "ok", or
+    # a critical dimension (depth/thickness/bore_type/view_relationship/
+    # feature_placement) was never shown on the source drawing. False for
+    # every non-drawing design.
+    drawing_review_required: bool = False
+    # A single top-level confidence in [0,1], the best available of
+    # object_intelligence.confidence_score / classification.confidence /
+    # (for drawings) drawing_fidelity's source confidence. Null when no
+    # confidence signal was computed for this design.
+    confidence: Optional[float] = None
+    # Short, human-readable restatement of what the system understood the
+    # request to be (today: the design title, falling back to object_type).
+    interpreted_intent: Optional[str] = None
+    # The unit system all dimensions in `spec`/`bounding_box_mm` are in.
+    # Always "mm" today (LunaiCAD's canonical internal unit).
+    normalized_units: str = "mm"
+    # Deduplicated limitations: this design's own feature/classification
+    # limitations plus its family's known_limitations from the registry.
+    limitations: list[str] = []
+    # Every question still open for this design: clarification_question +
+    # clarification_questions + missing_required, deduplicated. Empty means
+    # nothing is outstanding (not necessarily that generation succeeded --
+    # check generation_outcome/validation_status for that).
+    unanswered_questions: list[str] = []
+    # {"eligible": bool, "reason": str | None} -- whether a manufacturable
+    # export can be handed out right now, and why not if it can't. Derived
+    # from download_blocked_reason/validation_status/needs_clarification;
+    # does not introduce a new blocking rule of its own.
+    export_eligibility: Optional[dict] = None
+    # Printer-profile provenance disclosure (docs/calibration.md) — see
+    # design_service.CALIBRATION_PROVENANCE_NOTICE for why this is a fixed
+    # string today rather than a per-design lookup.
+    calibration_provenance: Optional[str] = None
+    # Safety-policy classification (app.safety): None when no high-consequence
+    # category was ever detected for this design. `categories`/`policy` are
+    # STICKY (never downgrade across edits — see app.safety.policy). When
+    # `policy == "require_acknowledgment"` and `acknowledged` is false, export
+    # is blocked until POST .../acknowledge-safety records an explicit ack.
+    safety: Optional[dict] = None
+    # Version history (app.services.version_service): the number of the most
+    # recent snapshot (None until this design has been edited at least once),
+    # and the old/new field changes THIS response's edit just made, so the
+    # studio can show a diff without a second round-trip to GET .../versions.
+    latest_version_number: Optional[int] = None
+    last_edit_diff: list[VersionDiffEntryDTO] = []
 
 
 class DesignSummaryDTO(BaseModel):

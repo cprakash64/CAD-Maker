@@ -164,6 +164,19 @@ CAD_PLAN_SCHEMA = {
         "assumptions": {"type": "array", "items": {"type": "string"}},
         "clarification_required": {"type": "boolean"},
         "clarification_questions": {"type": "array", "items": {"type": "string"}},
+        # Product-contract clarification policy: report WHICH kind of thing is
+        # ambiguous (if any); a deterministic policy, not this flag or
+        # clarification_required, decides whether that means asking the user.
+        "ambiguity_flags": {
+            "type": "array",
+            "items": {"type": "string", "enum": [
+                "topology", "overall_size", "fit", "mating_geometry",
+                "fastener_standard", "bearing_shaft_interface",
+                "assembly_relationship", "safety_or_load",
+                "cosmetic_fillet", "minor_chamfer", "noncritical_radius",
+                "profile_derived_wall_thickness", "preview_only_cosmetic",
+            ]},
+        },
         "material": {"type": ["string", "null"]},
         "stock": {"type": ["string", "null"]},
         "features": {

@@ -99,6 +99,114 @@ def test_unsupported_operation_explains():
         apply_localized(spec, m)
 
 
+# --- Phase 10: structured edit vocabulary extension ------------------------
+def test_move_feature_is_equivalent_to_move_hole():
+    spec = _bracket()
+    m = LocalizedModificationSpec(
+        selected_entity_type="hole", selected_entity_id="0",
+        allowed_operation="move_feature",
+        natural_language_instruction="move this hole",
+        validated_parameters={"x": 10.0, "y": 5.0},
+    )
+    new, _ = apply_localized(spec, m)
+    assert new.holes[0].x == 10.0
+    assert new.holes[0].y == 5.0
+
+
+def test_resize_hole_group_resizes_matching_holes_only():
+    spec = DesignSpec(
+        object_type="rectangular_bracket",
+        dimensions={"width": 100, "depth": 40, "thickness": 6},
+        holes=[
+            Hole(diameter=6.6, x=-40, y=0),
+            Hole(diameter=6.6, x=0, y=0),
+            Hole(diameter=10.0, x=40, y=0),  # different group, must stay untouched
+        ],
+    )
+    m = LocalizedModificationSpec(
+        selected_entity_type="hole", selected_entity_id="0",
+        allowed_operation="resize_hole_group",
+        natural_language_instruction="make all the M6 holes 8mm",
+        validated_parameters={"diameter": 8.0},
+    )
+    new, msg = apply_localized(spec, m)
+    assert new.holes[0].diameter == 8.0
+    assert new.holes[1].diameter == 8.0
+    assert new.holes[2].diameter == 10.0  # untouched
+    assert "2" in msg
+
+
+def test_suppress_feature_removes_the_hole():
+    spec = _bracket()
+    m = LocalizedModificationSpec(
+        selected_entity_type="hole", selected_entity_id="1",
+        allowed_operation="suppress_feature",
+        natural_language_instruction="suppress this hole",
+    )
+    new, msg = apply_localized(spec, m)
+    assert len(new.holes) == 1
+    assert "restore" in msg.lower()
+
+
+def test_replace_standard_snaps_to_published_clearance_size():
+    spec = _bracket()
+    m = LocalizedModificationSpec(
+        selected_entity_type="hole", selected_entity_id="0",
+        allowed_operation="replace_standard",
+        natural_language_instruction="change this hole to M8 standard",
+    )
+    new, msg = apply_localized(spec, m)
+    assert new.holes[0].diameter == 9.0  # M8 clearance per ISO 273 medium series
+    assert "M8" in msg
+
+
+def test_replace_standard_without_a_recognizable_size_explains():
+    spec = _bracket()
+    m = LocalizedModificationSpec(
+        selected_entity_type="hole", selected_entity_id="0",
+        allowed_operation="replace_standard",
+        natural_language_instruction="use a different standard",
+    )
+    with pytest.raises(UnsupportedLocalizedEdit):
+        apply_localized(spec, m)
+
+
+def test_change_fit_class_press_shrinks_below_pin_diameter():
+    spec = _bracket()
+    m = LocalizedModificationSpec(
+        selected_entity_type="hole", selected_entity_id="0",
+        allowed_operation="change_fit_class",
+        natural_language_instruction="press fit for a 6mm shaft",
+        validated_parameters={"pin_diameter": 6.0},
+    )
+    new, msg = apply_localized(spec, m)
+    assert new.holes[0].diameter < 6.0
+    assert "press" in msg.lower()
+
+
+def test_change_fit_class_loose_grows_above_pin_diameter():
+    spec = _bracket()
+    m = LocalizedModificationSpec(
+        selected_entity_type="hole", selected_entity_id="0",
+        allowed_operation="change_fit_class",
+        natural_language_instruction="loose running fit for a 6mm shaft",
+        validated_parameters={"pin_diameter": 6.0},
+    )
+    new, _ = apply_localized(spec, m)
+    assert new.holes[0].diameter > 6.0
+
+
+def test_change_fit_class_without_pin_diameter_explains():
+    spec = _bracket()
+    m = LocalizedModificationSpec(
+        selected_entity_type="hole", selected_entity_id="0",
+        allowed_operation="change_fit_class",
+        natural_language_instruction="normal fit",
+    )
+    with pytest.raises(UnsupportedLocalizedEdit):
+        apply_localized(spec, m)
+
+
 # --- API ------------------------------------------------------------------
 def test_localized_edit_endpoint(client, auth):
     h = auth["headers"]

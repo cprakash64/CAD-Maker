@@ -18,6 +18,7 @@ def _prod_kwargs(**overrides):
         storage_backend="local",
         cors_origins="https://app.example.com",
         public_base_url="https://api.example.com",
+        ops_api_token="a-fake-ops-token-1234567890",
     )
     base.update(overrides)
     return base

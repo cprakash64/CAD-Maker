@@ -1,5 +1,11 @@
 # CAD families, maturity & the capability registry
 
+> See [`docs/product-contract.md`](product-contract.md) for the canonical
+> product definition, the four standardized capability levels, the
+> clarification (ask-vs-default) policy, and the API contract. This document
+> is the detailed per-family reference; the two must agree, and
+> product-contract.md wins if they ever conflict.
+
 SourceCAD generates CAD from plain English across a growing set of **part /
 assembly families**. Rather than hardcoding one example at a time, the backend
 keeps a single, honest **family registry** that the classifier, the API, the
@@ -17,14 +23,16 @@ a new CAD type means registering a family, not rewriting the router.
 
 | Maturity | Meaning |
 | --- | --- |
-| `production_ready` | Validated, dimension-checked, exportable as STEP + STL. Covered by golden generation tests. |
-| `beta` | Generates real CAD, but with narrower coverage / fewer guarantees than production. |
-| `concept` | Plausible **concept** geometry — *not* certified, FEA-analyzed, or standards-checked. |
+| `production_ready` | Validated, dimension-checked, exportable as STEP + STL. Requires an eval-harness benchmark pass rate ≥ 0.9. |
+| `validated_beta` | Generates real CAD, but with narrower coverage / fewer guarantees than production. Requires a benchmark pass rate ≥ 0.7 where measured. |
+| `experimental` | Plausible geometry — *not* certified, FEA-analyzed, or standards-checked. No benchmark gate. |
 | `unsupported` | Not generated as a single part; routed to **decomposition** guidance instead. |
 
-We deliberately make **no fake accuracy or manufacturing claims**. A concept
-tubular chassis is labelled concept and flagged "not FEA-certified"; an
-approximate gear blank says its teeth are not a true involute profile.
+(Renamed from the earlier `beta`/`concept` vocabulary — same meaning, see
+`docs/product-contract.md`.) We deliberately make **no fake accuracy or
+manufacturing claims**. An experimental tubular chassis is labelled
+experimental and flagged "not FEA-certified"; an approximate gear blank says
+its teeth are not a true involute profile.
 
 ## Supported families
 
@@ -33,27 +41,32 @@ approximate gear blank says its teeth are not a true involute profile.
 | `mounting_plate` | single part | production_ready | Flat plates/brackets with hole patterns. |
 | `spacer` | single part | production_ready | Round/hex spacers, standoffs, bushings (no threads). |
 | `l_bracket` | single part | production_ready | Two-flange right-angle bracket. |
-| `flange` | single part | beta | Flange/adapter/transition plates; no ANSI/DIN standard tables. |
-| `enclosure` | single part | beta | Single-cavity shelled box with bosses. |
-| `pipe_fitting` | single part | beta | Spool/tee/clamp; geometry only, no pressure rating or NPT threads. |
-| `drill_jig` | single part | beta | Guide-hole plate; plain bores (no hardened bushings). |
-| `handle_knob` | single part | beta | Simple revolved/extruded grips. |
-| `u_bracket` | single part | beta | True U channel (base + two side walls), not a flat plate. |
-| `hinge_bracket` | single part | beta | Base + two ears + coaxial pin hole. |
-| `clamp_block` | single part | beta | Split tube/pipe clamp with bore + tightening bolts. |
-| `robotic_arm_base_bracket` | single part | beta | Circular/rectangular base + vertical tower + gussets (+ optional bearing pocket). |
-| `screwdriver` | single part | concept | One fused hand tool along X: handle + coaxial shaft + tip. Phillips tip approximate; not manufacturing-certified. |
-| `gear_blank` | single part | concept | **Approximate** teeth — not a true involute; use as a blank. |
-| `crankshaft` | single part | beta | Inline-4 geometric model; not balance/stress validated. |
-| `generic_feature_graph_part` | single part | beta | Anything composed from safe primitives (box/cylinder/tube/boss/rib/hole + booleans). No threads/splines/free-form. |
-| `machine_frame` | assembly | concept | Welded square-tube frame: legs, top/bottom frames, braces, foot/motor plates, panel. |
-| `engine_test_stand` | assembly | concept | Square-tube stand: engine plates, crossbar, radiator/fuel mounts, caster plates. |
-| `drone_frame` | assembly | concept | Quadcopter X-frame: arms, motor hole patterns, central/battery plates, landing feet. |
-| `motorcycle_subframe` | assembly | concept | Tapered tube rails, seat rails, shock/tail/side tabs, battery tray, bracing. |
-| `skateboard_motor_mount` | single part | concept | Primary motor mount bracket of a larger deck assembly (decomposed). |
-| `tube_chassis` | assembly | concept | Tubular space frame — concept CAD; tubes export as solid cylinders. |
-| `reference_buggy_tubular_chassis` | assembly | concept | Hand-authored reference buggy/sports-car layout; concept only. |
+| `flange` | single part | validated_beta | Flange/adapter/transition plates; no ANSI/DIN standard tables. |
+| `enclosure` | single part | validated_beta | Single-cavity shelled box with bosses. |
+| `pipe_fitting` | single part | validated_beta | Spool/tee/clamp; geometry only, no pressure rating or NPT threads. |
+| `drill_jig` | single part | validated_beta | Guide-hole plate; plain bores (no hardened bushings). |
+| `handle_knob` | single part | validated_beta | Simple revolved/extruded grips. |
+| `u_bracket` | single part | validated_beta | True U channel (base + two side walls), not a flat plate. |
+| `hinge_bracket` | single part | validated_beta | Base + two ears + coaxial pin hole. |
+| `clamp_block` | single part | validated_beta | Split tube/pipe clamp with bore + tightening bolts. |
+| `robotic_arm_base_bracket` | single part | validated_beta | Circular/rectangular base + vertical tower + gussets (+ optional bearing pocket). |
+| `screwdriver` | single part | experimental | One fused hand tool along X: handle + coaxial shaft + tip. Phillips tip approximate; not manufacturing-certified. |
+| `gear_blank` | single part | experimental | **Approximate** teeth — not a true involute; use as a blank. |
+| `crankshaft` | single part | validated_beta | Inline-4 geometric model; not balance/stress validated. |
+| `generic_feature_graph_part` | single part | validated_beta | Anything composed from safe primitives (box/cylinder/tube/boss/rib/hole + booleans). No threads/splines/free-form. |
+| `machine_frame` | assembly | experimental | Welded square-tube frame: legs, top/bottom frames, braces, foot/motor plates, panel. |
+| `engine_test_stand` | assembly | experimental | Square-tube stand: engine plates, crossbar, radiator/fuel mounts, caster plates. |
+| `drone_frame` | assembly | experimental | Quadcopter X-frame: arms, motor hole patterns, central/battery plates, landing feet. |
+| `motorcycle_subframe` | assembly | experimental | Tapered tube rails, seat rails, shock/tail/side tabs, battery tray, bracing. |
+| `skateboard_motor_mount` | single part | experimental | Primary motor mount bracket of a larger deck assembly (decomposed). |
+| `tube_chassis` | assembly | experimental | Tubular space frame — experimental CAD; tubes export as solid cylinders. |
+| `reference_buggy_tubular_chassis` | assembly | experimental | Hand-authored reference buggy/sports-car layout; experimental only. |
 | `generic_assembly_decomposition` | assembly | unsupported | Whole machines → decomposition plan, no geometry. |
+
+Standard/catalog fastener parts (hex nut, square nut, bolt, threaded rod,
+shaft coupler, GT2 pulley) and tire/rim/wheel-assembly are governed by a
+separate, older honesty layer (`app.cad.part_family`) rather than this
+registry — see "Two honesty layers" in `docs/product-contract.md`.
 
 ### Structural-frame & concept-assembly generators
 
@@ -79,8 +92,8 @@ assumptions, example prompts and per-family limitations) is always available at
 
 ## What "validated" means
 
-For a generated single part, validation (the `production_ready`/`beta`
-guarantee) asserts:
+For a generated single part, validation (the `production_ready`/
+`validated_beta` guarantee) asserts:
 
 - a **STEP** and an **STL** file were exported and are non-empty;
 - the model is **not empty** (positive volume);
@@ -91,10 +104,11 @@ guarantee) asserts:
 See [`backend/tests/test_golden_benchmark.py`](../backend/tests/test_golden_benchmark.py)
 for the dimensional safety net that enforces this on hand-authored parts.
 
-## What "concept assembly" means
+## What "experimental assembly" means
 
-A concept assembly (e.g. a tubular chassis) produces a **previewable, exportable**
-multi-body model that is *representative*, not engineering-validated:
+An experimental assembly (e.g. a tubular chassis) produces a **previewable,
+exportable** multi-body model that is *representative*, not
+engineering-validated:
 
 - tubes are exported as **solid cylinders**; wall thickness is carried as
   cut-list metadata, not modelled as a hollow section;
@@ -103,7 +117,7 @@ multi-body model that is *representative*, not engineering-validated:
 - it is **not** FEA-analyzed, homologated, or certified for structural use.
 
 These assemblies are validated with the *assembly profile* (multi-body allowed)
-and always labelled concept in the UI and API.
+and always labelled experimental in the UI and API.
 
 ## Why some prompts ask for decomposition or clarification
 
@@ -170,10 +184,14 @@ Every design now carries a structured `classification` block
 ## How to add a new family
 
 1. **Register it** in `backend/app/cad/families.py` — add one `CADFamily(...)`
-   entry with its `family_id`, `display_name`, `design_mode`, honest `maturity`,
-   `keywords`, generator `object_types`, required/optional dimensions, default
+   entry with its `family_id`, `display_name`, `design_mode`, honest `maturity`
+   (one of the four levels in `docs/product-contract.md`), `keywords`,
+   generator `object_types`, required/optional dimensions, default
    assumptions, `generation_strategy`, `validation_profile`, `export_policy`,
-   `known_limitations`, and `example_prompts`.
+   `known_limitations`, and `example_prompts`. `safe_defaults`,
+   `physical_validation_status`, `minimum_benchmark_threshold`, and
+   `benchmark_pass_rate`/`benchmark_source` are computed automatically (see
+   `_with_benchmark_data` at the bottom of that file) — don't set them by hand.
 2. **Wire the generator** if it's new — a reusable parametric template
    (`backend/app/cad/templates/`) registered in
    [`backend/app/cad/registry.py`](../backend/app/cad/registry.py), or feature-graph

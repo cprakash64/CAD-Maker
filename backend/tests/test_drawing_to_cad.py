@@ -59,8 +59,15 @@ def test_unreadable_svg_is_422(client, auth):
 # ------------------------------------------------------------------- SVG path
 
 def test_svg_adapter_plate_generates_validated_model(client, auth):
-    """Rect outline + 4 corner holes + center bore → plate with 5 exact holes,
-    STEP/STL exports, passing validation, depth assumption visible."""
+    """Rect outline + 4 corner holes + center bore -> plate with 5 exact
+    holes; the design builds and is fully inspectable (bbox, assumptions),
+    but since the drawing shows NO depth/thickness at all, the final
+    manufacturable export is blocked (docs/drawing-to-cad-beta.md's
+    unresolved-dimension gate) -- depth is a CRITICAL category, so this is a
+    disclosed default that must NOT be silently exported, not merely a
+    disclosed default that's fine to ship. See
+    test_svg_adapter_plate_thickness_override_resolves_and_unblocks_export
+    for the resolution path."""
     svg = (DATA / "simple_adapter_plate.svg").read_bytes()
     r = _post(client, auth, "simple_adapter_plate.svg", svg, "image/svg+xml")
     assert r.status_code == 200, r.text
@@ -74,14 +81,31 @@ def test_svg_adapter_plate_generates_validated_model(client, auth):
 
     d = out["design"]
     assert {e["fmt"] for e in d["exports"]} >= {"step", "stl"}
-    assert d["download_blocked_reason"] is None
     bb = d["bounding_box_mm"]
     assert bb["x"] == pytest.approx(80, abs=1)
     assert bb["y"] == pytest.approx(60, abs=1)
     assert bb["z"] == pytest.approx(6, abs=0.5)  # plate default depth
-    # Missing depth generated with a visible assumption, not a block.
+    # Missing depth generates with a visible assumption, not a silent guess...
     assert any("assumed" in s.lower() and "6" in s for s in d["assumptions"]), d["assumptions"]
     assert not d["needs_clarification"]
+    # ...but a critical unresolved dimension still blocks the FINAL export.
+    assert d["download_blocked_reason"] is not None
+    fidelity = d["drawing_fidelity"]
+    assert fidelity["drawing_fidelity_status"] == "failed"
+    assert "depth" in fidelity["critical_unresolved"]
+
+
+def test_svg_adapter_plate_thickness_override_resolves_and_unblocks_export(client, auth):
+    """The resolution path: an explicit thickness_mm override on the SAME
+    fixture (no depth on the drawing) resolves the previously-critical
+    dimension, and the export is no longer blocked."""
+    svg = (DATA / "simple_adapter_plate.svg").read_bytes()
+    r = _post(client, auth, "simple_adapter_plate.svg", svg, "image/svg+xml", thickness_mm=6)
+    assert r.status_code == 200, r.text
+    d = r.json()["design"]
+    assert d["download_blocked_reason"] is None
+    assert d["drawing_fidelity"]["critical_unresolved"] == []
+    assert d["bounding_box_mm"]["z"] == pytest.approx(6, abs=0.5)
 
 
 def test_svg_hole_count_preserved(client, auth):
@@ -97,6 +121,10 @@ def test_svg_hole_count_preserved(client, auth):
 
 
 def test_svg_flange_builds_circular_part_with_bolt_circle(client, auth):
+    """simple_flange.svg has no thickness annotation either (see its file
+    comment: only diameters are dimensioned) -- same critical-unresolved-
+    depth gate as the adapter plate. The bolt-circle geometry is still
+    extracted correctly; only the FINAL export is blocked."""
     svg = (DATA / "simple_flange.svg").read_bytes()
     r = _post(client, auth, "simple_flange.svg", svg, "image/svg+xml")
     assert r.status_code == 200, r.text
@@ -115,7 +143,38 @@ def test_svg_flange_builds_circular_part_with_bolt_circle(client, auth):
     bb = d["bounding_box_mm"]
     assert bb["x"] == pytest.approx(120, abs=1)
     assert {e["fmt"] for e in d["exports"]} >= {"step", "stl"}
+    assert d["download_blocked_reason"] is not None
+    assert "depth" in d["drawing_fidelity"]["critical_unresolved"]
+
+
+def test_svg_flange_thickness_override_unblocks_export(client, auth):
+    svg = (DATA / "simple_flange.svg").read_bytes()
+    r = _post(client, auth, "simple_flange.svg", svg, "image/svg+xml", thickness_mm=10)
+    assert r.status_code == 200, r.text
+    d = r.json()["design"]
     assert d["download_blocked_reason"] is None
+
+
+def test_drawing_built_design_is_capped_beta_and_flags_review(client, auth):
+    """Every drawing-built design carries the Drawing -> CAD beta signal
+    (docs/drawing-to-cad-beta.md) regardless of the underlying family's own
+    text-prompt maturity, and flags mandatory review whenever fidelity isn't
+    a clean "ok" or a critical dimension was never resolved."""
+    svg = (DATA / "simple_flange.svg").read_bytes()
+    blocked = _post(client, auth, "simple_flange.svg", svg, "image/svg+xml").json()["design"]
+    assert blocked["drawing_beta"] is True
+    assert blocked["drawing_review_required"] is True
+    assert blocked["capability_level"] in {"validated_beta", "experimental"}
+
+    resolved = _post(client, auth, "simple_flange.svg", svg, "image/svg+xml",
+                     thickness_mm=10).json()["design"]
+    assert resolved["drawing_beta"] is True
+    # Fidelity may still be "review" (assumed/estimated data) even once the
+    # critical block is resolved -- review-required only tracks fidelity/
+    # critical-unresolved, not a permanently-set flag.
+    assert resolved["drawing_review_required"] == (
+        resolved["drawing_fidelity"]["drawing_fidelity_status"] != "ok"
+        or bool(resolved["drawing_fidelity"]["critical_unresolved"]))
 
 
 # ------------------------------------------------------------------- DXF path
@@ -229,8 +288,11 @@ def test_pdf_renders_and_flows_to_vision(client, auth):
 # --------------------------------------------------- validation / export gating
 
 def test_successful_generation_returns_export_urls(client, auth):
+    # thickness_mm supplied: this test is about export URL/download wiring,
+    # not the unresolved-depth gate (covered separately) -- resolve depth
+    # explicitly so the file is actually downloadable.
     svg = (DATA / "simple_adapter_plate.svg").read_bytes()
-    r = _post(client, auth, "simple_adapter_plate.svg", svg)
+    r = _post(client, auth, "simple_adapter_plate.svg", svg, thickness_mm=6)
     assert r.status_code == 200
     d = r.json()["design"]
     for e in d["exports"]:

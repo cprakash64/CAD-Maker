@@ -63,6 +63,21 @@ def _signup(client: "TestClient") -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def _reset_llm_circuit_breaker():
+    """The LLM circuit breaker (app.llm.circuit_breaker) is per-process global
+    state, same as app.rate_limit's counters -- unlike rate limiting (which is
+    off by default in tests), the breaker is always active, so without this a
+    test that deliberately triggers several provider failures (to exercise
+    fallback/error handling) would trip it and break unrelated tests that
+    happen to run afterward in the same process."""
+    from app.llm import circuit_breaker
+
+    circuit_breaker.reset()
+    yield
+    circuit_breaker.reset()
+
+
 @pytest.fixture
 def client() -> TestClient:
     # Imported lazily so test modules that don't need the HTTP app (and thus the

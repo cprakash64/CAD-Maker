@@ -1,0 +1,30 @@
+[Unit]
+Description=LunaiCAD FastAPI backend
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=lunaicad
+Group=lunaicad
+WorkingDirectory=/opt/lunaicad/backend
+EnvironmentFile=/opt/lunaicad/backend/.env
+# --workers 2 means TWO worker processes -- app.metrics' Counters/Histograms/
+# Gauges are per-process by default, which would silently undercount on
+# /metrics (docs/ops/observability.md -- "Multiprocess metrics"). These two
+# lines wipe any stale per-PID metric files from a PREVIOUS run (their PIDs
+# no longer exist and would otherwise inflate merged counts forever) before
+# uvicorn forks fresh workers; PROMETHEUS_MULTIPROC_DIR itself is set in .env
+# and picked up automatically by app.metrics/prometheus_client.
+ExecStartPre=/bin/mkdir -p /opt/lunaicad/prometheus_multiproc
+ExecStartPre=/bin/sh -c 'rm -f /opt/lunaicad/prometheus_multiproc/*'
+# Bind to loopback only -- nginx (docs/deployment.md) terminates TLS and
+# reverse-proxies to this port; the backend is never directly internet-facing.
+ExecStart=/opt/lunaicad/backend/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8010 --workers 2
+
+Restart=always
+RestartSec=2
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

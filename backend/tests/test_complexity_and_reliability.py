@@ -156,12 +156,20 @@ def test_llm_unavailable_surfaces_as_clean_503(client, auth, monkeypatch):
 
 
 # --- concurrent / duplicate creates must not lock SQLite ------------------
-def test_concurrent_creates_do_not_lock_db(auth):
+def test_concurrent_creates_do_not_lock_db(auth, monkeypatch):
     """Several overlapping creates (the exact failure mode from the bug report)
     must all succeed — no 'database is locked'."""
     from fastapi.testclient import TestClient
 
     from app.main import app
+    from app.config import settings
+
+    # This test is specifically about SQLite lock contention under
+    # concurrent writes, not app.services.job_service's per-user concurrent-
+    # job limit (a separate, deliberate feature -- docs/adr/
+    # 0001-job-queue-database-backed.md) -- raise it so 5 genuinely
+    # concurrent requests for the SAME user aren't rejected by that limit.
+    monkeypatch.setattr(settings, "job_per_user_concurrent_limit", 10)
 
     results: list = []
     errors: list = []

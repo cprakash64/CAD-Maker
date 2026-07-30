@@ -94,7 +94,19 @@ def _print_readiness(measured: dict, smallest_hole: float | None) -> dict:
 def _compensation_notes() -> list[str]:
     comp = settings.printer_xy_compensation_mm
     if comp:
-        return [f"Printer XY compensation of {comp:g}mm is applied to the geometry."]
+        return [f"Printer XY compensation of {comp:g}mm is applied to the geometry "
+                "(PRINTER_XY_COMPENSATION_MM override)."]
+    from app.cad.calibration.resolver import resolve_measurement
+    from app.schemas.calibration import CalibrationMeasurementType
+
+    resolved = resolve_measurement(
+        [], measurement_type=CalibrationMeasurementType.dimensional_correction,
+        feature="printer_xy_compensation")
+    if resolved.value_mm:
+        source = "a generic estimate (not physically measured)" if resolved.is_estimate \
+            else f"validated calibration profile '{resolved.provenance['label']}'"
+        return [f"Printer XY compensation of {resolved.value_mm:g}mm applied, from "
+                f"{source}."]
     return ["No printer compensation applied — requested dimensions preserved exactly."]
 
 

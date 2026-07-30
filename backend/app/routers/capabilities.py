@@ -2,9 +2,9 @@
 can generate.
 
 The frontend uses this to show realistic examples per family, label maturity
-(production-ready / beta / concept), and avoid promising parts the engine can't
-build. It is derived entirely from the central family registry, so the catalog
-can never drift from the generators.
+(production_ready / validated_beta / experimental / unsupported), and avoid
+promising parts the engine can't build. It is derived entirely from the
+central family registry, so the catalog can never drift from the generators.
 """
 from __future__ import annotations
 
@@ -16,11 +16,12 @@ from app.rate_limit import rate_limit
 router = APIRouter(prefix="/api", tags=["capabilities"])
 
 
-# Short, plain-English explanation of each maturity level (kept honest).
+# Short, plain-English explanation of each of the four standardized capability
+# levels (the LunaiCAD product contract; see docs/product-contract.md).
 _MATURITY_MEANING = {
     "production_ready": "Validated, dimension-checked, and exportable as STEP + STL.",
-    "beta": "Generates real CAD with fewer guarantees / narrower coverage.",
-    "concept": "Plausible concept geometry — not certified or analysis-validated.",
+    "validated_beta": "Generates real CAD with fewer guarantees / narrower coverage.",
+    "experimental": "Plausible concept geometry — not certified or analysis-validated.",
     "unsupported": "Not generated as one part; routed to decomposition guidance.",
 }
 
@@ -42,6 +43,14 @@ def _family_payload(fam) -> dict:
         "known_limitations": list(fam.known_limitations),
         "example_prompts": list(fam.example_prompts),
         "supports_drawing_input": fam.supports_drawing_input,
+        # Product-contract fields (docs/product-contract.md).
+        "safe_defaults": dict(fam.safe_defaults),
+        "supported_editing_operations": list(fam.supported_editing_operations),
+        "physical_validation_status": fam.physical_validation_status,
+        "supported_exports": list(fam.export_policy),
+        "minimum_benchmark_threshold": fam.minimum_benchmark_threshold,
+        "benchmark_pass_rate": fam.benchmark_pass_rate,
+        "benchmark_source": fam.benchmark_source,
     }
 
 
@@ -102,7 +111,7 @@ def list_capabilities() -> dict:
 
     production_ready = [f for f in families if f["maturity"] == "production_ready"]
     concept_ready = [f for f in families
-                     if f["maturity"] in ("concept", "beta") and f["exportable"]]
+                     if f["maturity"] in ("experimental", "validated_beta") and f["exportable"]]
     known_limitations = sorted({lim for f in families for lim in f["known_limitations"]})
 
     return {
@@ -126,7 +135,7 @@ def list_capabilities() -> dict:
             "reflects exactly what the engine routes to — no fake capabilities.",
             "'validated' means: STEP+STL exported, non-empty, bounding box within "
             "tolerance of the request, and expected hole counts matched.",
-            "'concept' parts/assemblies are geometry only — not FEA- or "
+            "'experimental' parts/assemblies are geometry only — not FEA- or "
             "standards-certified.",
             "Default dimensions are SourceCAD internal defaults, not ASME/ISO/"
             "Machinery's Handbook certified.",

@@ -154,7 +154,10 @@ def test_create_export_feedback_emit_telemetry(client, auth, caplog):
     created = _events(caplog, "design_created")
     assert created, "create must emit design_created telemetry"
     ev = created[-1]
-    for field in ("prompt", "route", "family", "title", "generation_outcome",
+    # The raw prompt must NEVER appear in ordinary telemetry (docs/ops/
+    # data-retention.md) -- only a non-reversible content fingerprint.
+    assert "prompt" not in ev
+    for field in ("prompt_hash", "route", "family", "title", "generation_outcome",
                   "validation_status", "export_allowed", "is_concept"):
         assert field in ev, f"telemetry missing {field}"
     assert ev["export_clicked"] is False

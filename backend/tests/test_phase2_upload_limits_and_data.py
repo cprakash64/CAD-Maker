@@ -129,7 +129,11 @@ def test_uploaded_filename_never_becomes_a_path(client, auth, name):
     r = client.post("/api/drawings/interpret",
                     files={"file": (name, _png(), "image/png")},
                     data={"hint": "a 20mm plate"}, headers=auth["headers"])
-    assert r.status_code in (200, 409, 413, 415, 422), r.text
+    # 400: python-multipart's own request-parsing limits (field/header size)
+    # can reject an extreme filename before ASGI routing ever reaches our
+    # handler -- still a clean, non-crashing rejection, just one layer
+    # earlier than our own upload guard.
+    assert r.status_code in (200, 400, 409, 413, 415, 422), r.text
     # Nothing resembling the hostile path was created.
     assert not Path("/tmp/etc/passwd").exists()
     body = r.text.lower()

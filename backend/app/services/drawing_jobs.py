@@ -1,25 +1,27 @@
-"""Async job registry for Drawing → CAD generation.
+"""Shared Drawing → CAD job-progress vocabulary and the sync-path job shim.
 
-Drawing generation (vision call + CadQuery build + validation + export) takes
-seconds to a couple of minutes — far too long for a synchronous HTTP request.
-The endpoints create a job, return 202 + job_id immediately, and a worker
-thread runs the pipeline with its own DB session while the frontend polls
-``GET /api/drawings/jobs/{id}`` for stage/progress until done/failed.
+The real async job registry is now app.services.job_service (a DB-backed
+queue, docs/adr/0001-job-queue-database-backed.md) — this module no longer
+owns any job STATE. What remains here and is still genuinely used:
 
-In-process by design: jobs are short-lived and per-node (the app runs a single
-uvicorn process); finished jobs expire after ``_TTL_SECONDS``. A restart loses
-only in-flight jobs — the poller surfaces that as a clean "job not found"
-failure with retry, never a stuck spinner.
+  * ``DrawingJob`` — a plain, in-memory stand-in used ONLY for the
+    ``sync=true`` (opt-in, scripts/tests) request path in
+    app.routers.drawings, which runs the pipeline inline in the current
+    request and never touches the job queue at all.
+  * ``STAGE_PROGRESS`` — the ordered stage -> progress% map, shared by the
+    sync shim above and by app.routers.drawings._drawing_job_json (which
+    translates a real, DB-backed Job row into this same wire vocabulary for
+    GET /api/drawings/jobs/{id}, unchanged for existing clients).
+  * ``set_stage`` — called by the pipeline functions themselves
+    (app.routers.drawings._run_to_cad_pipeline /
+    _run_generate_pipeline) to report progress; it updates whatever
+    job-like object it's given (the sync shim above, OR a job-service-backed
+    shim from app.worker.handlers, via the optional ``on_stage`` hook).
 """
 from __future__ import annotations
 
-import threading
 import time
-import traceback
-import uuid
 from dataclasses import dataclass, field
-
-from app.observability import log_event
 
 # Ordered user-visible stages (progress % is derived from the stage).
 STAGE_PROGRESS: dict[str, int] = {
@@ -34,9 +36,6 @@ STAGE_PROGRESS: dict[str, int] = {
     "done": 100,
     "failed": 100,
 }
-
-_TTL_SECONDS = 3600.0
-_MAX_JOBS = 500
 
 
 @dataclass
@@ -71,104 +70,16 @@ class DrawingJob:
         return out
 
 
-_jobs: dict[str, DrawingJob] = {}
-_lock = threading.Lock()
-
-
-def _evict_locked() -> None:
-    now = time.monotonic()
-    stale = [j.id for j in _jobs.values()
-             if j.status in ("done", "failed") and now - j.updated > _TTL_SECONDS]
-    for jid in stale:
-        _jobs.pop(jid, None)
-    if len(_jobs) > _MAX_JOBS:  # oldest finished first, then oldest of any state
-        for j in sorted(_jobs.values(), key=lambda j: (j.status not in ("done", "failed"),
-                                                       j.created)):
-            if len(_jobs) <= _MAX_JOBS:
-                break
-            _jobs.pop(j.id, None)
-
-
-def create_job(user_id: str) -> DrawingJob:
-    job = DrawingJob(id=uuid.uuid4().hex, user_id=user_id)
-    with _lock:
-        _evict_locked()
-        _jobs[job.id] = job
-    return job
-
-
-def get_job(job_id: str, user_id: str) -> DrawingJob | None:
-    with _lock:
-        job = _jobs.get(job_id)
-    if job is None or job.user_id != user_id:
-        return None
-    _watchdog(job)
-    return job
-
-
-def _watchdog(job: DrawingJob) -> None:
-    """Fail a job that has run past DRAWING_JOB_TIMEOUT_SECONDS so the poller
-    never sits on a stuck spinner. Checked lazily on poll — no timer thread."""
-    from app.config import settings
-
-    limit = float(settings.drawing_job_timeout_seconds)
-    if limit <= 0 or job.status not in ("queued", "running"):
-        return
-    if time.monotonic() - job.created <= limit:
-        return
-    with _lock:
-        if job.status not in ("queued", "running"):
-            return
-        job.status = "failed"
-        job.stage = "failed"
-        job.error = (f"The drawing job exceeded its {int(limit)}s time limit and "
-                     "was stopped. Please retry — a retry usually succeeds.")
-        job.updated = time.monotonic()
-    log_event("drawing_job_watchdog_timeout", job_id=job.id)
-
-
 def set_stage(job: DrawingJob, stage: str, message: str | None = None) -> None:
-    with _lock:
-        job.stage = stage
-        if message is not None:
-            job.message = message
-        job.updated = time.monotonic()
-
-
-def run_job(job: DrawingJob, work) -> None:
-    """Run ``work(job)`` on a daemon thread; it must return the final result
-    payload dict (and may call ``set_stage`` as it progresses). Any exception
-    lands the job in a clean 'failed' state with a user-safe message."""
-
-    def _target() -> None:
-        job.status = "running"
-        start = time.perf_counter()
-        try:
-            result = work(job)
-            with _lock:
-                if job.status == "failed":
-                    return  # the watchdog already failed this job; don't revive it
-                job.result = result
-                job.design_id = ((result or {}).get("design") or {}).get("id")
-                job.status = "done"
-                job.stage = "done"
-                job.updated = time.monotonic()
-            log_event("drawing_job_done", job_id=job.id,
-                      design_id=job.design_id,
-                      generated=bool((result or {}).get("generated")),
-                      latency_ms=int((time.perf_counter() - start) * 1000))
-        except Exception as exc:  # noqa: BLE001 - job must land in a clean state
-            detail = getattr(exc, "detail", None) or str(exc) or type(exc).__name__
-            with _lock:
-                job.status = "failed"
-                job.stage = "failed"
-                job.error = str(detail)[:500]
-                job.updated = time.monotonic()
-            log_event("drawing_job_failed", job_id=job.id,
-                      error_type=type(exc).__name__, detail=str(exc)[:300],
-                      latency_ms=int((time.perf_counter() - start) * 1000))
-            if not hasattr(exc, "detail"):  # unexpected: keep the trace in logs
-                traceback.print_exc()
-
-    threading.Thread(target=_target, name=f"drawing-job-{job.id[:8]}",
-                     daemon=True).start()
+    job.stage = stage
+    if message is not None:
+        job.message = message
+    job.updated = time.monotonic()
+    # Optional hook: app.worker.handlers passes a job-service-backed shim here
+    # (not a real DrawingJob) so the SAME _run_to_cad_pipeline stage calls also
+    # update the real, DB-backed Job row a worker subprocess owns. A genuine
+    # DrawingJob never sets this attribute, so the sync-path caller above is
+    # unaffected.
+    on_stage = getattr(job, "on_stage", None)
+    if on_stage is not None:
+        on_stage(stage, message)

@@ -17,7 +17,7 @@ import cadquery as cq
 
 from app.cad.base import CadGenerationError
 from app.cad.plan.schema import MODIFIER_KINDS, CadPlan, Feature, FeatureKind
-from app.export.exporter import PreviewMesh, _export_bytes, _tessellate
+from app.export.exporter import PreviewMesh, _assert_valid_solid, _export_bytes, _tessellate
 
 _BIG = 10000.0  # tool length for guaranteed-through cuts
 
@@ -765,6 +765,7 @@ def export_solid(solid: cq.Workplane) -> tuple[bytes, bytes, PreviewMesh]:
 
     The STL/preview are meshed with a minimum angular tolerance so small round
     holes resolve as circles (not polygons); STEP stays analytic."""
+    _assert_valid_solid(solid, "cad_plan")
     stl = _export_bytes(solid, ".stl", tolerance=_STL_LINEAR_TOL,
                         angular_tolerance=_STL_ANGULAR_TOL)
     step = _export_bytes(solid, ".step")

@@ -4,10 +4,14 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import CircleEditPanel from "@/components/CircleEditPanel";
+import ClarificationCard from "@/components/ClarificationCard";
+import EditDiff from "@/components/EditDiff";
 import FeedbackWidget from "@/components/FeedbackWidget";
 import HoleTable from "@/components/HoleTable";
 import ModifyBox from "@/components/ModifyBox";
 import ParameterSidebar from "@/components/ParameterSidebar";
+import TrustPanel from "@/components/TrustPanel";
+import VersionHistory from "@/components/VersionHistory";
 import type { SelectedFeature } from "@/components/Studio3D";
 import { buildFaceEditPayload, type FaceEditPayload, type MeshFaceSelection } from "@/lib/selection";
 import { usePartPrompt } from "@/components/PartPromptOverlay";
@@ -375,6 +379,12 @@ export default function StudioPage({ params }: { params: { id: string } }) {
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span className="truncate text-sm font-semibold text-slate-100">{partName}</span>
+                  <span
+                    className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200"
+                    title="LunaiCAD's studio and CAD output are in beta — always verify before manufacturing"
+                  >
+                    Beta
+                  </span>
                   {vmeta && (
                     <span className={vmeta.cls} title={vmeta.detail ?? undefined}>
                       {vmeta.text}
@@ -392,6 +402,7 @@ export default function StudioPage({ params }: { params: { id: string } }) {
                   <ExportMenu
                     formats={design.exports.map((e) => e.fmt)}
                     blocked={exportBlocked}
+                    previewAvailable={!!design.preview_export}
                     concept={pres?.is_concept}
                     hasPackage={design.exports.length > 0}
                     onDownload={(fmt) =>
@@ -441,6 +452,16 @@ export default function StudioPage({ params }: { params: { id: string } }) {
         <aside className="space-y-5 bg-panel p-4 lg:overflow-y-auto">
           {hasModel ? (
             <>
+              <TrustPanel design={design} onAcknowledged={setDesign} />
+              {(design.last_edit_diff?.length ?? 0) > 0 && (
+                <EditDiff diff={design.last_edit_diff!} />
+              )}
+              <VersionHistory
+                designId={id}
+                latestVersionNumber={design.latest_version_number}
+                busy={busy}
+                onRestored={setDesign}
+              />
               {isAssembly && <AssemblyCaveat design={design} />}
               {design.object_intelligence && (
                 <ObjectIntelligenceCard oi={design.object_intelligence} />
@@ -671,6 +692,14 @@ function MaterialChips({
   );
 }
 
+// Intent-focused labels (never the bare format name alone): what the format
+// is FOR, since that's the decision a user is actually making.
+const EXPORT_INTENT_LABEL: Record<string, string> = {
+  stl: "STL — for 3D printing",
+  step: "STEP — for CAD editing",
+  glb: "GLB — preview / web",
+};
+
 function ExportPanel({
   design,
   blocked,
@@ -682,37 +711,51 @@ function ExportPanel({
   onDownload: (fmt: string) => void;
   onPackage: () => void;
 }) {
-  if (blocked) {
-    return (
-      <div className="banner-danger text-xs">
-        <span className="font-semibold">Export blocked.</span> This design failed
-        validation and can’t be exported as a manufacturable file.
-      </div>
-    );
-  }
   const pres = design.presentation;
   const labels = pres?.export_labels;
+  // STL/STEP require a verified solid and are gated by `blocked`; GLB is a
+  // preview/web format built from the mesh (design.preview_export, never
+  // design.exports) and stays available regardless (see backend
+  // export_eligibility.formats / app.export.glb).
+  const manufacturable = design.exports;
+  const glb = design.preview_export ?? null;
   const fmtLabel = (fmt: string) =>
-    labels?.[fmt as "stl" | "step"] ?? `Export ${fmt.toUpperCase()}`;
+    EXPORT_INTENT_LABEL[fmt] ?? labels?.[fmt as "stl" | "step"] ?? `Export ${fmt.toUpperCase()}`;
+
   return (
     <div className="card space-y-2 p-4">
-      {pres?.export_kind === "concept" && (
+      {pres?.export_kind === "concept" && !blocked && (
         <span className="badge-review">Concept export</span>
       )}
-      <div className="grid grid-cols-2 gap-2">
-        {design.exports.map((e) => (
-          <button key={e.fmt} className="btn-ghost btn-sm" onClick={() => onDownload(e.fmt)}>
-            ↓ {fmtLabel(e.fmt)}
-          </button>
-        ))}
-      </div>
-      <button className="btn-primary w-full" onClick={onPackage} disabled={design.exports.length === 0}>
-        ↓ {labels?.package ?? "CAD Package"}
-      </button>
+      {blocked && (
+        <div className="banner-danger text-xs">
+          <span className="font-semibold">STL/STEP export blocked.</span> This
+          design failed validation and can’t be exported as a manufacturable file.
+        </div>
+      )}
+      {!blocked && (
+        <div className="grid grid-cols-1 gap-2">
+          {manufacturable.map((e) => (
+            <button key={e.fmt} className="btn-ghost btn-sm justify-start" onClick={() => onDownload(e.fmt)}>
+              ↓ {fmtLabel(e.fmt)}
+            </button>
+          ))}
+        </div>
+      )}
+      {glb && (
+        <button className="btn-ghost btn-sm w-full justify-start" onClick={() => onDownload("glb")}>
+          ↓ {fmtLabel("glb")}
+        </button>
+      )}
+      {!blocked && (
+        <button className="btn-primary w-full" onClick={onPackage} disabled={manufacturable.length === 0}>
+          ↓ {labels?.package ?? "CAD Package"}
+        </button>
+      )}
       {design.exports.length === 0 && (
         <p className="text-[11px] text-slate-500">No exports available for this design.</p>
       )}
-      {pres?.export_notice && (
+      {pres?.export_notice && !blocked && (
         <p className="text-[11px] leading-relaxed text-amber-200/90">{pres.export_notice}</p>
       )}
       {pres?.beta_notice && (
@@ -1221,72 +1264,6 @@ function DecompositionCard({ design }: { design: Design }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ClarificationCard({
-  design,
-  busy,
-  onGenerateDefaults,
-}: {
-  design: Design;
-  busy: boolean;
-  onGenerateDefaults: () => void;
-}) {
-  return (
-    <div className="banner-warn p-4">
-      <p className="font-semibold">More information needed</p>
-      {design.clarification_questions.length > 0 ? (
-        <ul className="mt-1.5 space-y-1 text-sm">
-          {design.clarification_questions.map((q, i) => (
-            <li key={i} className="flex gap-1.5">
-              <span className="text-amber-300">•</span>
-              <span>{q}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-1 text-sm">{design.clarification_question}</p>
-      )}
-      {design.clarification_questions.length === 0 && design.missing_required.length > 0 && (
-        <p className="mt-1 text-xs text-amber-200/90">
-          Missing: {design.missing_required.join(", ")}
-        </p>
-      )}
-      {design.clarification_options.length > 0 && (
-        <div className="mt-3">
-          <p className="label mb-1.5 text-amber-200/90">
-            Pick a ready-to-generate part:
-          </p>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {design.clarification_options.map((opt) => (
-              <Link
-                key={opt.label}
-                href={`/new?prompt=${encodeURIComponent(opt.prompt)}`}
-                title={opt.prompt}
-                className="card flex flex-col gap-0.5 p-2.5 text-left transition hover:border-amber-400/60"
-              >
-                <span className="text-sm font-medium text-slate-100">{opt.label}</span>
-                <span className="line-clamp-2 text-xs text-slate-400">{opt.prompt}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="mt-3 flex gap-2">
-        {design.can_generate_with_defaults && (
-          <button className="btn-primary btn-sm" onClick={onGenerateDefaults} disabled={busy}>
-            Generate with defaults
-          </button>
-        )}
-        <Link
-          href={`/new?prompt=${encodeURIComponent(design.prompt + " ")}`}
-          className="btn-ghost btn-sm"
-        >
-          Refine prompt
-        </Link>
-      </div>
     </div>
   );
 }

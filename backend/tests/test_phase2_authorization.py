@@ -28,6 +28,9 @@ PUBLIC_ROUTES = {
     ("GET", "/api/provider-status"): "AI capability flags for the pre-login UI",
     ("GET", "/api/capabilities"): "static catalogue of supported edit actions",
     ("GET", "/api/templates"): "static catalogue of part templates",
+    ("GET", "/ready"): "readiness probe -- no secrets in the body, only per-check booleans",
+    ("GET", "/metrics"): "gated by its own OPS_API_TOKEN bearer check, not a user JWT "
+                         "(see app.routers.ops._require_ops_token)",
 }
 
 # Routes that take a resource id owned by a user and must enforce ownership.
@@ -297,9 +300,13 @@ def test_client_cannot_attach_a_design_to_another_users_project(client, auth, au
 
 # --- 4. jobs are owner-scoped ---------------------------------------------
 def test_second_user_cannot_poll_another_users_drawing_job(client, auth, auth2):
-    from app.services import drawing_jobs
+    from app.database import SessionLocal
+    from app.services import job_service
 
-    job = drawing_jobs.create_job(auth["user"]["id"])
+    db = SessionLocal()
+    job = job_service.submit_job(
+        db, user_id=auth["user"]["id"], job_type="drawing_to_cad", payload={}).job
+    db.close()
     assert client.get(f"/api/drawings/jobs/{job.id}",
                       headers=auth["headers"]).status_code == 200
     other = client.get(f"/api/drawings/jobs/{job.id}", headers=auth2["headers"])

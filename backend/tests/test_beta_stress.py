@@ -25,6 +25,7 @@ import pytest
 from app.cad.contract import GenerationOutcome, resolve_outcome
 from app.database import SessionLocal
 from app.models import User
+from app.safety.policy import SafetyRefusalError
 from app.services import design_service
 
 _DATA = json.loads(
@@ -74,11 +75,23 @@ def test_beta_stress_all_prompts_land_safe(stress_user):
     export_leaks: list[str] = []
     outcome_mismatch: list[str] = []
     raised: list[str] = []
+    safety_refused: list[tuple[dict, str]] = []
 
     for item in _PROMPTS:
         prompt = item["prompt"]
         try:
             design = design_service.create_design(db, prompt, None, None, user.id)
+        except SafetyRefusalError as exc:
+            # A deliberate, well-typed safety-policy refusal (app.safety) IS
+            # a safe terminal state -- arguably the SAFEST one available for
+            # a prompt like "Create a fully functional firearm." (pre-dating
+            # the safety layer, this category-`unsupported` prompt used to
+            # land on a generic "we don't build this" outcome; refusing
+            # outright is strictly more correct). Only an UNEXPECTED
+            # exception type below is treated as the crash this test guards
+            # against.
+            safety_refused.append((item, f"{prompt!r} -> {exc}"))
+            continue
         except Exception as exc:  # noqa: BLE001 — a raise IS the failure
             raised.append(f"{prompt!r} -> {type(exc).__name__}: {exc}")
             continue
@@ -114,6 +127,20 @@ def test_beta_stress_all_prompts_land_safe(stress_user):
             outcome_mismatch.append(
                 f"[{item['category']}] {prompt!r} -> {outcome} "
                 f"(allowed {sorted(_allowed(item))})")
+
+    # A safety refusal on a prompt from the legitimate-generation categories
+    # would be a real false positive (this large, realistic 150+ prompt
+    # corpus is exactly where a classifier false-positive would surface) --
+    # unlike a bare `raised` failure, this doesn't include the message since
+    # the point is category, not content.
+    false_positive_refusals = [
+        msg for item, msg in safety_refused
+        if item["category"] in ("single_part", "assembly")
+    ]
+    assert not false_positive_refusals, (
+        "Safety policy refused a legitimate-category prompt:\n"
+        + "\n".join(false_positive_refusals)
+    )
 
     assert not raised, "Generation raised (would be a 500):\n" + "\n".join(raised)
     assert not contract_violations, (

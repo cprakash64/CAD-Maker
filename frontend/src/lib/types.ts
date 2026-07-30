@@ -73,6 +73,10 @@ export interface Design {
   bounding_box_mm: Record<string, number> | null;
   spec_hash: string | null;
   exports: ExportFile[];
+  // GLB preview/web format (app.export.glb): synthesized on the fly, never
+  // persisted, never a manufacturable file — deliberately kept out of
+  // `exports` so that list stays exactly the real STL/STEP export files.
+  preview_export?: ExportFile | null;
   checks: Check[];
   editable_parameters: Record<string, number>;
   provider: string | null;
@@ -133,6 +137,102 @@ export interface Design {
   selectable_holes?: SelectableHole[];
   selectable_edges?: SelectableEdge[];
   selectable_bodies?: SelectableBody[];
+  // Drawing → CAD fidelity (docs/drawing-to-cad-beta.md). Present only on
+  // designs built from an uploaded drawing.
+  drawing_fidelity?: DrawingFidelity | null;
+  // True for every drawing-built design — Drawing → CAD is a beta workflow,
+  // regardless of the underlying part family's own text-prompt maturity.
+  drawing_beta?: boolean;
+  // True when a human should review the interpretation before trusting it:
+  // fidelity isn't a clean "ok", or a critical dimension (depth/thickness/
+  // bore_type/view_relationship/feature_placement) was never resolved.
+  drawing_review_required?: boolean;
+  // One of "production_ready" | "validated_beta" | "experimental" |
+  // "unsupported"; null when unregistered/ungoverned by the family registry.
+  capability_level?: string | null;
+  confidence?: number | null;
+  // Short, human-readable restatement of what the system understood the
+  // request to be (today: the design title, falling back to object_type).
+  interpreted_intent?: string | null;
+  // The unit system all dimensions in spec/bounding_box_mm are in. Always
+  // "mm" today (LunaiCAD's canonical internal unit).
+  normalized_units?: string;
+  // Deduplicated limitations: this design's own feature/classification
+  // limitations plus its family's known_limitations from the registry.
+  limitations?: string[];
+  // Every question still open for this design: clarification_question +
+  // clarification_questions + missing_required, deduplicated.
+  unanswered_questions?: string[];
+  // Whether a manufacturable export (STL/STEP) can be handed out right now,
+  // plus a per-format breakdown -- GLB (preview/web) stays available even
+  // when STL/STEP are blocked (concept / critical-failure designs).
+  export_eligibility?: ExportEligibility | null;
+  // Printer-profile provenance disclosure (see backend
+  // design_service.CALIBRATION_PROVENANCE_NOTICE).
+  calibration_provenance?: string | null;
+  // Safety-policy classification (see backend app.safety). null when no
+  // high-consequence category was ever detected. `categories`/`policy` are
+  // STICKY -- never downgrade across edits. When policy is
+  // "require_acknowledgment" and acknowledged is false, export is blocked
+  // until POST .../acknowledge-safety records an explicit acknowledgment.
+  safety?: SafetyClassification | null;
+  // Version history (see VersionSummary): the number of the most recent
+  // snapshot, and the field-level diff THIS response's edit just made.
+  latest_version_number?: number | null;
+  last_edit_diff?: VersionDiffEntry[];
+}
+
+export interface SafetyClassification {
+  categories: string[];
+  policy:
+    | "refuse"
+    | "conceptual_only"
+    | "block_export"
+    | "require_acknowledgment"
+    | "warn_review_mandatory"
+    | "none";
+  message: string | null;
+  engineering_review_required: boolean;
+  acknowledged: boolean;
+}
+
+export interface PrivacySummary {
+  account_created_at: string;
+  data_improvement_opt_in: boolean;
+  stored: { projects: number; designs: number; export_file_bytes: number };
+  retention: { artifact_retention_days: number; note: string };
+  model_improvement_usage: string;
+  artifact_visibility: string;
+  account_deletion: string;
+}
+
+export interface ExportEligibility {
+  eligible: boolean;
+  reason: string | null;
+  formats?: { stl: boolean; step: boolean; glb: boolean };
+}
+
+export interface VersionDiffEntry {
+  field: string;
+  old: unknown;
+  new: unknown;
+}
+
+export interface VersionSummary {
+  id: string;
+  version_number: number;
+  edit_kind: string;
+  summary: string;
+  spec_hash: string | null;
+  diff: VersionDiffEntry[];
+  created_at: string;
+}
+
+export interface DrawingFidelity {
+  source_drawing_confidence: number;
+  drawing_fidelity_status: "ok" | "review" | "failed";
+  used_default_fallback: boolean;
+  critical_unresolved: string[];
 }
 
 export interface ObjectIntelligence {
@@ -504,6 +604,19 @@ export const FEEDBACK_CATEGORIES: { value: string; label: string }[] = [
   { value: "missing_feature", label: "Missing feature" },
   { value: "other", label: "Other" },
 ];
+
+export interface ReportBadResult {
+  id: string;
+  design_id: string;
+  categories: string[];
+  reason: string | null;
+  consent: boolean;
+  print_success: boolean | null;
+  fit_success: boolean | null;
+  design_version_number: number | null;
+  prompt_version: string | null;
+  created_at: string;
+}
 
 export interface TemplateParam {
   name: string;

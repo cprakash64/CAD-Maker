@@ -141,6 +141,9 @@ def _resolve_nema(prompt: str) -> ObjectResolution | None:
 
 
 def _resolve_bearing(prompt: str) -> ObjectResolution | None:
+    from app.cad.calibration.resolver import resolve_measurement
+    from app.schemas.calibration import CalibrationMeasurementType, FitClass
+
     m = _BEARING.search(prompt)
     if not m or "bearing" not in prompt.lower():
         return None
@@ -148,7 +151,16 @@ def _resolve_bearing(prompt: str) -> ObjectResolution | None:
     if b is None:
         return None
     press = "press" in prompt.lower()
-    clr = -0.02 if press else 0.05    # press (interference) vs slip fit
+    # No request-scoped calibration profiles reach this pure, prompt-only
+    # resolver (docs/calibration.md) -- resolves against the named, typed
+    # generic-estimate measurement (never a bare literal). A caller with a
+    # real validated profile for this printer/material overrides this value
+    # later, in app.services.design_service, where a DB session is available.
+    resolved = resolve_measurement(
+        [], measurement_type=CalibrationMeasurementType.diametral_clearance,
+        feature="bearing_seat",
+        fit_class=FitClass.press if press else FitClass.normal)
+    clr = resolved.value_mm
     fit = "press-fit (interference)" if press else "slip-fit"
     spec = MechanicalObjectSpec(
         object_name=f"{b.name} bearing holder", normalized_name=f"bearing_{b.name}_holder",
@@ -254,6 +266,19 @@ def _resolve_phone_holder(prompt: str) -> ObjectResolution | None:
             clarification=("Which phone is this holder for? Tell me the model (e.g. "
                            "iPhone 15) or its width × height × thickness in mm and I'll "
                            "fit the cradle."))
+    from app.cad.calibration.resolver import resolve_measurement
+    from app.schemas.calibration import CalibrationMeasurementType, FitClass
+
+    case_fit = resolve_measurement(
+        [], measurement_type=CalibrationMeasurementType.diametral_clearance,
+        feature="holder_case_clearance", fit_class=FitClass.normal)
+    case_clr = case_fit.value_mm
+    clearance_note = (
+        f"{case_clr:g}mm fit clearance assumed (generic estimate, not physically "
+        "measured) — increase for a cased phone."
+        if case_fit.is_estimate else
+        f"{case_clr:g}mm fit clearance from validated profile "
+        f"'{case_fit.provenance['label']}' — increase for a cased phone.")
     spec = MechanicalObjectSpec(
         object_name=f"{phone.display_name} holder",
         normalized_name=f"{phone.id}_holder", category=CAT_HOLDER,
@@ -265,10 +290,10 @@ def _resolve_phone_holder(prompt: str) -> ObjectResolution | None:
         validation_requirements=["cradle", "back_support", "bottom_lip", "cable_notch"],
         assumptions=[f"{phone.display_name}: {phone.length_mm:g}×{phone.width_mm:g}×"
                      f"{phone.depth_mm:g}mm (official).",
-                     "1.5mm fit clearance assumed — increase for a cased phone.",
+                     clearance_note,
                      f"Charging cable notch sized for {phone.charging_port.replace('_', '-')}."])
     dims = {"phone_width": phone.width_mm, "phone_depth": phone.depth_mm,
-            "phone_length": phone.length_mm, "fit_clearance": 1.5, "lean_deg": 15.0,
+            "phone_length": phone.length_mm, "fit_clearance": case_clr, "lean_deg": 15.0,
             "wall": 4.0}
     # Source-backed official dimensions but real-world fit varies → REVIEW.
     return ObjectResolution(spec=spec, object_type="phone_holder", dimensions=dims,

@@ -19,6 +19,34 @@ from app.schemas.editing_spec import (
 
 _PLATE_TYPES = {"rectangular_bracket", "adapter_plate", "drill_jig"}
 
+# ISO 273 "medium" series metric clearance-hole diameters, mm — used by
+# replace_standard so swapping a hole's standard snaps to a real published
+# size instead of accepting an arbitrary float (that's what change_hole_diameter
+# is for).
+_METRIC_CLEARANCE_MM = {
+    "M2": 2.4, "M2.5": 2.9, "M3": 3.4, "M4": 4.5, "M5": 5.5,
+    "M6": 6.6, "M8": 9.0, "M10": 11.0, "M12": 13.5, "M16": 17.5, "M20": 22.0,
+}
+
+
+def _extract_metric_standard(instruction: str) -> str | None:
+    m = re.search(r"\bM\s*(\d+(?:\.\d+)?)\b", instruction, re.IGNORECASE)
+    return f"M{m.group(1)}" if m else None
+
+
+def _extract_fit_class(instruction: str):
+    from app.schemas.calibration import FitClass
+
+    t = instruction.lower()
+    for fc in FitClass:
+        if fc.value in t:
+            return fc
+    if "interference" in t or "press fit" in t or "press-fit" in t:
+        return FitClass.press
+    if "slip" in t or "free" in t or "running" in t:
+        return FitClass.loose
+    return None
+
 
 class UnsupportedLocalizedEdit(Exception):
     """Raised when the selected operation can't be applied to the selection."""
@@ -45,6 +73,10 @@ def extract_parameters(op: str, instruction: str) -> dict:
         params["diameter"] = value
     elif op == LocalizedOperation.thicken_flange.value and value is not None:
         params["thickness"] = value
+    elif op == LocalizedOperation.resize_hole_group.value and value is not None:
+        params["diameter"] = value
+    elif op == LocalizedOperation.change_fit_class.value and value is not None:
+        params["pin_diameter"] = value
     return params
 
 
@@ -158,13 +190,83 @@ def apply_localized(
         dims[key] = t
         return _rebuild(spec, dims, holes), f"{key.replace('_', ' ')} set to {t:.1f} mm"
 
-    if op == LocalizedOperation.move_hole.value:
+    if op in (LocalizedOperation.move_hole.value, LocalizedOperation.move_feature.value):
         i = _hole_index(mod, len(holes))
         if "x" in params:
             holes[i].x = params["x"]
         if "y" in params:
             holes[i].y = params["y"]
         return _rebuild(spec, dims, holes), f"Moved hole {i + 1}"
+
+    if op == LocalizedOperation.resize_hole_group.value:
+        i = _hole_index(mod, len(holes))
+        d = params.get("diameter")
+        if not d or d <= 0:
+            raise UnsupportedLocalizedEdit("Tell me the new hole diameter, e.g. '8 mm'.")
+        ref_dia = holes[i].diameter
+        changed = 0
+        for h in holes:
+            if abs(h.diameter - ref_dia) < 1e-6:
+                h.diameter = d
+                changed += 1
+        return _rebuild(spec, dims, holes), (
+            f"Resized {changed} hole{'s' if changed != 1 else ''} from "
+            f"ø{ref_dia:.1f} mm to ø{d:.1f} mm"
+        )
+
+    if op == LocalizedOperation.suppress_feature.value:
+        # No suppress/unsuppress flag exists on Hole yet, so this is
+        # implemented as removal — reversible via version history/restore
+        # (app.services.version_service), not via toggling this op back.
+        i = _hole_index(mod, len(holes))
+        holes.pop(i)
+        return _rebuild(spec, dims, holes), (
+            f"Suppressed hole {i + 1} (restore an earlier version to bring it back)"
+        )
+
+    if op == LocalizedOperation.replace_standard.value:
+        i = _hole_index(mod, len(holes))
+        std = _extract_metric_standard(instr)
+        if std is None or std not in _METRIC_CLEARANCE_MM:
+            raise UnsupportedLocalizedEdit(
+                "Tell me the new standard, e.g. 'M8', from: "
+                + ", ".join(sorted(_METRIC_CLEARANCE_MM, key=lambda s: _METRIC_CLEARANCE_MM[s]))
+            )
+        d = _METRIC_CLEARANCE_MM[std]
+        holes[i].diameter = d
+        return _rebuild(spec, dims, holes), (
+            f"Hole {i + 1} now sized for {std} clearance (ø{d:.1f} mm)"
+        )
+
+    if op == LocalizedOperation.change_fit_class.value:
+        from app.cad.calibration.resolver import resolve_measurement
+        from app.schemas.calibration import CalibrationMeasurementType
+
+        i = _hole_index(mod, len(holes))
+        fit = _extract_fit_class(instr)
+        if fit is None:
+            raise UnsupportedLocalizedEdit(
+                "Tell me the fit class: press, snug, normal, or loose."
+            )
+        pin_mm = params.get("pin_diameter")
+        if not pin_mm or pin_mm <= 0:
+            raise UnsupportedLocalizedEdit(
+                "Tell me the shaft/pin diameter this hole needs to fit, e.g. '6 mm shaft'."
+            )
+        # Uses the generic engineering-estimate clearance table (no per-user
+        # calibration profile lookup here — apply_localized is deliberately a
+        # pure, DB-free function; a real profile is used during full
+        # generation, see app.services.calibration_service.resolve_for_generation).
+        resolved = resolve_measurement(
+            [], measurement_type=CalibrationMeasurementType.diametral_clearance,
+            feature="hole_pin_clearance", fit_class=fit,
+        )
+        d = round(pin_mm + resolved.value_mm, 2)
+        holes[i].diameter = d
+        return _rebuild(spec, dims, holes), (
+            f"Hole {i + 1} set to a {fit.value} fit for a {pin_mm:.1f} mm pin/shaft "
+            f"(ø{d:.2f} mm, engineering estimate)"
+        )
 
     if op == LocalizedOperation.add_gusset.value:
         if spec.object_type != "rectangular_bracket":
@@ -219,6 +321,14 @@ def _infer_operation(entity_type: str, instruction: str) -> str:
             return LocalizedOperation.add_countersink.value
         if "move" in t:
             return LocalizedOperation.move_hole.value
+        if "suppress" in t or "remove this hole" in t or "delete this hole" in t:
+            return LocalizedOperation.suppress_feature.value
+        if "fit" in t and any(w in t for w in ("press", "snug", "loose", "clearance", "shaft", "pin")):
+            return LocalizedOperation.change_fit_class.value
+        if "standard" in t and _extract_metric_standard(t):
+            return LocalizedOperation.replace_standard.value
+        if "all" in t and "hole" in t:
+            return LocalizedOperation.resize_hole_group.value
         return LocalizedOperation.change_hole_diameter.value
     if entity_type == "bolt_pattern":
         return LocalizedOperation.change_bolt_hole_diameter.value

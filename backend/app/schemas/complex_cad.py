@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CADIntentKind(str, Enum):
@@ -20,6 +20,8 @@ class CADIntentKind(str, Enum):
 
 
 class CADIntentClassification(BaseModel):
+    model_config = {"extra": "forbid"}
+
     kind: CADIntentKind
     template_candidate: Optional[str] = Field(default=None, max_length=64)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -47,6 +49,8 @@ class CADOpType(str, Enum):
 class CADPrimitive(BaseModel):
     """A box/cylinder/cone/sphere primitive with numeric params only."""
 
+    model_config = {"extra": "forbid"}
+
     op: CADOpType
     id: str = Field(max_length=40)
     params: dict[str, float] = Field(default_factory=dict)
@@ -54,6 +58,8 @@ class CADPrimitive(BaseModel):
 
 
 class CADBooleanOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+
     op: CADOpType  # boolean_union | boolean_cut
     id: str = Field(max_length=40)
     target: str = Field(max_length=40)
@@ -61,6 +67,8 @@ class CADBooleanOperation(BaseModel):
 
 
 class CADPatternOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+
     op: CADOpType  # circular_pattern | linear_pattern
     id: str = Field(max_length=40)
     source: str = Field(max_length=40)
@@ -70,6 +78,8 @@ class CADPatternOperation(BaseModel):
 
 
 class CADFilletChamferOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+
     op: CADOpType  # fillet | chamfer
     id: str = Field(max_length=40)
     target: str = Field(max_length=40)
@@ -81,15 +91,67 @@ CADFeatureOperation = Union[
 ]
 
 
+# Keys ever read from a raw feature-graph operation dict, across every op kind
+# handled by app.cad.feature_graph.build_feature_graph. Anything outside this
+# set is inert data that no code path reads -- rejecting it at the schema
+# boundary means a hostile/malformed extra key is refused before the
+# interpreter ever runs, rather than silently ignored.
+_OPERATION_ALLOWED_KEYS = {
+    "op", "id", "params", "at", "target", "tool", "source", "count", "axis", "plane",
+}
+_MAX_OPERATION_ID_LEN = 40
+_MAX_PARAMS_PER_OPERATION = 32
+
+
 class CADFeatureGraph(BaseModel):
     """An ordered list of trusted operations producing one solid.
 
     ``result_id`` names the operation whose solid is the final part.
+
+    ``operations`` is deliberately ``list[dict]`` rather than
+    ``list[CADFeatureOperation]`` (the compiler dispatches on ``op`` string
+    values that don't share one discriminated shape), so per-dict shape is
+    enforced here instead of via nested model typing: an unknown key, an
+    oversized ``id``, or a ``params`` map with too many entries is rejected
+    before ``build_feature_graph`` ever sees it.
     """
+
+    model_config = {"extra": "forbid"}
 
     units: str = "mm"
     operations: list[dict] = Field(default_factory=list, max_length=200)
     result_id: Optional[str] = None
+
+    @field_validator("operations")
+    @classmethod
+    def _validate_operations(cls, ops: list[dict]) -> list[dict]:
+        for i, raw in enumerate(ops):
+            if not isinstance(raw, dict):
+                raise ValueError(f"operations[{i}] must be an object")
+            unknown = set(raw) - _OPERATION_ALLOWED_KEYS
+            if unknown:
+                raise ValueError(
+                    f"operations[{i}] has unrecognized field(s): {sorted(unknown)}"
+                )
+            oid = raw.get("id")
+            if not isinstance(oid, str) or not oid or len(oid) > _MAX_OPERATION_ID_LEN:
+                raise ValueError(
+                    f"operations[{i}].id must be a non-empty string of at most "
+                    f"{_MAX_OPERATION_ID_LEN} characters"
+                )
+            op = raw.get("op")
+            if not isinstance(op, str) or not op:
+                raise ValueError(f"operations[{i}].op must be a non-empty string")
+            params = raw.get("params")
+            if params is not None:
+                if not isinstance(params, dict):
+                    raise ValueError(f"operations[{i}].params must be an object")
+                if len(params) > _MAX_PARAMS_PER_OPERATION:
+                    raise ValueError(
+                        f"operations[{i}].params has more than "
+                        f"{_MAX_PARAMS_PER_OPERATION} entries"
+                    )
+        return ops
 
     def is_nonempty(self) -> bool:
         return len(self.operations) > 0
@@ -97,6 +159,8 @@ class CADFeatureGraph(BaseModel):
 
 class ComplexCADPlan(BaseModel):
     """Top-level output of the complex-CAD planner (strict JSON, no code)."""
+
+    model_config = {"extra": "forbid"}
 
     classification: CADIntentClassification
     # Present only when kind == advanced_template / simple_template.

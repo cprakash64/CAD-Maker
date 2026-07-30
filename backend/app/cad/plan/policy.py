@@ -40,11 +40,31 @@ def looks_mechanical(prompt: str) -> bool:
 def decide_clarification(plan: CadPlan, prompt: str = "") -> ClarificationDecision:
     """Assumption-first decision.
 
-    - FATAL only when primary geometry/scale is impossible (no features to build).
-    - Otherwise NONE/WARNING — secondary gaps become assumptions, not questions.
-    - An LLM that over-eagerly set clarification_required for a buildable part is
-      downgraded to a warning (we generate anyway).
+    - FATAL only when primary geometry/scale is impossible (no features to build)
+      OR the plan flagged an ask-required ambiguity category (topology, overall
+      size, fit, mating geometry, fastener standard, bearing/shaft interface,
+      assembly relationship, safety/load) — see
+      app.cad.plan.clarification_categories. That check runs FIRST and
+      overrides everything below it: a category-level ambiguity is ALWAYS
+      fatal, even for an otherwise-buildable plan, and this is a pure function
+      of the category tags, not of clarification_required — so the same
+      category is always handled the same way, regardless of what an LLM's
+      boolean happened to say for a given response.
+    - Otherwise NONE/WARNING — secondary/cosmetic gaps become assumptions, not
+      questions.
+    - An LLM that over-eagerly set clarification_required for a buildable part
+      (with no ask-required category flagged) is downgraded to a warning (we
+      generate anyway).
     """
+    from app.cad.plan.clarification_categories import ASK_REQUIRED_CATEGORIES, questions_for
+
+    ask_flags = [f for f in plan.ambiguity_flags if f in ASK_REQUIRED_CATEGORIES]
+    if ask_flags:
+        return ClarificationDecision(
+            severity="fatal",
+            questions=plan.clarification_questions or questions_for(ask_flags),
+        )
+
     # A buildable plan is never fatal — generate it, regardless of what the LLM
     # put in clarification_required.
     if plan.features:
