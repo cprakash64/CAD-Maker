@@ -5,6 +5,123 @@
 **This is not legal advice.** Legal document drafts referenced below require
 qualified legal review before publication (see "Legal-review status").
 
+## Stabilization update — 2026-07-30 (after this report)
+
+The work this report originally audited was preserved (`safety/release-candidate-
+snapshot-20260730`, pushed to `origin`) and a stabilization branch,
+`stabilization/release-candidate-20260730`, was created from it to fix
+exactly the two release blockers named below. **Everything else in this
+document below this section is the ORIGINAL audit, left intact as the
+historical record** — read it alongside this update, not instead of it.
+
+| | |
+|---|---|
+| Branch | `stabilization/release-candidate-20260730`, from `safety/release-candidate-snapshot-20260730` @ `e580fec2402db80258071d9e40095ecbc4f2b53c` |
+| Fix 1 commit | `65a16b4` — "Fix feedback migration for populated databases" |
+| Fix 2 commit | `34c58af` — "Enforce drawing semantic validation across fallbacks" |
+
+**Fixed:**
+
+1. **Migration `f2a8b3a98437` populated-database bug** (found and documented
+   in Step 5 of `docs/release-change-inventory.md`, the preservation-phase
+   audit that followed this report) — `feedback.is_bad_result_report` and
+   `feedback.report_consent` were added as `NOT NULL` booleans with no
+   `server_default`, which fails on Postgres against a table with existing
+   rows. Fixed by adding `server_default=sa.false()` to both, then dropping
+   the default after backfill — the same pattern migration `0db7d6dd7f9b`
+   already used correctly. Edited the migration in place (confirmed via
+   `git cat-file -e main:...` that it doesn't exist on `main` and was never
+   applied anywhere but local, always-empty SQLite dev/test — safe to edit
+   directly rather than add a repair migration). **Proven on real
+   PostgreSQL 16** (Docker, disposable container), not just SQLite: new test
+   `test_postgres_feedback_migration_upgrades_a_populated_table` seeds a
+   real pre-existing feedback row at the parent revision, then upgrades
+   through the fix, and asserts it succeeds with the correct backfilled
+   values — this is the exact scenario that would have failed before the fix.
+
+2. **Drawing-to-CAD SVG hole-count failure** (the report's other "Real bug
+   found," below) — root-caused to `_apply_fillet` (`app/cad/plan/compiler.py`)
+   defaulting an ambiguous fillet description ("rounded corners from the
+   drawing," no "vertical"/"top" keyword) to filleting ALL 12 edges of the
+   plate's box, including the top/bottom edges of its 6mm-thin
+   cross-section — geometrically invalid at a 5mm radius, confirmed via
+   `cadquery`'s own `isValid()`. Fixed by defaulting an ambiguous
+   description to vertical-edges-only, matching the convention already used
+   correctly elsewhere in the codebase. Separately, the fallback path
+   (`_generate_from_interpretation` → `_require_drawing_accuracy`) never
+   verified or recorded hole-count validation for template-built designs —
+   only feature-graph designs got that check. Added a strategy-agnostic
+   `_drawing_semantic_contract_state` check, wired into the same
+   rebuild-then-refuse gate as the existing feature-graph audit, so a
+   fallback that produces the wrong hole count is now rejected (design
+   deleted, 422, no export possible) exactly like a feature-graph audit
+   failure already was. Deliberately scoped out of `_FLANGED_FAMILIES`
+   (flanged pipe branches/tees/spools) after real regression failures showed
+   a naive total-hole-count comparison is systematically wrong there (one
+   bolt-circle callout legitimately multiplies across 2-3 flanges) — those
+   families already have dedicated topology-aware validation.
+
+**Test evidence (exact commands and results):**
+
+```bash
+# Migration — single head, clean history
+cd backend && .venv/bin/alembic heads        # f2a8b3a98437 (head) — only one
+.venv/bin/alembic history                    # unbroken chain, base..head
+
+# Migration tests, including real Postgres (disposable Docker container)
+CADMAKER_TEST_PG_URL="postgresql+psycopg://lunaicad:testpass@127.0.0.1:15433/lunaicad_migtest" \
+  .venv/bin/python -m pytest -q tests/test_migrations.py
+# -> 13 passed (0 skipped: both Postgres-gated tests ran for real)
+
+# Original failing test — now passing, reran 5x isolated for flake-checking
+.venv/bin/python -m pytest -q tests/test_drawing_to_cad.py::test_svg_hole_count_preserved
+# -> 1 passed (x5, all clean)
+
+# Full drawing-to-CAD test suite (30 tests incl. 8 new regression tests)
+.venv/bin/python -m pytest -q tests/test_drawing_to_cad.py
+# -> 30 passed
+
+# Full drawing-pipeline suite (20 files) -- confirms the _FLANGED_FAMILIES
+# scoping fix; an earlier version of the fallback-contract fix (before that
+# scoping) broke 22 pipe-branch/flange tests, caught by this exact run
+.venv/bin/python -m pytest -q tests/test_drawing*.py
+# -> 0 failed, 0 errors (one `s` = an unrelated pre-existing skip)
+
+# Full backend suite
+.venv/bin/python -m pytest -q
+# -> ~1,955 tests collected, 0 failed, 0 errors
+
+# Frontend
+cd frontend && npx vitest run && npm run typecheck && npm run build
+# -> 90/90 tests passed, typecheck clean, build clean (13 routes)
+```
+
+**Benchmark before/after:**
+
+| | Before stabilization | After stabilization |
+|---|---|---|
+| Full backend suite | ~1,940 tests, **1 failure** (`test_svg_hole_count_preserved`), 0 errors | ~1,955 tests (+15 new), **0 failures**, 0 errors |
+| `test_drawing_to_cad.py` | 22 tests, 1 failing | 30 tests (+8 new regression tests), all passing |
+| `test_migrations.py` | 8 tests, SQLite only, did not test the populated-table case | 13 tests (+5 new), SQLite AND real Postgres, including the exact populated-table scenario that was broken |
+| 151-prompt `test_beta_stress.py` corpus | 7/7 passing (already passing before stabilization — this was never one of the two named blockers) | 7/7 passing, reconfirmed |
+| Frontend | 90/90, clean typecheck/build (unchanged by this phase — no frontend files touched) | 90/90, clean typecheck/build |
+
+**Remaining release blockers (unchanged by this phase — out of scope, not attempted):**
+physical print/fit validation, an executed rollback drill, per-account cost
+controls, `starlette`/`vtk`/`pyasn1`/`ecdsa` CVEs, and committing the working
+tree (now committed on `stabilization/release-candidate-20260730`, but that
+branch itself is not `main` and this phase was not asked to merge it). See
+"Unresolved blockers" and "Accepted risks" below — those sections are
+otherwise unchanged and still accurate.
+
+**Recommendation: still CONTROLLED BETA, not unrestricted production.**
+Fixing these two blockers removes two concrete, reproducible defects, but
+does not manufacture the physical-validation or operational-drill evidence
+this recommendation was always actually gated on. See "Controlled-beta
+recommendation" at the end of this document (also unchanged).
+
+---
+
 ## Exact commit / environment
 
 | | |
@@ -126,6 +243,10 @@ upgrade pass before wide production traffic; track the others normally per
 | 8 | Calibration provenance | **PASS (honest)** — the system never claims a calibrated profile it doesn't have; the generic-estimate disclaimer (`CALIBRATION_PROVENANCE_NOTICE`) is the universal fallback since no real profile exists yet. |
 
 ### Real bug found and root-caused this audit: SVG hole-count validation gap
+
+**RESOLVED 2026-07-30** — see "Stabilization update" at the top of this
+document and commit `34c58af` on `stabilization/release-candidate-20260730`.
+Left below as the original root-cause record.
 
 `tests/test_drawing_to_cad.py::test_svg_hole_count_preserved` fails
 consistently (5/5 isolated reruns, not flaky). Root-caused, not just

@@ -354,6 +354,17 @@ condition does not apply.
 
 ## Step 5 — Migration review
 
+**RESOLVED 2026-07-30** on `stabilization/release-candidate-20260730`,
+commit `65a16b4` — `server_default=sa.false()` added to both columns
+(dropped after backfill, same pattern as `0db7d6dd7f9b`), edited in place
+per the "defensible option" reasoning below (confirmed via
+`git cat-file -e main:...` that the file has never existed on `main`).
+Proven against real PostgreSQL 16, not just SQLite: new test
+`test_postgres_feedback_migration_upgrades_a_populated_table` seeds a real
+feedback row at the parent revision and upgrades through the fix. See
+`docs/release-readiness-report.md`'s "Stabilization update" section for
+full detail. The table below is left as the original finding.
+
 All 5 migrations chain linearly to a single head (`f2a8b3a98437`), verified
 via `alembic heads` (one head) and `alembic history` (unbroken chain from
 `<base>` → `7fbf0c6446aa` → ... → `f2a8b3a98437`). `test_migrations.py`'s
@@ -427,3 +438,20 @@ inter-dependencies on 6-10 and could be committed (and even reviewed) in
 parallel by different reviewers if useful.
 
 **Fewer than 12**: 10 commits, as required.
+
+---
+
+## Stabilization update — 2026-07-30
+
+`safety/release-candidate-snapshot-20260730` (the state this entire document
+describes) was preserved and pushed, then `stabilization/release-candidate-
+20260730` was branched from it to fix exactly the two blockers this document
+flagged as real, reproducible bugs: the Step 5 migration defect (above) and
+the drawing-to-CAD hole-count validation gap referenced throughout Steps 3-4
+under category 7 (Drawing-to-CAD). Both are now fixed, tested (including
+against real PostgreSQL for the migration), and committed as two separate,
+focused commits (`65a16b4`, `34c58af`) on the stabilization branch. Full
+detail, exact test commands, and before/after results:
+`docs/release-readiness-report.md`'s "Stabilization update" section. This
+document's own findings above are left unmodified as the original record,
+each annotated inline at its specific finding rather than rewritten.
