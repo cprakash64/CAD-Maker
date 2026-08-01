@@ -1,0 +1,12 @@
+{
+  "_comment": "CI gate allowlist for npm audit (docs/security/dependency-risk-assessment.md). Every package here has a written justification in that doc under 'Accepted risk register'. New findings for packages NOT in this list fail the build (scripts/check_npm_audit_allowlist.py). Re-review by the date below or when the trigger condition fires.",
+  "entries": [
+    {
+      "package": "next",
+      "reason": "Remaining findings after the 14.2.18->14.2.35 patch bump (which already fixed the critical unauthenticated middleware auth-bypass, GHSA-f82v-jwr5-mffw) require Next.js 15.x -- a major-version migration, out of scope for a dependency-remediation pass. Reachability: this app has no middleware.ts, no Server Actions ('use server' not used anywhere in src/), no next/image usage, no i18n config, and no custom server/WebSocket handling -- confirmed by repo-wide grep. The remaining CVEs all target those specific features.",
+      "owner": "frontend security follow-up (dependency-risk-assessment.md)",
+      "review_by": "2026-10-31",
+      "trigger": "Re-review before adopting middleware, Server Actions, next/image, i18n routing, or a custom server -- or at the next planned Next.js major-version upgrade."
+    }
+  ]
+}
