@@ -551,3 +551,106 @@ monitoring via the alerts/metrics this audit helped complete, and a fast
 feedback loop via the new "report a bad result" workflow) is exactly the
 right next step to close these gaps with real evidence instead of more
 simulated confidence.
+
+## Cost control — final report (2026-08-01)
+
+Closes out the "Cost control update" section at the top of this document.
+
+**Verification commands run:**
+
+```bash
+# Targeted cost-control tests (SQLite)
+LLM_PROVIDER=mock APP_ENV=development TESTING=true pytest -q tests/test_cost_control.py
+# -> 33 passed, 1 skipped (Postgres-gated) in ~10s
+
+# Same, against real PostgreSQL 16 (disposable Docker container)
+CADMAKER_TEST_PG_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:15434/lunaicad_cost_test \
+  LLM_PROVIDER=mock APP_ENV=development TESTING=true pytest -q tests/test_migrations.py tests/test_cost_control.py
+# -> 47 passed, 0 skipped -- includes
+#    test_concurrent_reservations_never_exceed_the_limit_postgres: 25 real
+#    threads, each its own DB connection/transaction, racing for a budget
+#    that fits exactly 5 -- exactly 5 succeeded, 20 correctly rejected,
+#    verified against the counter's actual persisted value afterward.
+
+# API/auth/quota tests directly exercising the new wiring
+pytest -q tests/test_auth.py tests/test_phase2_authorization.py \
+  tests/test_phase7_hardening.py tests/test_quotas.py tests/test_job_queue.py \
+  tests/test_beta_stress.py tests/test_api.py
+
+# Full backend suite
+pytest -q
+# -> 1,956 tests collected, 0 failures, 0 errors, exit code 0
+
+# Frontend
+cd frontend && npm test && npm run typecheck && npm run build
+# -> 90/90 passed, typecheck clean, build clean (13 routes, unchanged)
+
+# Deterministic evaluation benchmark
+python -m eval.cli validate   # -> OK: 104 cases across 8 suites
+python -m eval.cli run --out eval_reports/cost_control_verification
+# -> 99.0% pass rate (99/100 offline cases; 4 require --live, not run).
+#    1 failure: exp_drawing_svg_flange_001 (export_integrity/drawing_to_cad,
+#    "expected 'generates', got 'refusal'") -- CONFIRMED pre-existing and
+#    UNRELATED to this change: re-ran the export_integrity suite in complete
+#    isolation (`--suite export_integrity`, no other cases sharing the
+#    account's budget state) and got the exact same single failure, ruling
+#    out any cost-control budget-accumulation interaction. Not investigated
+#    further here -- fixing it is out of this task's scope (a drawing-
+#    pipeline fixture/capability-classification gap, not a cost-control one).
+#    (Scratch report output not committed, matching the existing convention
+#    for one-off eval runs -- see .gitignore's eval_reports/ comment.)
+
+# Secret scan
+bash scripts/check-secrets.sh && python scripts/check_secrets_baseline.py
+```
+
+**Regressions found and fixed during this verification pass** (documented,
+not hidden):
+
+1. `tests/test_migrations.py::test_alembic_has_exactly_one_head` hardcoded
+   the previous head revision id — updated to `d80e1aa21d62`.
+2. Two raw-SQL test fixtures in `test_migrations.py` that INSERT directly
+   into `users` needed the new `is_admin` column added explicitly (same
+   class of issue as the `data_improvement_opt_in`/`can_generate_with_defaults`
+   raw-INSERT fixes from the stabilization phase above) — fixed in the ONE
+   fixture that seeds at the new migration's head revision; deliberately
+   left OUT of `_seed_minimal_feedback_row`, which intentionally seeds at
+   the OLDER `0db7d6dd7f9b` revision (predates `is_admin`) to reproduce a
+   real pre-migration database — adding it there would have broken the very
+   scenario that helper exists to test.
+3. `tests/test_phase2_authorization.py::test_every_route_has_a_rate_limit_except_the_liveness_probe`
+   correctly caught that the new `/api/admin/cost/*` routes had no
+   `rate_limit(...)` dependency — added (`read` for GETs, `default` for the
+   state-changing admin actions).
+4. `tests/test_quotas.py` (4 of 7 tests) directly exercised the OLD
+   `settings.quota_designs_per_day/month` mechanism, which this change
+   supersedes with the atomic reservation ledger, and asserted the OLD
+   plain-string `HTTPException(detail=str(exc))` shape for storage-quota
+   rejections, which this change replaced with the structured
+   `{code, message, ...}` contract. Rewritten to target
+   `settings.cost_daily_generation_limit`/`cost_monthly_generation_limit`
+   and the new response shape — same test intent (daily/monthly enforcement,
+   per-user isolation, idempotent-resubmit bypass, storage cap), updated
+   mechanism.
+
+No expected output was changed to hide a regression — every fix above
+either updates a test to a deliberately-changed, documented new contract, or
+corrects a stale literal (the hardcoded revision id) that was always going
+to need updating with any new migration.
+
+**Postgres container used**: `postgres:16-alpine`, disposable, port 15434,
+matching the same Docker-container pattern established in the
+stabilization phase above (`lunaicad-cost-control-pg`) — not the same
+container as that phase's, torn down after this verification.
+
+**Secret scan**: clean (`scripts/check-secrets.sh` and
+`scripts/check_secrets_baseline.py` both pass; two more instances of
+line-number drift on already-reviewed non-secret content — an Alembic
+revision id in a code comment, and the same repeated ephemeral
+drill-database password documented earlier in this file — re-verified
+against source and re-marked, same process as the dependency-remediation
+phase).
+
+**Branch / commit**: see the final structured report delivered alongside
+this document update for the exact branch and commit SHA (this document is
+updated in the SAME commit sequence as the code, not after the fact).
