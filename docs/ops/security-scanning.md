@@ -13,34 +13,53 @@ cd backend && .venv/bin/pip install pip-audit && .venv/bin/pip-audit -r requirem
 cd frontend && npm audit
 ```
 
-### Baseline scan (run 2026-07-29)
+### Baseline scan (run 2026-07-29, superseded 2026-07-31)
 
-`pip-audit -r requirements.txt` found **25 known vulnerabilities across 6
-packages**. Triaged here, not silently ignored:
-
-| Package | Fixed in | Action taken |
-|---|---|---|
-| `python-multipart` 0.0.20 | 0.0.22–0.0.31 (6 CVEs) | **Fixed** — bumped to 0.0.32 in this change. This library parses untrusted file-upload bodies directly (`app.routers.drawings`), so these CVEs sit on the actual attack surface; verified via the full test suite (including the hostile-filename fuzz tests in `tests/test_phase2_upload_limits_and_data.py`) that the bump doesn't change behavior in a way the app doesn't already handle safely. |
-| `python-jose` 3.3.0 | 3.4.0 (algorithm-confusion CVEs) | **Tracked, not yet bumped.** This is the JWT library (`app.auth.security`) — a live auth-behavior change deserves its own reviewed change with dedicated regression testing beyond this phase's scope, not a drive-by bump. Tracked as a follow-up; see `docs/ops/deployment-runbook.md`'s dependency-update cadence. |
-| `starlette` 0.41.3 (via `fastapi`) | several point releases | **Tracked.** Transitive via the pinned FastAPI version; bumping requires bumping FastAPI together and re-running the full suite. Follow-up. |
-| `ecdsa` 0.19.2 (via `python-jose`) | none (upstream) | **Accepted, documented.** The maintainer's stance is that the underlying timing-side-channel class of issue is inherent to pure-Python ECDSA and won't be patched; this is a known, widely-accepted risk for `python-jose` users. Resolves once `python-jose` is replaced or ships a fix upstream. |
-| `vtk` 9.3.1 (via `cadquery`) | 9.5.1 | **Tracked.** Transitive via `cadquery`'s own pin; not independently controllable without pinning around `cadquery`'s dependency resolution, which risks breaking CAD generation. Revisit when `cadquery` bumps its own `vtk` pin. |
-| `pytest` 8.3.4 | 9.0.3 | **Tracked, low priority.** Dev/test-only dependency, never shipped to production; not on the runtime attack surface. |
-
-`npm audit` (frontend): run as part of the same CI job; see the workflow run
-for the current-at-any-time result (frontend deps churn faster than this
-document would stay accurate).
+Historical only — see `docs/security/dependency-risk-assessment.md` for the
+current, authoritative state. Summary of what changed in the 2026-07-31
+remediation pass: `python-jose` bumped to 3.5.0 (closing the pyasn1 CVEs as
+a side effect), `starlette` fixed via a coupled `fastapi` bump to 0.134.0,
+`pytest` bumped to 9.0.3, and `vtk`/`ecdsa` remain accepted risks but now
+with concrete import-tracing reachability evidence instead of just "tracked."
 
 ### CI gate
 
-`.github/workflows/security.yml`'s `pip-audit`/`npm audit` steps are
-**report-only today** (they don't fail the build) — given the triage above
-shows several genuinely un-fixable-right-now transitive findings, a hard
-fail-on-any-finding gate would be permanently red and trained to be ignored,
-which defeats the purpose. The gate that DOES fail the build is
-`check_secrets_baseline.py` (below) — a new potential secret has no
-legitimate reason to be "tracked as a known issue," unlike a transitive CVE
-with no available fix.
+`.github/workflows/security.yml`'s `pip-audit`/`npm audit` steps are a
+**hard gate as of 2026-07-31**: `scripts/check_pip_audit_allowlist.py` and
+`scripts/check_npm_audit_allowlist.py` fail the build on any finding that
+isn't already in the reviewed allowlist (`backend/.pip-audit-allowlist.json`,
+`frontend/.npm-audit-allowlist.json` — see
+`docs/security/dependency-risk-assessment.md`'s "Accepted-risk register" for
+what's in each and why). A brand-new finding for an unreviewed package fails
+CI immediately, the same way an unreviewed secret does below — either fix it
+or add a reviewed allowlist entry with a written reachability justification,
+owner, review date, and trigger condition.
+
+## Updating dependencies
+
+1. Change the pin in `backend/requirements.txt` (backend) or
+   `frontend/package.json` (frontend).
+2. Backend only: regenerate the hash-pinned lock file —
+   `cd backend && .venv/bin/pip-compile --generate-hashes --output-file=requirements.lock.txt requirements.txt`
+   — and commit it alongside the `requirements.txt` change. CI's
+   `hash-locked-install` job (`.github/workflows/security.yml`) will fail if
+   the lock file doesn't match what `requirements.txt` resolves to.
+3. Run `pip-audit -r backend/requirements.txt` / `npm audit` (frontend) and
+   confirm no new findings, or add a reviewed allowlist entry per the CI-gate
+   section above.
+4. Run the full backend suite and the frontend suite/typecheck/build.
+5. If the package is one you don't directly control the version-compatibility
+   ceiling of (e.g. Starlette via FastAPI's own pin), check whether the
+   *parent* package needs bumping too before the target version is even
+   installable — see `docs/security/dependency-risk-assessment.md`'s
+   Starlette entry for a worked example (verifying compatible FastAPI/
+   Starlette/Pydantic ranges via PyPI release metadata before committing to a
+   version).
+6. Dependabot (`.github/dependabot.yml`) opens weekly PRs for `pip`, `npm`,
+   and `github-actions` bumps automatically — it does NOT regenerate
+   `requirements.lock.txt` (pip-compile isn't Dependabot-aware), so step 2
+   above must still be done by hand when merging a Dependabot PR that
+   touches `backend/requirements.txt`.
 
 ## Secret scanning
 
@@ -70,18 +89,32 @@ ever found and needs tracking through remediation). The CI check
 already in the baseline — existing (already-reviewed) entries never fail the
 build, so the gate stays meaningful instead of permanently red.
 
-### Baseline scan (run 2026-07-29)
+### Baseline scan (run 2026-07-29, re-audited 2026-07-31)
 
-15 findings across 9 files, all reviewed and confirmed non-secrets:
+Original: 15 findings across 9 files. Re-audited 2026-07-31 during the
+dependency-remediation pass (`docs/security/dependency-risk-assessment.md`)
+because line-number drift from intervening commits made several
+already-reviewed findings look "new" to the line-keyed baseline; regenerated
+via `detect-secrets scan ... --baseline .secrets.baseline` and manually
+re-reviewed every new-looking entry against its actual source line (not
+rubber-stamped) before marking `is_secret: false`. Now 33 findings across 18
+files, all reviewed and confirmed non-secrets — the 18 net-new-looking ones
+are the same categories as below (Alembic revision ids, canary/dummy test
+credentials, doc examples of ephemeral drill-database passwords, and one
+self-referential doc line describing this very table):
 
 | File | Finding type | Why it's safe |
 |---|---|---|
 | `app/config.py` | Secret Keyword | `_DEFAULT_JWT_SECRET = "dev-insecure-secret-change-me"` — the documented, intentionally-insecure dev placeholder; production refuses to boot with it (`Settings.production_problems`). |
 | `app/observability.py` | Basic Auth Credentials | A **regex literal** (`r"://[^/\s:@]+:[^/\s:@]+@"`) matching the shape of `user:pass@host` for redaction purposes — the pattern itself looks like a credential to the scanner, but it's code, not data. |
-| `alembic/versions/...b1c4e7a92f38...py` | Hex High Entropy String | An Alembic revision id (`"b1c4e7a92f38"`) — a deterministic hash-like identifier, not a secret. |
+| `alembic/versions/...b1c4e7a92f38...py`, and 3 more (`7a0975b01cf8`, `3f2c9a7d1b44`, `f2a8b3a98437`) | Hex High Entropy String | Alembic revision ids — deterministic hash-like identifiers, not secrets. |
 | `tests/test_phase2_authorization.py` | JSON Web Token | A deliberately-malformed `alg=none` JWT fixture, used to test that FORGED tokens are rejected. |
 | `tests/test_phase2_upload_limits_and_data.py` | Secret Keyword / Base64 High Entropy String | Sentinel test values (`JWT-SENTINEL-...`, `sk-SENTINEL-key`) and a deliberately-wrong login password used in a rate-limit test. |
-| `tests/test_auth.py`, `tests/test_observability.py`, `tests/test_rate_limit.py`, `tests/test_v037_production.py` | Secret Keyword | Test fixtures (`"password123"`, `"a" * 40` as a fake JWT secret, etc.) — dummy values, never real credentials. |
+| `tests/test_auth.py`, `tests/test_observability.py`, `tests/test_rate_limit.py`, `tests/test_v037_production.py`, `tests/test_adversarial_injection_hardening.py`, `tests/test_privacy_controls.py`, `tests/test_production_startup_hardening.py` | Secret Keyword / Basic Auth Credentials | Test fixtures (`"password123"`, `"wrong-password"`, `"a" * 40` as a fake JWT secret, `sk-live-not-a-real-key-but-present`, `postgresql://user:pass@host/db`, etc.) — dummy/canary values, never real credentials. |
+| `deploy/smoke_test.py` | Secret Keyword | `"smoke-test-password-123"` — a hardcoded password for the smoke-test's own throwaway test account, not a production credential. |
+| `docs/ops/backup-and-restore.md`, `docs/release-readiness-report.md` | Basic Auth Credentials | Example `DATABASE_URL`/`CADMAKER_TEST_PG_URL` connection strings for ephemeral local Docker drill/test Postgres containers (`drillpass`, `testpass`) documented as reproducible commands, not live credentials. |
+| `docs/ops/observability.md` | Basic Auth Credentials | Prose describing the shape of a connection-string secret to redact, not an actual one. |
+| `docs/ops/security-scanning.md` (this file) | Secret Keyword / Hex High Entropy String | Self-referential — this table's own text quotes the `app/config.py` placeholder and an Alembic revision id as examples, which the scanner also flags where they're quoted here. |
 
 **Known limitation**: `detect-secrets scan <directory>` only considers
 git-tracked files (confirmed empirically — an untracked new file in a scanned
