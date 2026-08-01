@@ -1,5 +1,10 @@
 cadquery==2.7.0
-fastapi==0.115.6
+# fastapi's own pin on starlette determines how far starlette can go; 0.134.0
+# is the earliest fastapi release that drops the <1.0.0 starlette ceiling
+# (see docs/security/dependency-risk-assessment.md), which is required to
+# reach a starlette with no open CVEs.
+fastapi==0.134.0
+starlette==1.3.1
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
 SQLAlchemy==2.0.36
@@ -8,10 +13,13 @@ alembic==1.14.0
 psycopg[binary]==3.3.4
 python-multipart==0.0.32
 httpx==0.28.1
-python-jose[cryptography]==3.4.0
+# python-jose 3.4.0 pins pyasn1<0.5.0, which pins pyasn1 to a version with
+# open CVEs; 3.5.0 relaxes that ceiling (see dependency-risk-assessment.md).
+python-jose[cryptography]==3.5.0
+pyasn1==0.6.4
 bcrypt==5.0.0
 email-validator==2.3.0
-pytest==8.3.4
+pytest==9.0.3
 openai==2.48.0
 boto3==1.43.56
 # Drawing → CAD ingestion: deterministic DXF parsing + PDF page rendering.
