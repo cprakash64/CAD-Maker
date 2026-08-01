@@ -105,6 +105,22 @@ Alembic's responsibility there, deliberately (see its docstring), so a
 missed migration fails loudly (missing-table errors) rather than silently
 diverging from migration history.
 
+### Cost control (docs/operations/cost-control-architecture.md)
+
+`COST_*` env vars in `.env.example` set the beta-default quota policy (all
+have safe built-in defaults — nothing needs to be set to boot). Per-account
+overrides and the global emergency stop are DB state, managed via the
+`/api/admin/cost/*` endpoints — there is no env var for "this one account's
+limit."
+
+There is no self-service path to `User.is_admin` (by design — see
+`app.auth.deps.get_current_admin_user`'s docstring). Grant the first admin
+directly:
+
+```sql
+UPDATE users SET is_admin = true WHERE email = 'you@example.com';
+```
+
 ### Secret scoping ("no production secrets unless absolutely necessary")
 
 Two env files, not one — the worker gets a **strict subset**:

@@ -5,6 +5,78 @@
 **This is not legal advice.** Legal document drafts referenced below require
 qualified legal review before publication (see "Legal-review status").
 
+## Cost control update — 2026-07-31 (after this report)
+
+Branch: `beta-readiness/release-candidate-20260730`. Implements
+`docs/operations/cost-control-architecture.md`: an atomic, DB-backed budget
+reservation ledger enforcing per-account daily/monthly generation limits,
+per-account drawing-conversion limits, per-account daily $ cost caps, global
+daily/hourly $ budgets, per-account storage/version-retention limits, an
+admin API (view/adjust/disable/emergency-stop/release-stale), Prometheus
+metrics, and Prometheus alert rules.
+
+This **resolves** the "Accepted risks" entry below titled "Per-account LLM
+cost ceiling: not implemented this audit" — that gap is now closed. It does
+NOT touch the earlier, still-open `starlette`/`vtk`/`pyasn1`/`ecdsa` findings
+(superseded by `docs/security/dependency-risk-assessment.md`, a separate
+pass on this same branch) or the drawing/migration fixes from the
+`stabilization/release-candidate-20260730` branch below — those sections are
+left as their own historical record, same convention as the Stabilization
+update section that follows.
+
+**What changed** (7 focused areas, full detail in
+`docs/operations/cost-control-architecture.md`):
+
+1. **Schema** (`alembic` revision `d80e1aa21d62`): `users.is_admin`;
+   `account_limit_overrides` (per-account policy overrides); `budget_counters`
+   (atomic, period-bucketed usage counters — integer counts or fixed-point
+   cents, never floats); `budget_reservations` (the reservation ledger/audit
+   trail); `admin_audit_log`; `emergency_stop` (singleton global kill switch).
+2. **Atomic reservation** (`app/cost_control/service.py`): every budget check
+   is a single WHERE-guarded conditional `UPDATE` (`used + amount <= limit`)
+   inside one open transaction per reservation attempt, committed only once
+   every applicable counter (account daily/monthly generation, account daily
+   drawing, account daily cost, global daily cost, global hourly cost) has
+   passed — any single failure rolls back the WHOLE attempt, never a partial
+   reservation. Concurrency safety comes from the database's own row-level
+   write lock on the counter row being updated, the same pattern already
+   used by `app.services.job_service.claim_next_job` — proven with REAL
+   concurrent threads against REAL PostgreSQL (not just SQLite), see Step 8
+   below.
+3. **Wired into every cost-bearing entry point**: `design_create` and both
+   drawing job types (`app.services.job_service.submit_job`, the single
+   choke point all three already funnel through), the plain-English
+   `/modify` endpoint (was fully inline/unprotected before this), and
+   `/api/drawings/interpret` (the priciest call class — was previously
+   protected by NO quota check of any kind, only rate limiting). The
+   `sync=true` opt-in bypass on the drawing job endpoints (previously
+   undocumented-but-unenforced — any user could pass it in production to
+   skip the job queue) is now also budget-gated.
+4. **Real actual-usage reconciliation**, not just estimates: a new
+   `app.llm.usage` ContextVar accumulator (mirroring the existing
+   `app.llm.budget` wall-clock-deadline pattern) records true token usage
+   from every OpenAI response across an entire generation (including
+   model-fallback and repair-pass calls), so `commit_reservation` refunds
+   the unused portion of a conservative pre-flight estimate rather than
+   just releasing the whole thing on success.
+5. **Every terminal job failure fully refunds** (`job_service.mark_terminal_failure`
+   now releases any attached reservation, regardless of failure category);
+   automatic retries (`maybe_retry_or_fail`'s requeue path) do NOT touch the
+   reservation, consistent with "failed automatic retries are included in
+   the original reservation."
+6. **Structured, safe error contracts** (`app/cost_control/http.py`): every
+   rejection returns `{code, message, retry_after_seconds, remaining_quota}`
+   — stable machine-readable codes, safe messages, never a stack trace or
+   enough internal detail to help tune around a limit.
+7. **Explicitly does NOT touch**: Stripe/billing plans, the existing global
+   LLM circuit breaker (`app.llm.circuit_breaker` — left exactly as is, this
+   is the durable ledger BEHIND it, not a replacement), or charge users for
+   any system-side failure.
+
+**Test evidence**: see the closing "Cost control — final report" appended at
+the end of this document for exact commands, counts, and the real-Postgres
+concurrency proof.
+
 ## Stabilization update — 2026-07-30 (after this report)
 
 The work this report originally audited was preserved (`safety/release-candidate-
@@ -379,11 +451,12 @@ recommendation, not blockers to fix before ANY release:
 
 ## Accepted risks (explicit, not silently ignored)
 
-- **Per-account LLM cost ceiling**: not implemented this audit (would need
-  a new per-design cost ledger persisted to SQL, not just a Prometheus
-  counter, to query per-user — a real, non-trivial addition). Mitigated
-  today by per-account generation-COUNT quotas (`quota_designs_per_day/month`),
-  which bound worst-case spend indirectly even without a dollar figure.
+- **Per-account LLM cost ceiling**: ~~not implemented this audit~~
+  **RESOLVED 2026-07-31** — see the "Cost control update" section at the top
+  of this document. `app.cost_control` now enforces a real, per-account,
+  fixed-point-cents daily $ cap via a DB-persisted atomic reservation ledger
+  (`budget_reservations`/`budget_counters`), not just an indirect
+  generation-count proxy.
 - **Backup off-box copy is opt-in** (`BACKUP_REMOTE` env var) — `scripts/backup.sh`
   runs and logs a loud warning if unset, but will not fail the systemd unit;
   an operator who deploys without setting `BACKUP_REMOTE` has a backup that

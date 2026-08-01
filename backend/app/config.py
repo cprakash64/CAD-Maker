@@ -290,6 +290,55 @@ class Settings:
     quota_designs_per_month: int = 2000
     storage_quota_mb_per_user: int = 4096
 
+    # --- Cost-control policy (docs/operations/cost-control-architecture.md)
+    # -- versioned so an active BudgetReservation always records which
+    # policy generation it was checked against, for audit. Bump
+    # COST_CONTROL_POLICY_VERSION whenever any limit below changes meaning
+    # (not merely its numeric value) in a way that matters for that audit
+    # trail. All costs are integer US-cent fixed-point, never floats. 0
+    # disables the corresponding check. Per-account overrides
+    # (AccountLimitOverride) take precedence over these when set. -----------
+    cost_control_policy_version: str = "1"
+    cost_control_enabled: bool = True
+    # Per-account daily/monthly GENERATION limit (design_create + drawing
+    # jobs combined) -- distinct from quota_designs_per_day/month above,
+    # which count ALL Job rows; these are enforced through the atomic
+    # reservation counters instead of a live COUNT query, closing the
+    # concurrent-request race the live-COUNT approach had.
+    cost_daily_generation_limit: int = 100
+    cost_monthly_generation_limit: int = 1500
+    # Per-account daily DRAWING-conversion limit (the priciest call class).
+    cost_daily_drawing_limit: int = 30
+    # Per-request caps -- reject BEFORE reserving if the conservative
+    # estimate alone already exceeds these (docs: "request too expensive").
+    cost_max_estimated_tokens_per_request: int = 20_000
+    cost_max_estimated_cost_cents_per_request: int = 50  # $0.50
+    # Per-account cumulative daily $ cap (reserved, not just actual-spend).
+    cost_max_daily_account_cost_cents: int = 300  # $3.00/account/day
+    # Global budgets -- the authoritative, restart-safe, multi-worker-safe
+    # counterpart to app.llm.circuit_breaker's per-process daily-spend trip
+    # (that breaker is NOT weakened or replaced by this; it still trips fast
+    # in-process as a first line of defense -- this is the durable ledger
+    # behind it, see docs/operations/cost-control-architecture.md).
+    cost_global_daily_budget_cents: int = 5000  # $50.00/day, system-wide
+    cost_global_hourly_emergency_budget_cents: int = 1000  # $10.00/hour
+    # Max retries counted PER RESERVATION (a job's automatic retries, via
+    # job_service.RETRY_POLICY, are included in the ORIGINAL reservation --
+    # this bounds how many attempts a single reservation may cover before
+    # a retry storm is treated as its own failure).
+    cost_max_retries_per_request: int = 3
+    # Design-version retention: the Nth-oldest version is pruned (its
+    # snapshot only; the design itself is untouched) once a design exceeds
+    # this many retained versions. 0 disables.
+    cost_max_retained_design_versions: int = 50
+    # Per-account upload frequency (distinct from rate_limit_drawing's burst
+    # window and upload_guard's per-file size caps) -- total uploads/hour.
+    cost_max_upload_frequency_per_hour: int = 60
+    # A reservation still "reserved" past this many seconds, with no
+    # terminal job/request outcome, is presumed orphaned (crashed process /
+    # restart) and released by the stale-reservation reaper.
+    cost_reservation_ttl_seconds: int = 600
+
     # --- Retention (docs/ops/data-retention.md) -----------------------------
     # How long a design's prompt/spec/exports are kept after last update
     # before an artifact-retention sweep may reclaim storage. The DB row

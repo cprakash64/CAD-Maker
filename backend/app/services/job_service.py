@@ -150,43 +150,36 @@ class SubmitResult:
     created: bool  # False when an idempotency-key hit returned an existing job
 
 
-def _check_quotas(db: Session, user_id: str) -> None:
-    """Volume + storage quotas (docs/ops/observability.md) -- distinct from
-    the concurrency/queue-depth checks above (how many AT ONCE) and from
-    app.rate_limit (burst RATE): this bounds total generation VOLUME per
-    account per day/month, and total storage consumed. 0 disables a check."""
+def _check_storage_quota(db: Session, user_id: str) -> None:
+    """Storage quota only (docs/operations/cost-control-architecture.md) --
+    distinct from the concurrency/queue-depth checks above (how many AT
+    ONCE) and from app.rate_limit (burst RATE). Storage is a persistent
+    total, not a rolling-window count, so it stays a live SUM check here
+    rather than an atomic reservation counter (see app.cost_control.service
+    for daily/monthly GENERATION volume, which moved to the atomic
+    reservation ledger to close a pre-existing concurrent-request race this
+    live-COUNT approach had). Honors a per-account override
+    (app.models.AccountLimitOverride.storage_quota_mb) when set. 0 disables
+    the check.
+
+    NOTE: settings.quota_designs_per_day/quota_designs_per_month are
+    superseded by settings.cost_daily_generation_limit/
+    cost_monthly_generation_limit (enforced atomically via
+    app.cost_control.service.reserve_budget in submit_job below) and are no
+    longer separately enforced here -- kept in app.config only so an
+    existing .env override doesn't error, per the same "harmless kept
+    field" pattern as drawing_job_timeout_seconds."""
+    from app.cost_control.policy import effective_policy
     from app.metrics import quota_exceeded_total
 
-    now = _now()
-    if settings.quota_designs_per_day > 0:
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        count = db.scalar(
-            select(func.count()).select_from(Job)
-            .where(Job.user_id == user_id, Job.created_at >= day_start)) or 0
-        if count >= settings.quota_designs_per_day:
-            quota_exceeded_total.labels(quota="daily").inc()
-            raise QuotaExceeded(
-                f"Daily generation quota reached ({settings.quota_designs_per_day} "
-                "per day). Try again tomorrow.", quota="daily")
-    if settings.quota_designs_per_month > 0:
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        count = db.scalar(
-            select(func.count()).select_from(Job)
-            .where(Job.user_id == user_id, Job.created_at >= month_start)) or 0
-        if count >= settings.quota_designs_per_month:
-            quota_exceeded_total.labels(quota="monthly").inc()
-            raise QuotaExceeded(
-                f"Monthly generation quota reached "
-                f"({settings.quota_designs_per_month} per month). Contact "
-                "support if you need a higher limit.", quota="monthly")
-
-    if settings.storage_quota_mb_per_user > 0:
+    policy = effective_policy(db, user_id)
+    if policy.storage_quota_mb > 0:
         used_bytes = _user_storage_bytes(db, user_id)
-        cap_bytes = settings.storage_quota_mb_per_user * 1024 * 1024
+        cap_bytes = policy.storage_quota_mb * 1024 * 1024
         if used_bytes >= cap_bytes:
             quota_exceeded_total.labels(quota="storage").inc()
             raise QuotaExceeded(
-                f"Storage quota reached ({settings.storage_quota_mb_per_user} MB). "
+                f"Storage quota reached ({policy.storage_quota_mb} MB). "
                 "Delete some exports or contact support for more space.",
                 quota="storage")
 
@@ -209,11 +202,12 @@ def submit_job(
     db: Session, *, user_id: str, job_type: str, payload: dict,
     idempotency_key: Optional[str] = None,
 ) -> SubmitResult:
-    """Enqueue a job, enforcing queue-depth, per-user concurrency, and
-    per-user generation-quota limits BEFORE any row is written. Idempotent:
-    resubmitting the same (user_id, idempotency_key) pair returns the
-    ORIGINAL job untouched (and skips the quota/limit checks entirely --
-    it's not a NEW generation)."""
+    """Enqueue a job, enforcing queue-depth, per-user concurrency, storage
+    quota, and an atomic cost-control budget reservation
+    (app.cost_control.service.reserve_budget) BEFORE any row is written.
+    Idempotent: resubmitting the same (user_id, idempotency_key) pair
+    returns the ORIGINAL job untouched (and skips every check entirely --
+    it's not a NEW generation, so it must never be charged twice)."""
     if idempotency_key:
         existing = db.scalar(
             select(Job).where(Job.user_id == user_id,
@@ -238,7 +232,17 @@ def submit_job(
             "generation(s) in progress. Wait for one to finish before "
             "starting another.")
 
-    _check_quotas(db, user_id)
+    _check_storage_quota(db, user_id)
+
+    reservation = None
+    if settings.cost_control_enabled:
+        from app.cost_control import service as cost_service
+        from app.cost_control.estimator import estimate_request_cost
+
+        estimate = estimate_request_cost(job_type)
+        reservation = cost_service.reserve_budget(
+            db, user_id=user_id, operation_type=job_type, estimate=estimate,
+            idempotency_key=idempotency_key)
 
     job = Job(
         id=_uuid(), user_id=user_id, idempotency_key=idempotency_key,
@@ -252,6 +256,10 @@ def submit_job(
         # Race: two concurrent requests with the same idempotency key both
         # passed the SELECT above. Whoever loses the unique constraint just
         # re-reads and returns the winner's row -- never a duplicate job.
+        # The loser's reservation is the SAME (already-idempotent) row the
+        # winner holds (reserve_budget's own idempotency check above), so
+        # there is nothing to release here -- releasing it would incorrectly
+        # refund the winner's still-active reservation.
         db.rollback()
         if idempotency_key:
             existing = db.scalar(
@@ -261,6 +269,9 @@ def submit_job(
                 return SubmitResult(job=existing, created=False)
         raise
     db.refresh(job)
+    if reservation is not None:
+        from app.cost_control import service as cost_service
+        cost_service.attach_job(db, reservation, job.id)
     log_event("job_submitted", job_id=job.id, job_type=job_type, user_id=user_id)
     return SubmitResult(job=job, created=True)
 
@@ -406,12 +417,28 @@ def _log_job_completed(job: Job) -> None:
     )
 
 
-def mark_succeeded(db: Session, job_id: str, result: dict) -> None:
+def _reservation_for_job(db: Session, job_id: str):
+    from app.models import BudgetReservation
+
+    return db.scalar(select(BudgetReservation).where(BudgetReservation.job_id == job_id))
+
+
+def mark_succeeded(
+    db: Session, job_id: str, result: dict, *,
+    actual_tokens: int = 0, actual_cost_cents: int = 0,
+) -> None:
     db.execute(update(Job).where(Job.id == job_id).values(
         status=STATUS_SUCCEEDED, result_json=result, finished_at=_now(),
         stage=None, message=None))
     db.commit()
     log_event("job_succeeded", job_id=job_id)
+    reservation = _reservation_for_job(db, job_id)
+    if reservation is not None:
+        from app.cost_control import service as cost_service
+
+        cost_service.commit_reservation(
+            db, reservation.id, actual_tokens=actual_tokens,
+            actual_cost_cents=actual_cost_cents)
     job = get_job(db, job_id)
     if job is not None:
         _log_job_completed(job)
@@ -421,13 +448,27 @@ def mark_terminal_failure(
     db: Session, job_id: str, *, status: str, category: str, exc: BaseException | None,
 ) -> None:
     """status is one of failed/timed_out/cancelled. Never retries further --
-    callers that want a retry should use maybe_retry_or_fail instead."""
+    callers that want a retry should use maybe_retry_or_fail instead.
+
+    EVERY terminal failure releases (fully refunds) any budget reservation
+    for this job -- unsupported/invalid requests, provider outages, internal
+    errors, CAD/compiler failures, timeouts, and cancellations all reach
+    here with no user charge (docs/operations/cost-control-architecture.md
+    Step 4). Automatic retries (maybe_retry_or_fail's requeue path) never
+    call this -- the reservation stays 'reserved' across every attempt of
+    the SAME job, consistent with "failed automatic retries are included in
+    the original reservation.\""""
     db.execute(update(Job).where(Job.id == job_id).values(
         status=status, error_category=category,
         error_message=safe_message_for(category, exc), finished_at=_now()))
     db.commit()
     log_event("job_failed_terminal", job_id=job_id, status=status, category=category,
               error_type=type(exc).__name__ if exc else None)
+    reservation = _reservation_for_job(db, job_id)
+    if reservation is not None:
+        from app.cost_control import service as cost_service
+
+        cost_service.release_reservation(db, reservation.id, reason=f"job_{status}")
     job = get_job(db, job_id)
     if job is not None:
         _log_job_completed(job)
@@ -439,13 +480,19 @@ def maybe_retry_or_fail(
 ) -> bool:
     """Apply the retry policy for `category`. Returns True if the job was
     requeued (status back to 'queued', ready for another claim), False if it
-    was marked terminal (attempts exhausted)."""
+    was marked terminal (attempts exhausted).
+
+    Retry-storm prevention: RETRY_POLICY's per-category value is further
+    capped by settings.cost_max_retries_per_request (docs/operations/
+    cost-control-architecture.md) -- whichever is LOWER wins, so a
+    misconfigured/overly-generous RETRY_POLICY entry can never exceed the
+    cost-control ceiling on how many attempts one reservation may cover."""
     job = db.get(Job, job_id)
     if job is None:
         return False
     if category == "cancelled":
         terminal_status = STATUS_CANCELLED  # never retry a cancellation
-    max_attempts = RETRY_POLICY.get(category, 1)
+    max_attempts = min(RETRY_POLICY.get(category, 1), settings.cost_max_retries_per_request)
     if job.attempt < max_attempts:
         db.execute(update(Job).where(Job.id == job_id).values(
             status=STATUS_QUEUED, worker_id=None, started_at=None, heartbeat_at=None,

@@ -1,0 +1,11 @@
+[Unit]
+Description=LunaiCAD stale budget-reservation sweep (docs/operations/cost-control-architecture.md)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=lunaicad
+Group=lunaicad
+WorkingDirectory=/opt/lunaicad/backend
+EnvironmentFile=/opt/lunaicad/backend/.env
+ExecStart=/opt/lunaicad/backend/.venv/bin/python -m app.ops.reservation_sweep

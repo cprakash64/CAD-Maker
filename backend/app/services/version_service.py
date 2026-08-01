@@ -124,7 +124,40 @@ def _create_version(
     db.add(version)
     db.commit()
     db.refresh(version)
+    _prune_old_versions(db, design)
     return version
+
+
+def _prune_old_versions(db: Session, design: Design) -> None:
+    """Cap retained versions per design (cost-control storage policy,
+    docs/operations/cost-control-architecture.md) -- the OLDEST snapshots
+    are dropped first once a design exceeds the limit; the design itself
+    and its current buildable state are never touched, only the history
+    beyond the retention window. 0 (or no owning account, e.g. an orphaned
+    design in a test) disables pruning."""
+    from app.cost_control.policy import effective_policy
+    from app.models import Project
+
+    project = db.get(Project, design.project_id)
+    if project is None or not project.user_id:
+        return
+    limit = effective_policy(db, project.user_id).max_retained_design_versions
+    if limit <= 0:
+        return
+    count = db.query(DesignVersion.id).filter(DesignVersion.design_id == design.id).count()
+    if count <= limit:
+        return
+    excess = count - limit
+    oldest = (
+        db.query(DesignVersion)
+        .filter(DesignVersion.design_id == design.id)
+        .order_by(DesignVersion.version_number.asc())
+        .limit(excess)
+        .all()
+    )
+    for v in oldest:
+        db.delete(v)
+    db.commit()
 
 
 def ensure_baseline(db: Session, design: Design) -> None:

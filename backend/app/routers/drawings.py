@@ -82,6 +82,9 @@ async def interpret(
     user: User = Depends(get_current_user),
 ) -> DrawingInterpretationSpec:
     from app.config import settings
+    from app.cost_control import service as cost_service
+    from app.cost_control.http import to_http_exception
+    from app.database import SessionLocal
 
     if not settings.drawing_to_cad_enabled():
         raise HTTPException(
@@ -93,6 +96,13 @@ async def interpret(
                 "in development to use the text-hint workaround)."
             ),
         )
+    db = SessionLocal()
+    try:
+        cost_service.check_upload_frequency(db, user.id)
+    except cost_service.CostControlError as exc:
+        db.close()
+        raise to_http_exception(exc) from exc
+
     hint = _clean_or_raise(hint, "hint")
     data = await _read_or_raise(file)
     # Single shared gate: verifies type from bytes, enforces size/pixel/page
@@ -107,11 +117,20 @@ async def interpret(
         ing = ingest_drawing(inspected.safe_bytes, file.filename, file.content_type)
         image_bytes, media_type = ing.image_bytes, ing.media_type or "image/png"
     else:
+        db.close()
         raise HTTPException(
             status_code=415,
             detail=(f"{inspected.file_type.upper()} is a vector drawing — use the "
                     "Drawing-to-CAD endpoint, which reads vector geometry directly."))
-    interp = interpret_image(image_bytes, media_type, hint=hint)
+
+    try:
+        with cost_service.guarded_operation(
+            db, user_id=user.id, operation_type="drawing_interpret"):
+            interp = interpret_image(image_bytes, media_type, hint=hint)
+    except cost_service.CostControlError as exc:
+        raise to_http_exception(exc) from exc
+    finally:
+        db.close()
     log_event(
         "drawing_interpreted",
         suggested_object_type=interp.suggested_object_type,
@@ -325,7 +344,14 @@ async def generate(
     payload directly with status 200."""
     from fastapi.responses import JSONResponse
 
+    from app.cost_control import service as cost_service
+    from app.cost_control.http import to_http_exception
     from app.services import job_service
+
+    try:
+        cost_service.check_upload_frequency(db, user.id)
+    except cost_service.CostControlError as exc:
+        raise to_http_exception(exc) from exc
 
     # Provider availability is decided INSIDE the canonical pipeline: an image
     # whose outline is deterministically traceable still generates without a
@@ -343,7 +369,12 @@ async def generate(
         from app.services.drawing_jobs import DrawingJob
 
         job = DrawingJob(id="sync", user_id=user.id)
-        return _run_generate_pipeline(job, data, media_type, hint, user.id)
+        try:
+            with cost_service.guarded_operation(
+                db, user_id=user.id, operation_type="drawing_generate"):
+                return _run_generate_pipeline(job, data, media_type, hint, user.id)
+        except cost_service.CostControlError as exc:
+            raise to_http_exception(exc) from exc
 
     try:
         job = _submit_drawing_job(
@@ -352,9 +383,13 @@ async def generate(
     except job_service.JobQueueSaturated as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except job_service.UserConcurrencyLimitExceeded as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        from app.cost_control.http import concurrent_limit_response
+        raise concurrent_limit_response(str(exc)) from exc
     except job_service.QuotaExceeded as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        from app.cost_control.http import storage_quota_response
+        raise storage_quota_response(str(exc)) from exc
+    except cost_service.CostControlError as exc:
+        raise to_http_exception(exc) from exc
     return JSONResponse(status_code=202, content={
         "job_id": job.id, "status": "queued",
         "poll": f"/api/drawings/jobs/{job.id}",
@@ -689,7 +724,14 @@ async def drawing_to_cad(
     inline with status 200."""
     from fastapi.responses import JSONResponse
 
+    from app.cost_control import service as cost_service
+    from app.cost_control.http import to_http_exception
     from app.services import job_service
+
+    try:
+        cost_service.check_upload_frequency(db, user.id)
+    except cost_service.CostControlError as exc:
+        raise to_http_exception(exc) from exc
 
     if units not in (None, "", "mm", "inch"):
         raise HTTPException(status_code=422, detail="units must be 'mm' or 'inch'")
@@ -709,8 +751,13 @@ async def drawing_to_cad(
         from app.services.drawing_jobs import DrawingJob
 
         job = DrawingJob(id="sync", user_id=user.id)
-        return _run_to_cad_pipeline(job, data, file.filename, file.content_type,
-                                    notes, units, thickness_mm, family, user.id)
+        try:
+            with cost_service.guarded_operation(
+                db, user_id=user.id, operation_type="drawing_to_cad"):
+                return _run_to_cad_pipeline(job, data, file.filename, file.content_type,
+                                            notes, units, thickness_mm, family, user.id)
+        except cost_service.CostControlError as exc:
+            raise to_http_exception(exc) from exc
 
     try:
         job = _submit_drawing_job(
@@ -721,9 +768,13 @@ async def drawing_to_cad(
     except job_service.JobQueueSaturated as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except job_service.UserConcurrencyLimitExceeded as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        from app.cost_control.http import concurrent_limit_response
+        raise concurrent_limit_response(str(exc)) from exc
     except job_service.QuotaExceeded as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        from app.cost_control.http import storage_quota_response
+        raise storage_quota_response(str(exc)) from exc
+    except cost_service.CostControlError as exc:
+        raise to_http_exception(exc) from exc
     return JSONResponse(status_code=202, content={
         "job_id": job.id, "status": "queued",
         "poll": f"/api/drawings/jobs/{job.id}",

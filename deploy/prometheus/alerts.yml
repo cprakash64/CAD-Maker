@@ -82,6 +82,85 @@ groups:
           summary: "LunaiCAD DB connection pool fully checked out (DB_POOL_SIZE + DB_MAX_OVERFLOW)"
           runbook: "docs/ops/incident-response.md"
 
+  # --- Cost control (docs/operations/cost-control-architecture.md) ---------
+  # Defaults below match app.config.Settings' cost_* fields
+  # (COST_GLOBAL_DAILY_BUDGET_CENTS=5000, COST_GLOBAL_HOURLY_EMERGENCY_BUDGET_CENTS=1000).
+  - name: lunaicad-cost-control
+    rules:
+      - alert: LunaiCADCostControlSuddenSpike
+        expr: increase(budget_reservations_total{outcome="reserved"}[10m]) > 3 * increase(budget_reservations_total{outcome="reserved"}[10m] offset 1h)
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "LunaiCAD reservation rate more than 3x its rate an hour ago"
+          runbook: "docs/ops/incident-response.md#cost-spike"
+
+      - alert: LunaiCADReservationReconciliationErrors
+        expr: histogram_quantile(0.95, sum(rate(cost_reconciliation_delta_cents_bucket[15m])) by (le, operation_type)) > 20
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "LunaiCAD p95 reconciliation delta (actual - estimated cost) over 20 cents -- pre-flight estimates are drifting"
+          runbook: "docs/operations/cost-control-architecture.md"
+
+      - alert: LunaiCADHighRetryRate
+        expr: >
+          sum(rate(worker_jobs_total{outcome="failed"}[15m]))
+          / sum(rate(worker_jobs_total[15m])) > 0.2
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "More than 20% of LunaiCAD jobs failing (possible retry storm) over 15m"
+          runbook: "docs/ops/incident-response.md"
+
+      - alert: LunaiCADAccountDisproportionateUsage
+        expr: increase(cost_control_rejections_total{scope="account"}[1h]) > 50
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "A single account tripped its own cost-control limits over 50 times in an hour"
+          runbook: "docs/operations/cost-control-architecture.md#administrative-controls"
+
+      - alert: LunaiCADGlobalEmergencyBudgetActive
+        expr: emergency_stop_active == 1
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "LunaiCAD global cost-control emergency stop is ACTIVE -- all generation is paused"
+          runbook: "docs/operations/cost-control-architecture.md#administrative-controls"
+
+      - alert: LunaiCADGlobalBudgetRejections
+        expr: increase(cost_control_rejections_total{scope="global"}[1h]) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "LunaiCAD is rejecting requests against the GLOBAL daily/hourly budget"
+          runbook: "docs/operations/cost-control-architecture.md#administrative-controls"
+
+      - alert: LunaiCADStaleReservationsAccumulating
+        expr: increase(stale_reservations_reaped_total[1h]) > 10
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "More than 10 budget reservations reaped as stale in an hour -- a worker or process is likely crashing before commit/release"
+          runbook: "docs/ops/incident-response.md#worker-crash-loop"
+
+      - alert: LunaiCADStorageGrowthAnomaly
+        expr: deriv(storage_bytes_used[1h]) > 500 * 1024 * 1024
+        for: 30m
+        labels:
+          severity: warn
+        annotations:
+          summary: "LunaiCAD storage growing faster than 500MB/hour sustained for 30m"
+          runbook: "docs/ops/incident-response.md"
+
 # NOTE: an /ready-down alert is deliberately NOT included here -- it needs a
 # blackbox_exporter (or equivalent) HTTP probe job scraping /ready, which
 # isn't part of this repo's committed Prometheus setup. Add one (with a

@@ -170,7 +170,7 @@ def test_alembic_has_exactly_one_head():
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
     assert len(heads) == 1, f"expected exactly one Alembic head, found: {heads}"
-    assert heads[0] == "f2a8b3a98437"
+    assert heads[0] == "d80e1aa21d62"
 
 
 def _seed_minimal_feedback_row(engine, *, rating: str = "up") -> str:
@@ -184,6 +184,9 @@ def _seed_minimal_feedback_row(engine, *, rating: str = "up") -> str:
         # data_improvement_opt_in already exists and is NOT NULL (with no
         # server_default) at revision 0db7d6dd7f9b -- it must be supplied
         # explicitly here, same as any real caller at this schema revision.
+        # is_admin does NOT exist yet at 0db7d6dd7f9b (added later by
+        # d80e1aa21d62) -- do not add it here, this helper must stay
+        # accurate to that revision's actual schema.
         conn.execute(text(
             "INSERT INTO users (id, email, password_hash, created_at, "
             "data_improvement_opt_in) VALUES (:id, :email, :ph, :now, :opt_in)"
@@ -257,11 +260,16 @@ def test_feedback_migration_new_rows_satisfy_model_and_db_constraints():
         # Explicit True/True -- the actual "report a bad result, with consent" shape.
         user_id, project_id, design_id, fb_id = (uuid.uuid4().hex for _ in range(4))
         now = datetime.now(timezone.utc)
+        # is_admin (migration d80e1aa21d62) has a Python-side-only default
+        # (no server_default, dropped after backfill) -- a raw INSERT
+        # bypassing the ORM must supply it explicitly, same as
+        # data_improvement_opt_in above it.
         conn.execute(text(
             "INSERT INTO users (id, email, password_hash, created_at, "
-            "data_improvement_opt_in) VALUES (:id, :email, :ph, :now, :opt_in)"
+            "data_improvement_opt_in, is_admin) "
+            "VALUES (:id, :email, :ph, :now, :opt_in, :is_admin)"
         ), {"id": user_id, "email": f"{user_id}@example.com", "ph": "x", "now": now,
-            "opt_in": False})
+            "opt_in": False, "is_admin": False})
         conn.execute(text(
             "INSERT INTO projects (id, user_id, name, created_at) "
             "VALUES (:id, :uid, :name, :now)"

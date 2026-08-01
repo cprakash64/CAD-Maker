@@ -163,6 +163,39 @@ storage_cleanup_bytes_reclaimed_total = Counter(
     registry=REGISTRY,
 )
 
+# --- Cost control (docs/operations/cost-control-architecture.md) -------------
+budget_reservations_total = Counter(
+    "budget_reservations_total", "Budget reservation lifecycle events",
+    ["operation_type", "outcome"], registry=REGISTRY,  # outcome: reserved|committed|released
+)
+cost_control_rejections_total = Counter(
+    "cost_control_rejections_total", "Requests rejected by a cost-control limit",
+    ["reason", "scope"], registry=REGISTRY,  # reason: the CostControlError.code; scope: account|global
+)
+cost_reconciliation_delta_cents = Histogram(
+    "cost_reconciliation_delta_cents",
+    "actual_cost_cents - estimated_cost_cents at reservation commit "
+    "(negative == refunded unused reservation; positive == estimate was too low)",
+    ["operation_type"], registry=REGISTRY,
+    buckets=(-50, -20, -5, -1, 0, 1, 5, 20, 50, 200),
+)
+stale_reservations_reaped_total = Counter(
+    "stale_reservations_reaped_total",
+    "Budget reservations released by the stale-reservation TTL reaper "
+    "(crashed/restarted process, never committed or released)",
+    registry=REGISTRY,
+)
+emergency_stop_active = Gauge(
+    "emergency_stop_active", "1 if the global cost-control emergency stop is active, else 0",
+    registry=REGISTRY, multiprocess_mode="max",
+)
+estimated_vs_actual_cost_cents = Histogram(
+    "estimated_vs_actual_cost_cents_ratio",
+    "actual_cost_cents / estimated_cost_cents at reservation commit (1.0 == exact)",
+    ["operation_type"], registry=REGISTRY,
+    buckets=(0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0),
+)
+
 
 def status_class(status_code: int) -> str:
     return f"{status_code // 100}xx"
@@ -179,6 +212,15 @@ class _DbGaugesCollector(Collector):
             "(sum across all statuses == current queue depth)", labels=["status"])
         storage_bytes = GaugeMetricFamily(
             "storage_bytes_used", "Sum of ExportFile.size_bytes (logical storage usage)")
+        # Bounded cardinality (top 10 accounts by storage, not one series per
+        # account -- storage_bytes_used above is the true system-wide total;
+        # this is for spotting an outlier account, not per-account billing).
+        storage_bytes_top_accounts = GaugeMetricFamily(
+            "storage_bytes_used_top_accounts",
+            "Storage used by the top 10 accounts by bytes (docs/operations/"
+            "cost-control-architecture.md) -- for spotting one account "
+            "consuming disproportionate storage, not a per-account total.",
+            labels=["rank"])
         db_pool = GaugeMetricFamily(
             "db_pool_connections", "SQLAlchemy connection pool state", labels=["state"])
 
@@ -186,7 +228,7 @@ class _DbGaugesCollector(Collector):
             from sqlalchemy import func, select
 
             from app.database import SessionLocal, engine
-            from app.models import ExportFile, Job
+            from app.models import Design, ExportFile, Job, Project
             from app.services.job_service import ACTIVE_STATUSES
 
             db = SessionLocal()
@@ -202,6 +244,19 @@ class _DbGaugesCollector(Collector):
 
                 total_bytes = db.scalar(select(func.coalesce(func.sum(ExportFile.size_bytes), 0)))
                 storage_bytes.add_metric([], float(total_bytes or 0))
+
+                top = db.execute(
+                    select(Project.user_id, func.coalesce(func.sum(ExportFile.size_bytes), 0))
+                    .select_from(ExportFile)
+                    .join(Design, Design.id == ExportFile.design_id)
+                    .join(Project, Project.id == Design.project_id)
+                    .where(Project.user_id.is_not(None))
+                    .group_by(Project.user_id)
+                    .order_by(func.sum(ExportFile.size_bytes).desc())
+                    .limit(10)
+                ).all()
+                for rank, (_user_id, user_bytes) in enumerate(top, start=1):
+                    storage_bytes_top_accounts.add_metric([str(rank)], float(user_bytes or 0))
             finally:
                 db.close()
 
@@ -216,6 +271,7 @@ class _DbGaugesCollector(Collector):
 
         yield job_status
         yield storage_bytes
+        yield storage_bytes_top_accounts
         yield db_pool
 
 

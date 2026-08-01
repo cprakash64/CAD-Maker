@@ -19,7 +19,17 @@ from app.observability import (
     set_request_id,
 )
 from app.rate_limit import rate_limit
-from app.routers import auth, calibration, capabilities, designs, drawings, jobs, ops, templates
+from app.routers import (
+    admin_cost,
+    auth,
+    calibration,
+    capabilities,
+    designs,
+    drawings,
+    jobs,
+    ops,
+    templates,
+)
 
 # Fail fast on unsafe production config (mock provider in prod, default JWT
 # secret, missing DATABASE_URL / CORS / storage, dev_mode on, etc.).
@@ -90,6 +100,7 @@ app.include_router(capabilities.router)
 app.include_router(calibration.router)
 app.include_router(jobs.router)
 app.include_router(ops.router)
+app.include_router(admin_cost.router)
 
 
 @app.middleware("http")

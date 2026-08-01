@@ -121,6 +121,33 @@ reached"`.
 intentionally left open until the next UTC day if the cap was hit
 legitimately).
 
+### Cost control tools (docs/operations/cost-control-architecture.md)
+
+The LLM circuit breaker above is a fast, per-process, in-memory first line
+of defense. The durable, cross-process, restart-safe budget ledger sits
+behind it (`app.cost_control`) and is what actually stops the system-wide
+daily/hourly OpenAI spend, independent of which worker process answers a
+given request:
+
+1. **Stop the bleeding immediately, system-wide**:
+   `POST /api/admin/cost/emergency-stop {"reason": "..."}` (admin auth) —
+   blocks EVERY new reservation immediately (existing in-flight jobs still
+   finish/fail normally; nothing new starts). Reverse with
+   `DELETE /api/admin/cost/emergency-stop`.
+2. **Isolate one abusive account** instead of a global stop:
+   `POST /api/admin/cost/accounts/{user_id}/disable {"reason": "..."}` —
+   every OTHER account keeps working.
+3. **Investigate**: `GET /api/admin/cost/accounts/{user_id}/abnormal-usage`
+   — recent reservations, outcomes, and cost for that account.
+   `GET /api/admin/cost/overview` — global daily/hourly spend vs. budget.
+4. **A worker crashed mid-job and left reservations stuck at "reserved"**:
+   these self-heal after `COST_RESERVATION_TTL_SECONDS` (default 600s) via
+   the same stale-reservation reaper pattern as stale jobs
+   (`app.services.job_service.reap_stale_jobs`); to force it immediately,
+   `POST /api/admin/cost/reservations/release-stale`.
+5. Every admin action above is written to `admin_audit_log` (who, when,
+   what, why) — check it after an incident for a full timeline.
+
 ## Queue saturation
 
 **Notice**: `JobQueueSaturated` errors (503s on generation endpoints),

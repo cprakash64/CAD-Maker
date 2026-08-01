@@ -114,13 +114,19 @@ def _execute(job_id: str, *, cleanup_tmp_dir: bool) -> None:
                 db, job_id, status=job_service.STATUS_FAILED, category="internal",
                 exc=RuntimeError(f"no handler registered for job_type {job.job_type!r}"))
             return
+        from app.llm.usage import snapshot as usage_snapshot, track_usage
+
         try:
-            result = handler(dict(job.payload_json or {}), ctx)
+            with track_usage():
+                result = handler(dict(job.payload_json or {}), ctx)
+                actual_tokens, actual_cost_cents = usage_snapshot()
         except Exception as exc:  # noqa: BLE001 - classify; never let a job hang ambiguous
             category = job_service.classify_error(exc)
             job_service.maybe_retry_or_fail(db, job_id, category=category, exc=exc)
             return
-        job_service.mark_succeeded(db, job_id, result)
+        job_service.mark_succeeded(
+            db, job_id, result, actual_tokens=actual_tokens,
+            actual_cost_cents=actual_cost_cents)
     finally:
         db.close()
         if cleanup_tmp_dir:

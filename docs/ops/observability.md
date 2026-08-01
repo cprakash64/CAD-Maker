@@ -160,6 +160,14 @@ this endpoint reveals cost/queue/business data. Open in dev/test
 | `rate_limited_total` | counter | `category` | **rate-limit events** |
 | `quota_exceeded_total` | counter | `quota` (daily/monthly/storage) | quota-exhaustion events |
 | `db_pool_connections` | gauge (live) | `state` (checked_out/checked_in) | connection-pool pressure |
+| `budget_reservations_total` | counter | `operation_type, outcome` (reserved/committed/released) | **refund rate** = `released / reserved`; sudden reservation-rate spike (see alerts.yml) |
+| `cost_control_rejections_total` | counter | `reason, scope` (account/global) | **per-account/global quota rejections**; `reason` is the CostControlError code |
+| `cost_reconciliation_delta_cents` | histogram | `operation_type` | actual − estimated cost at commit; a widening distribution means the pre-flight estimate (`app.cost_control.estimator`) needs recalibrating |
+| `estimated_vs_actual_cost_cents_ratio` | histogram | `operation_type` | actual/estimated ratio; 1.0 = exact |
+| `stale_reservations_reaped_total` | counter | | reservations released by TTL (crashed/restarted process before commit/release) |
+| `emergency_stop_active` | gauge | | 1 = global cost-control kill switch is active |
+| `storage_bytes_used_top_accounts` | gauge (live, DB-computed, bounded to top 10) | `rank` | **abnormal per-account storage usage** — see `docs/operations/cost-control-architecture.md` |
+| worker seconds per successful result | *(derived)* | | `sum(rate(worker_job_duration_seconds_sum[1h])) / sum(rate(worker_jobs_total{outcome="succeeded"}[1h]))` |
 
 ### Alert thresholds (adjust to your traffic)
 
@@ -180,6 +188,16 @@ this table and `alerts.yml` to match.
 | Cost spike | `increase(llm_estimated_cost_usd_total[1h]) > 0.5 * <LLM_COST_DAILY_CAP_USD>` | half the daily cap burned in an hour |
 | Circuit breaker open | `llm_circuit_breaker_state == 1` for 2m | degraded mode is active — see `docs/ops/incident-response.md` |
 | DB pool exhausted | `db_pool_connections{state="checked_out"} >= <DB_POOL_SIZE> + <DB_MAX_OVERFLOW>` | requests about to start queuing on the pool |
+| Cost-control sudden spike | reservation rate > 3x the same window an hour ago | see `docs/operations/cost-control-architecture.md` |
+| Reservation reconciliation errors | p95 `cost_reconciliation_delta_cents` > 20¢ for 15m | pre-flight estimates drifting from real usage |
+| High retry rate | job failure rate > 20% for 15m | possible retry storm |
+| One account disproportionate usage | an account trips its own limits >50x/hour | see the admin `/api/admin/cost/accounts/{id}/abnormal-usage` endpoint |
+| Global emergency budget activation | `emergency_stop_active == 1` | all generation is currently paused |
+| Global budget rejections | `cost_control_rejections_total{scope="global"}` increasing | the WHOLE SYSTEM is out of daily/hourly budget, not just one account |
+| Storage growth anomaly | `deriv(storage_bytes_used[1h]) > 500MB/hour` for 30m | see `docs/operations/cost-control-architecture.md` |
+
+Full rule definitions: `deploy/prometheus/alerts.yml`'s `lunaicad-cost-control`
+group.
 
 ## Multiprocess metrics (`--workers N`)
 

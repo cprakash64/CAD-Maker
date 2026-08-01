@@ -304,6 +304,9 @@ def create_design(
     from app.observability import log_event
     from app.services import job_service
 
+    from app.cost_control.http import to_http_exception
+    from app.cost_control.service import CostControlError
+
     _t0 = _time.perf_counter()
     log_event("design_create_received", user_id=user.id, prompt_len=len(req.prompt or ""))
     try:
@@ -315,9 +318,13 @@ def create_design(
     except job_service.JobQueueSaturated as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except job_service.UserConcurrencyLimitExceeded as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        from app.cost_control.http import concurrent_limit_response
+        raise concurrent_limit_response(str(exc)) from exc
     except job_service.QuotaExceeded as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        from app.cost_control.http import storage_quota_response
+        raise storage_quota_response(str(exc)) from exc
+    except CostControlError as exc:
+        raise to_http_exception(exc) from exc
     job = submission.job
 
     if settings.testing and submission.created:
@@ -395,9 +402,15 @@ def modify_design(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DesignDTO:
+    from app.cost_control import service as cost_service
+    from app.cost_control.http import to_http_exception
+
     design = _owned_or_404(db, design_id, user)
     try:
-        design, clarification = design_service.modify_design(db, design, req.prompt)
+        with cost_service.guarded_operation(db, user_id=user.id, operation_type="modify"):
+            design, clarification = design_service.modify_design(db, design, req.prompt)
+    except cost_service.CostControlError as exc:
+        raise to_http_exception(exc) from exc
     except (CadGenerationError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     dto = _to_dto(design, user, db)

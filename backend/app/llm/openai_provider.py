@@ -163,6 +163,8 @@ class OpenAIProvider(LLMProvider):
                 cost = estimate_cost_usd(model, in_tok, out_tok)
                 circuit_breaker.record_success()
                 circuit_breaker.record_cost(cost)
+                from app.llm.usage import record as record_usage
+                record_usage(model, in_tok, out_tok)
                 llm_calls_total.labels(model=model, outcome="ok").inc()
                 llm_tokens_total.labels(model=model, kind="input").inc(in_tok)
                 llm_tokens_total.labels(model=model, kind="output").inc(out_tok)
