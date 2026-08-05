@@ -1473,9 +1473,9 @@ multidict==6.7.1 \
     # via
     #   aiohttp
     #   yarl
-multimethod==1.12 \
-    --hash=sha256:8db8ef2a8d2a247e3570cc23317680892fdf903d84c8c1053667c8e8f7671a67 \
-    --hash=sha256:fd0c473c43558908d97cc06e4d68e8f69202f167db46f7b4e4058893e7dbdf60
+multimethod==2.1 \
+    --hash=sha256:54b5256562351762a275dd65571b5d6db750848f1eb6bb21c61cb5ff2748b663 \
+    --hash=sha256:c59e75fbe51516ed632d3df4b56df0876747be001c068d3ee1e83e9f65c2846f
     # via cadquery
 nlopt==2.11.0 \
     --hash=sha256:00d74c7c9fb63489973901f372c501541a2509c6d9f2d1a4089fee8193b8fd51 \
