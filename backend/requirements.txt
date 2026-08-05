@@ -26,4 +26,4 @@ boto3==1.43.56
 ezdxf==1.4.4
 pypdfium2==5.12.1
 # Production observability: /metrics in Prometheus text format.
-prometheus_client==0.21.1
+prometheus_client==0.26.0
