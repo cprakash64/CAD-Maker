@@ -193,6 +193,13 @@ class DrawingToCADAnalysis(BaseModel):
     dimension_annotations: list[DimensionAnnotation] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     ambiguities: list[str] = Field(default_factory=list)
+    # Subset of `ambiguities` that fall in a CRITICAL category (see
+    # app.schemas.drawing_spec.CRITICAL_UNRESOLVED_CATEGORIES): depth,
+    # thickness, bore_type, view_relationship, feature_placement. Non-empty
+    # means the final manufacturable export must be blocked (see
+    # docs/drawing-to-cad-beta.md) even though the design still builds and
+    # stays inspectable. Each entry is a bare category name, e.g. "depth".
+    critical_ambiguities: list[str] = Field(default_factory=list)
     recommended_family: Optional[str] = Field(default=None, max_length=64)
     confidence_score: float = Field(default=0.5, ge=0.0, le=1.0)
     # True ONLY when the file is genuinely unusable (unreadable image, empty
@@ -209,6 +216,16 @@ class DrawingToCADAnalysis(BaseModel):
     def assume(self, text: str) -> None:
         if text not in self.assumptions:
             self.assumptions.append(text)
+
+    def mark_critical_ambiguity(self, category: str, text: str) -> None:
+        """Record a CRITICAL unresolved item: appends the human-readable form
+        to `ambiguities` (existing, already-surfaced-as-warning mechanism) AND
+        the bare category to `critical_ambiguities` (new -- the deterministic
+        export-blocking signal)."""
+        if text not in self.ambiguities:
+            self.ambiguities.append(text)
+        if category not in self.critical_ambiguities:
+            self.critical_ambiguities.append(category)
 
     def usable(self) -> bool:
         """Can anything be generated from this analysis at all?"""

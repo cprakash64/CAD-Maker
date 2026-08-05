@@ -15,6 +15,7 @@ import {
   type DrawingJobStage,
 } from "@/lib/drawingJob";
 import { useRequireAuth } from "@/lib/auth";
+import type { Design } from "@/lib/types";
 
 const ACCEPT = ".png,.jpg,.jpeg,.webp,.pdf,.svg,.dxf";
 const ACCEPT_LABEL = "PNG · JPG · PDF · SVG · DXF";
@@ -35,7 +36,7 @@ const STEPS = [
   "Exporting",
 ] as const;
 
-type Phase = "idle" | "uploading" | "processing" | "opening" | "failed";
+type Phase = "idle" | "uploading" | "processing" | "opening" | "failed" | "review";
 
 export default function DrawingToCadPage() {
   const router = useRouter();
@@ -56,6 +57,7 @@ export default function DrawingToCadPage() {
   } | null>(null);
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [reviewDesign, setReviewDesign] = useState<Design | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -65,6 +67,7 @@ export default function DrawingToCadPage() {
   const pickFile = useCallback((f: File | null) => {
     setFile(f);
     setFailure(null);
+    setReviewDesign(null);
     setPhase("idle");
     setActiveStep(0);
   }, []);
@@ -97,10 +100,19 @@ export default function DrawingToCadPage() {
         },
       });
       const designId = successfulDesignId(res);
-      if (designId) {
-        // Success: open the generated part directly in the 3D studio.
-        setPhase("opening");
+      if (designId && res.design) {
         setActiveStep(STEPS.length);
+        if (res.design.drawing_review_required) {
+          // Mandatory interpretation review: an uncertain drawing (low
+          // fidelity, or a critical dimension the drawing never showed)
+          // must be reviewed by a human before opening the studio — never
+          // silently auto-opened as if it were a confident, precise read.
+          setPhase("review");
+          setReviewDesign(res.design);
+          return;
+        }
+        // Confident read: open the generated part directly in the 3D studio.
+        setPhase("opening");
         router.push(`/studio/${designId}`);
         return;
       }
@@ -140,7 +152,19 @@ export default function DrawingToCadPage() {
   return (
     <div className="page max-w-3xl space-y-5 lg:max-w-4xl">
       <div className="space-y-1.5">
-        <span className="label block">Drawing → CAD</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="label block">Drawing → CAD</span>
+          <span
+            title="Drawing → CAD is a beta workflow: it covers clean dimensioned
+single-part drawings, simple orthographic views, vector DXF/SVG profiles, and
+limited raster drawings with readable dimensions. Complex assemblies,
+GD&T-heavy drawings, poor scans, missing dimensions, and ambiguous hidden
+geometry are not yet supported."
+            className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200"
+          >
+            Beta
+          </span>
+        </div>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">
           Turn a 2D drawing into a 3D part
         </h1>
@@ -148,6 +172,8 @@ export default function DrawingToCadPage() {
           Upload a mechanical drawing and LunaiCAD builds a parametric,
           validated 3D model — dimensions from the drawing are the source of
           truth, anything missing is inferred and listed as an assumption.
+          This workflow is in beta: results on complex or unclear drawings
+          should be treated as a starting point, not a final, verified part.
         </p>
       </div>
 
@@ -155,7 +181,7 @@ export default function DrawingToCadPage() {
       <ol className="flex flex-wrap items-center gap-2 text-xs">
         {STEPS.map((s, i) => {
           const state =
-            phase === "opening" || i < activeStep
+            phase === "opening" || phase === "review" || i < activeStep
               ? "done"
               : i === activeStep && phase !== "idle" && phase !== "failed"
                 ? "active"
@@ -339,6 +365,91 @@ export default function DrawingToCadPage() {
           </div>
         )}
       </div>
+
+      {/* Mandatory interpretation review — an uncertain drawing (low fidelity,
+          or a critical dimension the drawing never showed) never auto-opens
+          in the studio; the user must see and acknowledge what was assumed
+          or left unresolved first (docs/drawing-to-cad-beta.md). */}
+      {phase === "review" && reviewDesign && (
+        <div className="card space-y-3 border-amber-500/40 p-4">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+              Beta · Review needed
+            </span>
+            <h2 className="text-sm font-semibold text-amber-100">
+              Check this interpretation before you trust it
+            </h2>
+          </div>
+
+          {reviewDesign.drawing_fidelity && (
+            <p className="text-xs text-slate-300">
+              Fidelity:{" "}
+              <span className="font-medium text-amber-200">
+                {reviewDesign.drawing_fidelity.drawing_fidelity_status}
+              </span>
+              {typeof reviewDesign.drawing_fidelity.source_drawing_confidence ===
+                "number" && (
+                <>
+                  {" "}· confidence{" "}
+                  {Math.round(
+                    reviewDesign.drawing_fidelity.source_drawing_confidence * 100
+                  )}
+                  %
+                </>
+              )}
+            </p>
+          )}
+
+          {!!reviewDesign.drawing_fidelity?.critical_unresolved?.length && (
+            <div>
+              <p className="text-xs font-medium text-red-200">
+                Unresolved critical dimensions — the drawing never showed:
+              </p>
+              <ul className="list-disc pl-5 text-xs text-red-100/90">
+                {reviewDesign.drawing_fidelity.critical_unresolved.map((c) => (
+                  <li key={c}>{c.replace(/_/g, " ")}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {reviewDesign.download_blocked_reason && (
+            <p className="rounded-md border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-100">
+              Export is blocked: {reviewDesign.download_blocked_reason} Add a
+              thickness/depth override or re-upload a clearer drawing, then
+              retry.
+            </p>
+          )}
+
+          {reviewDesign.assumptions.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-slate-300">
+                Assumptions made while reading this drawing:
+              </p>
+              <ul className="list-disc pl-5 text-xs text-slate-400">
+                {reviewDesign.assumptions.map((a, i) => (
+                  <li key={i}>{a}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <button
+              className="btn-primary"
+              onClick={() => router.push(`/studio/${reviewDesign.id}`)}
+            >
+              I&apos;ve reviewed it — open in studio
+            </button>
+            <button
+              className="btn-ghost text-xs"
+              onClick={() => pickFile(null)}
+            >
+              Upload a different drawing instead
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Failure card — the generating state always exits into either the
           studio redirect above or this card with a retry. */}

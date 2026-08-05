@@ -168,10 +168,11 @@ backend/app/cad/plan/deterministic.py # offline planner for common families
 ### 3. CAD families and capability registry
 
 LunaiCAD uses a central family registry so the app can be honest about what it can generate well.
+See `docs/product-contract.md` for the canonical product contract (capability levels, clarification policy, API contract).
 
 Every family has:
 
-- Maturity: `production_ready`, `beta`, `concept`, or `unsupported`
+- Maturity: `production_ready`, `validated_beta`, `experimental`, or `unsupported`
 - Required dimensions
 - Default assumptions
 - Example prompts
@@ -377,7 +378,7 @@ Workspace features:
 | Database | SQLAlchemy, SQLite for local/beta, Postgres-ready through `DATABASE_URL` |
 | Auth | Email/password, JWT bearer tokens, per-user isolation |
 | Storage | Local filesystem in dev, S3-compatible storage in production |
-| LLM providers | Mock/offline, OpenAI, Anthropic provider abstraction |
+| LLM providers | OpenAI (production) and a deterministic offline mock for dev/tests |
 | Observability | Structured JSON logs, request timing, scrubbed secrets |
 | Deployment | Nginx reverse proxy, systemd services, VPS-ready |
 
@@ -454,9 +455,8 @@ backend/.venv/bin/python -m scripts.smoke_local_dev
 
 | Variable | Example | Purpose |
 | --- | --- | --- |
-| `LLM_PROVIDER` | `mock`, `openai`, `anthropic` | Main prompt parser provider. |
+| `LLM_PROVIDER` | `openai`, `mock` | Prompt parser provider. `mock` is dev/test only and is rejected in production. |
 | `OPENAI_API_KEY` | `sk-...` | Required when using OpenAI provider. |
-| `ANTHROPIC_API_KEY` | `sk-ant-...` | Required when using Anthropic provider. |
 | `OPENAI_MODEL` | `gpt-5.5` | OpenAI model, with graceful fallback where configured. |
 | `CAD_ENGINE` | `feature_graph` | Primary CAD engine. |
 | `CAD_LLM_PROVIDER` | `openai` | Optional CAD planner provider override. |
@@ -587,7 +587,7 @@ Production checklist:
 - Use real `DATABASE_URL`.
 - Disable dev mode.
 - Configure production `CORS_ORIGINS` and `PUBLIC_BASE_URL`.
-- Use OpenAI/Anthropic provider keys only through environment variables.
+- Use the OpenAI provider key only through environment variables (server-side only).
 - Do not commit `.env` files.
 - Use S3-compatible storage for durable CAD exports if needed.
 - Run backend tests, frontend typecheck, frontend build, route checks, and secrets scan before deploy.

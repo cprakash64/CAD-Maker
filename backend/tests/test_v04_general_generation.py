@@ -7,8 +7,7 @@ from app.cad.base import CadGenerationError
 from app.cad.feature_graph import build_feature_graph
 from app.export.exporter import generate
 from app.generation.router import route_prompt
-from app.generation.scad_generate import plan_to_design
-from app.generation.scad_runner import lint_scad, scad_source_from_plan
+from app.generation.scad_generate import plan_to_design, plan_to_graph
 from app.generation.self_check import repair_spec
 from app.parsing.complex_plan import looks_complex, plan_prompt
 from app.schemas.complex_cad import CADFeatureGraph
@@ -115,21 +114,27 @@ def test_flange_plate_and_shaft_collar_build():
         assert len(generate(spec).stl_bytes) > 0
 
 
-# --- 4 restricted SCAD generator (no binary needed for these) -------------
-def test_scad_source_from_plan_and_lint_ok():
+# --- 4 GeneralCADPlan -> trusted feature graph ----------------------------
+# The OpenSCAD source generator/runner was removed with the rest of the code
+# -execution surface (F-1); it was dead in the application (no app module
+# imported it). A validated GeneralCADPlan now compiles only to the allowlisted
+# CadQuery feature graph, which the tests below cover.
+def test_plan_to_graph_rejects_unsupported_primitive():
+    plan = GeneralCADPlan(primitives=[
+        {"kind": "torus_knot", "id": "x", "params": {"radius": 5}},
+    ])
+    with pytest.raises(CadGenerationError):
+        plan_to_graph(plan)
+
+
+def test_plan_to_graph_builds_allowlisted_ops_only():
     plan = GeneralCADPlan(primitives=[
         {"kind": "box", "id": "b", "params": {"width": 40, "depth": 40, "height": 20}},
         {"kind": "cylinder", "id": "c", "params": {"radius": 5, "height": 30}, "op": "subtract"},
     ])
-    src = scad_source_from_plan(plan)
-    assert "cube(" in src and "difference()" in src
-    lint_scad(src)  # must not raise
-
-
-def test_scad_lint_rejects_forbidden_tokens():
-    for bad in ["include <x.scad>", "import(\"a.stl\");", "use <lib>", "surface(\"f.png\")"]:
-        with pytest.raises(CadGenerationError):
-            lint_scad(bad)
+    graph = plan_to_graph(plan)
+    allowed = {"box", "cylinder", "boolean_union", "boolean_cut", "cut_hole"}
+    assert {op["op"] for op in graph["operations"]} <= allowed
 
 
 def test_general_plan_compiles_to_buildable_design():

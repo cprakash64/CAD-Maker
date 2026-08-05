@@ -37,9 +37,25 @@ class LocalizedOperation(str, Enum):
     thicken_wall = "thicken_wall"
     add_cutout = "add_cutout"
     move_hole = "move_hole"
+    # General "move a feature" name for the same handler as move_hole (today
+    # only holes are moveable through this pipeline) — a distinct enum VALUE,
+    # not a Python alias, so both names are independently accepted as input.
+    move_feature = "move_feature"
     add_gusset = "add_gusset"
     change_bolt_hole_diameter = "change_bolt_hole_diameter"
     thicken_flange = "thicken_flange"
+    # Resize every hole that currently shares the selected hole's diameter
+    # (a natural "hole group": all the M6 holes, all the M3 holes, ...).
+    resize_hole_group = "resize_hole_group"
+    # Remove a feature, reversibly via version history/restore rather than a
+    # toggle back on this same op (see app.editing.localized).
+    suppress_feature = "suppress_feature"
+    # Snap a hole's diameter to a real published metric clearance-hole size
+    # (e.g. "M8"), as opposed to change_hole_diameter's arbitrary float.
+    replace_standard = "replace_standard"
+    # Resize a hole to fit a given pin/shaft diameter at a named fit class
+    # (press/snug/normal/loose), using the calibration clearance tables.
+    change_fit_class = "change_fit_class"
 
 
 class LocalizedModificationSpec(BaseModel):

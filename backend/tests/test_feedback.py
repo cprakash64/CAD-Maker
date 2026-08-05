@@ -93,3 +93,78 @@ def test_feedback_snapshots_spec_hash(client, auth):
         assert fb.user_id == auth["user"]["id"]
     finally:
         db.close()
+
+
+def test_report_bad_result_without_consent_drops_reason(client, auth):
+    h = auth["headers"]
+    did = _make_design(client, h)
+    r = client.post(
+        f"/api/designs/{did}/report-bad-result",
+        json={
+            "categories": ["wrong_dimensions"],
+            "reason": "the holes are in the wrong place",
+            "consent": False,
+        },
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["categories"] == ["wrong_dimensions"]
+    assert body["consent"] is False
+    # Privacy-conscious: free text is never persisted without consent, even
+    # though it was sent in the request.
+    assert body["reason"] is None
+
+    from app.database import SessionLocal
+    from app.models import Feedback
+
+    db = SessionLocal()
+    try:
+        fb = db.query(Feedback).filter(Feedback.design_id == did).one()
+        assert fb.report_reason is None
+        assert fb.is_bad_result_report is True
+    finally:
+        db.close()
+
+
+def test_report_bad_result_with_consent_keeps_reason_and_snapshots_versions(client, auth):
+    h = auth["headers"]
+    did = _make_design(client, h)
+    r = client.post(
+        f"/api/designs/{did}/report-bad-result",
+        json={
+            "categories": ["bad_geometry"],
+            "reason": "walls look too thin near the boss",
+            "consent": True,
+            "print_success": False,
+            "fit_success": None,
+        },
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["reason"] == "walls look too thin near the boss"
+    assert body["consent"] is True
+    assert body["print_success"] is False
+    assert body["fit_success"] is None
+    # A design_version_number of at least 1 (baseline) and a prompt_version
+    # string are snapshotted at report time, not left null.
+    assert body["design_version_number"] is not None
+    assert body["prompt_version"]
+
+
+def test_report_bad_result_requires_auth(client):
+    assert client.post(
+        "/api/designs/x/report-bad-result", json={"categories": []}
+    ).status_code == 401
+
+
+def test_report_bad_result_rejects_unknown_category(client, auth):
+    h = auth["headers"]
+    did = _make_design(client, h)
+    r = client.post(
+        f"/api/designs/{did}/report-bad-result",
+        json={"categories": ["not_a_real_category"], "consent": False},
+        headers=h,
+    )
+    assert r.status_code == 422

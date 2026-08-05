@@ -127,6 +127,9 @@ export function Header() {
                   <span className="max-w-[14ch] truncate text-xs text-slate-500" title={user.email}>
                     {user.email}
                   </span>
+                  <NavLink href="/settings" active={is("/settings")} className="px-2 py-1 text-xs">
+                    Settings
+                  </NavLink>
                   <button
                     className="rounded-lg px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-danger/10 hover:text-[#e6a39b] focus-visible:bg-danger/10 focus-visible:text-[#e6a39b]"
                     onClick={() => {
@@ -193,6 +196,7 @@ export function Header() {
             {[
               { href: "/dashboard", label: "Workspace", active: is("/dashboard") || is("/studio") },
               { href: "/docs/import", label: "Docs", active: is("/docs") },
+              { href: "/settings", label: "Settings", active: is("/settings") },
             ].map((l) => (
               <Link
                 key={l.href}

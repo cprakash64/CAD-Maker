@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 
+from app.cad.standards.defaults import clearance_hole
 from app.cad.templates.hex_standoff import across_corners
 
 ROUTE_DETERMINISTIC_HEX_STANDOFF = "deterministic_hex_standoff"
@@ -29,12 +30,6 @@ _STANDOFF = re.compile(
 _HEX_OTHER = re.compile(
     r"\bhex (?:nut|bolt|head|key|screw|socket|wrench|driver|cap)\b", re.I)
 
-# Standard metric screw clearance (close-fit) holes, mm. "M4 through hole" on a
-# standoff means a clearance bore for an M4 screw.
-_M_CLEARANCE = {
-    1.6: 1.8, 2.0: 2.4, 2.5: 2.9, 3.0: 3.4, 4.0: 4.5,
-    5.0: 5.5, 6.0: 6.6, 8.0: 9.0, 10.0: 11.0, 12.0: 13.5,
-}
 # A sensible default across-flats for a given screw size (typical metric
 # standoff), used only when the prompt names a screw but no across-flats.
 _M_ACROSS_FLATS = {
@@ -88,7 +83,7 @@ def parse_hex_params(prompt: str) -> dict:
     solid = bool(re.search(r"\bsolid\b|\bno bore\b|\bno hole\b|\bblind\b", t))
 
     if bore is None and screw is not None:
-        bore = _M_CLEARANCE.get(screw, round(screw * 1.1 + 0.1, 1))
+        bore = clearance_hole(f"M{screw:g}", fit="normal")
     if solid:
         bore = 0.0
     if bore is None:

@@ -1,0 +1,37 @@
+{
+  "_comment": "CI gate allowlist for pip-audit (docs/security/dependency-risk-assessment.md). Every id here has a written justification in that doc under 'Accepted risk register'. New findings NOT in this list fail the build (scripts/check_pip_audit_allowlist.py). Re-review by the date below or when the trigger condition fires.",
+  "entries": [
+    {
+      "id": "PYSEC-2026-1325",
+      "package": "ecdsa",
+      "reason": "Minerva timing side-channel in ecdsa.SigningKey.sign_digest() for the P-256 curve. No upstream fix exists (maintainer position: inherent to a pure-Python ECDSA implementation). Confirmed unreachable: python-jose[cryptography] is installed, so jose.backends.__init__ resolves ECKey/HMACKey from jose.backends.cryptography_backend; jose.backends.ecdsa_backend (the only module that imports the ecdsa package) is never imported in the running app, and app.config.jwt_algorithm is hard-set to HS256 (symmetric, no ECDSA signing at all).",
+      "owner": "backend security follow-up (dependency-risk-assessment.md)",
+      "review_by": "2026-10-31",
+      "trigger": "Re-review if jwt_algorithm ever changes away from HS256, if python-jose is replaced, or if ecdsa ships a fix."
+    },
+    {
+      "id": "PYSEC-2025-224",
+      "package": "vtk",
+      "reason": "Heap buffer overflow in vtkGLTFDocumentLoader (glTF *reading*). cadquery-ocp==7.8.1.1.post1 hard-pins vtk==9.3.1 (no compatible upgrade without an upstream cadquery-ocp bump). App never reads/parses glTF: app/export/glb.py is a from-scratch, dependency-free GLB *writer* built from an existing tessellated mesh; no upload path accepts .gltf/.glb; cadquery's own vtk-based visualization helpers (vis.py, fig.py, cq_directive.py) are never called by this app.",
+      "owner": "backend security follow-up (dependency-risk-assessment.md)",
+      "review_by": "2026-10-31",
+      "trigger": "Re-review when cadquery-ocp bumps its vtk pin past 9.5.1, or if any GLTF/GLB *import* path is ever added."
+    },
+    {
+      "id": "PYSEC-2025-225",
+      "package": "vtk",
+      "reason": "Heap buffer overflow in vtkGLTFDocumentLoader (glTF reading). Same reachability analysis as PYSEC-2025-224.",
+      "owner": "backend security follow-up (dependency-risk-assessment.md)",
+      "review_by": "2026-10-31",
+      "trigger": "Same as PYSEC-2025-224."
+    },
+    {
+      "id": "PYSEC-2025-226",
+      "package": "vtk",
+      "reason": "Heap use-after-free in vtkGLTFDocumentLoader (glTF reading). Same reachability analysis as PYSEC-2025-224.",
+      "owner": "backend security follow-up (dependency-risk-assessment.md)",
+      "review_by": "2026-10-31",
+      "trigger": "Same as PYSEC-2025-224."
+    }
+  ]
+}

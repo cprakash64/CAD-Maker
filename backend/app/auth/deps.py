@@ -25,6 +25,11 @@ def get_current_user(
         )
     user_id = decode_access_token(creds.credentials)
     if not user_id:
+        from app.metrics import auth_failures_total
+        from app.observability import log_event
+
+        log_event("auth_invalid_token")
+        auth_failures_total.labels(reason="invalid_token").inc()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -35,4 +40,17 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists"
         )
+    return user
+
+
+def get_current_admin_user(user: User = Depends(get_current_user)) -> User:
+    """Gates app.routers.admin_cost -- a real per-user role (User.is_admin),
+    not the separate OPS_API_TOKEN (app.routers.ops), which is a monitoring
+    credential with no notion of "which human did this." Every admin action
+    behind this dependency is additionally written to AdminAuditLog by
+    app.cost_control.service -- this dependency only proves WHO is allowed
+    to ask, not that the action happened silently."""
+    if not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Admin access required")
     return user

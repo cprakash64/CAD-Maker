@@ -10,8 +10,10 @@ settings so importing this module never requires network/credentials.
 from __future__ import annotations
 
 import json
+import time
 
 from app.config import settings
+from app.llm import circuit_breaker
 from app.llm.budget import budget_expired, remaining_seconds
 from app.llm.base import (
     CAD_PLAN_SYSTEM_PROMPT,
@@ -23,6 +25,7 @@ from app.llm.base import (
     LLMProvider,
     LLMUnavailableError,
 )
+from app.llm.pricing import estimate_cost_usd
 from app.observability import log_event
 from app.llm.schemas import (
     CAD_FEATURE_GRAPH_SCHEMA,
@@ -113,12 +116,37 @@ class OpenAIProvider(LLMProvider):
 
         The shared per-request budget (``app.llm.budget``) bounds total time: each
         call's timeout is capped to the remaining budget, and we stop trying once
-        it is spent — so the fallback chain can never run for minutes."""
+        it is spent — so the fallback chain can never run for minutes.
+
+        Graceful degraded mode: a circuit breaker (app.llm.circuit_breaker) trips
+        open after repeated consecutive failures OR when estimated daily spend
+        hits its cap, and every call here checks it FIRST — while open, calls
+        fail immediately with a clean LLMUnavailableError instead of each one
+        waiting out a full timeout against a provider that's already down.
+        Deterministic (non-LLM) routes are unaffected either way."""
+        from app.metrics import (
+            llm_calls_total,
+            llm_circuit_breaker_state,
+            llm_estimated_cost_usd_total,
+            llm_tokens_total,
+        )
+
+        open_, reason = circuit_breaker.is_open()
+        llm_circuit_breaker_state.set(1 if open_ else 0)
+        if open_:
+            log_event("llm_circuit_breaker_open", label=label, reason=reason)
+            llm_calls_total.labels(model="circuit_open", outcome="blocked").inc()
+            raise LLMUnavailableError(
+                "AI features are temporarily degraded (" + (reason or "provider issue")
+                + "). Please try again shortly."
+            )
+
         last_exc: Exception | None = None
         for idx, model in enumerate(models):
             if budget_expired():
                 log_event("llm_budget_exhausted", label=label)
                 raise LLMUnavailableError(_BUDGET_MESSAGE)
+            call_start = time.perf_counter()
             try:
                 kwargs = factory(model)
                 rem = remaining_seconds()
@@ -128,14 +156,37 @@ class OpenAIProvider(LLMProvider):
                 resp = self._client.responses.create(**kwargs)
                 text = _output_text(resp)
                 result = parse(text) if parse else text
+
+                usage = getattr(resp, "usage", None)
+                in_tok = int(getattr(usage, "input_tokens", 0) or 0)
+                out_tok = int(getattr(usage, "output_tokens", 0) or 0)
+                cost = estimate_cost_usd(model, in_tok, out_tok)
+                circuit_breaker.record_success()
+                circuit_breaker.record_cost(cost)
+                from app.llm.usage import record as record_usage
+                record_usage(model, in_tok, out_tok)
+                llm_calls_total.labels(model=model, outcome="ok").inc()
+                llm_tokens_total.labels(model=model, kind="input").inc(in_tok)
+                llm_tokens_total.labels(model=model, kind="output").inc(out_tok)
+                llm_estimated_cost_usd_total.labels(model=model).inc(cost)
+                log_event(
+                    "openai_call_completed", label=label, model=model,
+                    reasoning_effort=self._reasoning_effort,
+                    input_tokens=in_tok, output_tokens=out_tok,
+                    estimated_cost_usd=cost,
+                    latency_ms=round((time.perf_counter() - call_start) * 1000, 2),
+                )
                 if idx > 0:
                     log_event("openai_model_fallback", label=label, used=model)
                 return result
             except Exception as exc:  # noqa: BLE001 - try the next model in the chain
                 last_exc = exc
+                circuit_breaker.record_failure()
+                llm_calls_total.labels(model=model, outcome="error").inc()
                 log_event(
                     "openai_call_failed", label=label, model=model,
                     error_type=type(exc).__name__, detail=str(exc)[:200],
+                    latency_ms=round((time.perf_counter() - call_start) * 1000, 2),
                 )
         if budget_expired():
             raise LLMUnavailableError(_BUDGET_MESSAGE) from last_exc

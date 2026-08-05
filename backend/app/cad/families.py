@@ -29,9 +29,15 @@ class DesignMode(str, Enum):
 
 
 class Maturity(str, Enum):
+    """The four standardized capability levels (the LunaiCAD product contract).
+
+    Renamed from the earlier beta/concept vocabulary to the canonical
+    production_ready/validated_beta/experimental/unsupported set; values are
+    the wire format used by /api/capabilities and DesignDTO.capability_level.
+    """
     production_ready = "production_ready"  # validated, dimension-checked, exportable
-    beta = "beta"                          # generates real CAD; less coverage / fewer checks
-    concept = "concept"                    # plausible concept geometry, not certified
+    validated_beta = "validated_beta"      # generates real CAD; less coverage / fewer checks
+    experimental = "experimental"          # plausible concept geometry, not certified
     unsupported = "unsupported"            # routed to guidance/decomposition, no geometry
 
 
@@ -76,6 +82,38 @@ class CADFamily:
     example_prompts: tuple[str, ...]
     # Whether a 2D drawing / image can meaningfully drive this family today.
     supports_drawing_input: bool = False
+    # Numeric safe defaults (mm unless noted) actually used when a value in
+    # `optional_dimensions` is omitted. Best-effort: populated where a fixed,
+    # authoritative default exists (a template's own DimensionSpec, or a
+    # documented concept default); an empty dict means the default is
+    # prompt-derived per-generation rather than a single fixed number, NOT
+    # that no default exists — see `default_assumptions` for the prose form,
+    # which is always populated.
+    safe_defaults: dict = field(default_factory=dict)
+    # Subset of app.schemas.editing_spec.LocalizedOperation this family
+    # supports via circle-edit/localized-edit. Declared, not independently
+    # verified per family in this phase -- a reasonable baseline for
+    # single-part hole/fillet/chamfer families; empty for assemblies and
+    # guidance-only entries.
+    supported_editing_operations: tuple[str, ...] = ()
+    # How this family's geometry is checked today: "none" (no dimensional
+    # verification beyond compiling), "dimension_checked" (bbox/hole-count
+    # measured against the request within the standard tolerance, but not
+    # tracked by the phase-4 evaluation harness), or "benchmarked" (has at
+    # least one passing case in eval/fixtures/*.json as of `benchmark_source`).
+    physical_validation_status: str = "none"
+    # The minimum eval-suite pass rate (0..1) this family's claimed maturity
+    # requires. production_ready implies 0.9; validated_beta implies 0.7;
+    # experimental/unsupported carry no benchmark gate (None). This is a
+    # POLICY value (what should be true), independent of whether it has
+    # actually been measured yet -- see benchmark_pass_rate for that.
+    minimum_benchmark_threshold: float | None = None
+    # The actual observed pass rate from the most recent eval harness run
+    # this family was cross-referenced against (None if never measured).
+    benchmark_pass_rate: float | None = None
+    # Traceable pointer to the eval case(s) benchmark_pass_rate was computed
+    # from, e.g. "eval/fixtures/known_families.json" (None if unmeasured).
+    benchmark_source: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -95,6 +133,16 @@ class CADFamily:
             "known_limitations": list(self.known_limitations),
             "example_prompts": list(self.example_prompts),
             "supports_drawing_input": self.supports_drawing_input,
+            "safe_defaults": dict(self.safe_defaults),
+            "supported_editing_operations": list(self.supported_editing_operations),
+            "physical_validation_status": self.physical_validation_status,
+            "minimum_benchmark_threshold": self.minimum_benchmark_threshold,
+            "benchmark_pass_rate": self.benchmark_pass_rate,
+            "benchmark_source": self.benchmark_source,
+            # export_policy under its established name (kept for backward
+            # compatibility) plus the product-contract's requested field name
+            # for the identical data.
+            "supported_exports": list(self.export_policy),
         }
 
 
@@ -113,7 +161,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         maturity=Maturity.production_ready,
         keywords=("mounting plate", "mounting bracket", "base plate", "motor plate",
                   "nema 17", "nema17", "plate with holes"),
-        object_types=("rectangular_bracket",),
+        object_types=("rectangular_bracket", "mounting_plate", "motor_mount"),
         required_dimensions=("width", "depth/height", "thickness"),
         optional_dimensions=("hole diameter", "hole pattern", "fillet radius",
                              "counterbore/countersink"),
@@ -217,10 +265,10 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="flange",
         display_name="Flange / adapter / transition plate",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("flange", "blind flange", "adapter plate", "transition plate",
                   "bolt circle", "circular flange"),
-        object_types=("adapter_plate",),
+        object_types=("adapter_plate", "blind_flange"),
         required_dimensions=("outer diameter / size", "thickness"),
         optional_dimensions=("center bore", "bolt circle diameter", "bolt count",
                              "bolt hole diameter"),
@@ -245,10 +293,10 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="enclosure",
         display_name="Enclosure / project box",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("enclosure", "project box", "electronics box", "case", "housing",
                   "lid", "shell box"),
-        object_types=("enclosure",),
+        object_types=("enclosure", "electronics_enclosure", "rpi4_enclosure", "rpi5_enclosure", "board_enclosure"),
         required_dimensions=("outer width", "outer depth", "outer height"),
         optional_dimensions=("wall thickness", "lid", "screw bosses", "fillet radius"),
         default_assumptions=("Open-top shelled box with default wall thickness",
@@ -271,10 +319,10 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="pipe_fitting",
         display_name="Pipe fitting / spool / clamp",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("pipe spool", "pipe tee", "pipe branch", "flanged pipe", "pipe fitting",
                   "branch pipe", "pipe clamp", "tube clamp", "hose clamp", "saddle clamp"),
-        object_types=("flanged_pipe_branch", "pipe_clamp"),
+        object_types=("flanged_pipe_branch", "pipe_clamp", "pipe_spool", "pipe_tee"),
         required_dimensions=("pipe outer diameter", "length"),
         optional_dimensions=("wall thickness / bore", "branch size", "flange size",
                              "clamp width"),
@@ -297,7 +345,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="drill_jig",
         display_name="Drill jig / drilling template",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("drill jig", "drilling template", "drill guide", "jig"),
         object_types=("drill_jig",),
         required_dimensions=("width", "depth", "thickness"),
@@ -318,7 +366,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="handle_knob",
         display_name="Handle / knob / grip",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("handle", "knob", "grip"),
         object_types=("handle",),
         required_dimensions=("overall length / diameter",),
@@ -340,7 +388,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="gear_blank",
         display_name="Spur gear / pulley (approximate)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("gear", "pulley", "sprocket", "cog", "timing pulley"),
         object_types=("simple_gear_or_pulley",),
         required_dimensions=(),  # defaults: module 2, 24 teeth, 12mm thick, 8mm bore
@@ -373,7 +421,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="crankshaft",
         display_name="Inline-4 crankshaft (advanced template)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("crankshaft", "crank shaft", "inline-4", "inline 4", "four cylinder",
                   "four-cylinder", "4-cylinder"),
         object_types=("inline_4_crankshaft",),
@@ -397,7 +445,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="u_bracket",
         display_name="U bracket / channel bracket",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("u bracket", "u-bracket", "u shaped bracket", "u-shaped bracket",
                   "channel bracket"),
         object_types=("u_bracket",),
@@ -422,7 +470,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="hinge_bracket",
         display_name="Hinge bracket",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("hinge bracket", "hinge", "knuckle bracket"),
         object_types=("hinge_bracket",),
         required_dimensions=("base width", "base depth", "base thickness"),
@@ -445,7 +493,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="clamp_block",
         display_name="Tube / pipe clamp block",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("clamp block", "split clamp", "tube clamp block", "pipe clamp block",
                   "shaft clamp"),
         object_types=("tube_clamp_block",),
@@ -469,7 +517,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="robotic_arm_base_bracket",
         display_name="Robotic arm base bracket",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=("robotic arm base", "robot arm base", "arm base bracket",
                   "robotic arm bracket", "robot base bracket"),
         object_types=("robotic_arm_base_bracket",),
@@ -495,7 +543,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="screwdriver",
         display_name="Screwdriver (hand tool concept)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("screwdriver", "screw driver", "flat blade screwdriver",
                   "phillips screwdriver"),
         object_types=("screwdriver",),
@@ -531,7 +579,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="hammer",
         display_name="Hammer (concept tool)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("hammer", "mallet", "claw hammer"),
         object_types=("hammer",),
         required_dimensions=(),
@@ -552,7 +600,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="wrench",
         display_name="Wrench / spanner (concept tool)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("wrench", "spanner"),
         object_types=("wrench",),
         required_dimensions=(),
@@ -573,7 +621,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="pliers",
         display_name="Pliers (concept tool)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("pliers", "plier"),
         object_types=("pliers",),
         required_dimensions=(),
@@ -594,7 +642,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="wheel",
         display_name="Wheel / disc (concept)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("wheel", "road wheel", "cart wheel"),
         object_types=("wheel",),
         required_dimensions=(),
@@ -615,7 +663,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="fan_blade",
         display_name="Fan blade / impeller (concept)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("fan blade", "fan", "impeller"),
         object_types=("fan_blade",),
         required_dimensions=(),
@@ -636,7 +684,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="hook",
         display_name="Wall hook (concept)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("hook", "wall hook", "coat hook"),
         object_types=("hook",),
         required_dimensions=(),
@@ -657,7 +705,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="generic_handle",
         display_name="Pull handle / grip (concept)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("pull handle", "drawer pull", "door pull", "grip handle", "handle bar"),
         object_types=("handle_grip",),
         required_dimensions=(),
@@ -678,7 +726,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="tool_holder",
         display_name="Tool holder / rack (concept)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("tool holder", "tool rack", "tool organizer", "tool organiser"),
         object_types=("tool_holder",),
         required_dimensions=(),
@@ -699,7 +747,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="generic_stand",
         display_name="Stand / platform (concept)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("stand", "platform stand", "display stand", "phone stand"),
         object_types=("stand",),
         required_dimensions=(),
@@ -720,7 +768,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="simple_casing",
         display_name="Simple casing / shell (concept)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("casing", "simple case", "shell casing", "cover casing"),
         object_types=("casing",),
         required_dimensions=(),
@@ -742,9 +790,9 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id=GENERIC_PART_FAMILY,
         display_name="General mechanical part (feature graph)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.beta,
+        maturity=Maturity.validated_beta,
         keywords=(),  # matched only as a fallback
-        object_types=("feature_graph",),
+        object_types=("feature_graph", "vise_jaw", "bearing_block", "generic_fitted_box"),
         required_dimensions=("overall size",),
         optional_dimensions=("holes", "bores", "slots", "fillets", "chamfers"),
         default_assumptions=("Composed from safe parametric primitives",),
@@ -769,7 +817,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="cnc_router_frame",
         display_name="Desktop CNC router frame (concept)",
         design_mode=DesignMode.assembly,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("cnc router", "cnc mill", "router frame", "cnc frame", "cnc gantry"),
         object_types=("cnc_router_frame",),
         required_dimensions=("length", "width", "height"),
@@ -796,7 +844,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="machine_frame",
         display_name="Welded machine frame (concept)",
         design_mode=DesignMode.assembly,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("machine frame", "equipment frame", "workbench frame",
                   "welded steel frame"),
         object_types=("machine_frame",),
@@ -825,7 +873,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="engine_test_stand",
         display_name="Engine test stand (concept)",
         design_mode=DesignMode.assembly,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("engine test stand", "test stand", "engine stand"),
         object_types=("engine_test_stand",),
         required_dimensions=("length", "width", "height"),
@@ -852,7 +900,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="drone_frame",
         display_name="Quadcopter drone frame (concept)",
         design_mode=DesignMode.assembly,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("drone frame", "quadcopter", "quadrotor", "quad copter", "drone"),
         object_types=("drone_frame",),
         required_dimensions=("motor-to-motor diagonal",),
@@ -877,7 +925,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="motorcycle_subframe",
         display_name="Motorcycle rear subframe (concept)",
         design_mode=DesignMode.assembly,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("motorcycle rear subframe", "motorcycle subframe", "rear subframe"),
         object_types=("motorcycle_subframe",),
         required_dimensions=("length", "width", "height"),
@@ -904,7 +952,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="skateboard_motor_mount",
         display_name="E-skateboard motor mount bracket (concept)",
         design_mode=DesignMode.single_part,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("electric skateboard", "skateboard motor mount", "skateboard",
                   "longboard"),
         object_types=("skateboard_motor_mount",),
@@ -931,7 +979,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="tube_chassis",
         display_name="Tubular chassis / space frame (concept)",
         design_mode=DesignMode.assembly,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("tubular chassis", "tube chassis", "space frame", "spaceframe",
                   "chassis", "tubular frame", "welded tube frame"),
         object_types=("tubular_chassis_assembly",),
@@ -958,7 +1006,7 @@ _FAMILIES: tuple[CADFamily, ...] = (
         family_id="reference_buggy_tubular_chassis",
         display_name="Reference buggy / sports-car tubular chassis (concept)",
         design_mode=DesignMode.assembly,
-        maturity=Maturity.concept,
+        maturity=Maturity.experimental,
         keywords=("buggy", "sports car chassis", "roll cage", "rollcage",
                   "reference chassis", "detailed tubular chassis", "welded steel tubular"),
         object_types=("tubular_chassis_assembly",),
@@ -1009,7 +1057,283 @@ _FAMILIES: tuple[CADFamily, ...] = (
             "A full quadcopter drone with motors, arms, flight controller and frame",
         ),
     ),
+    # ---- Physical calibration coupons (docs/calibration.md) --------------
+    # New, purpose-built test prints, not yet benchmarked -- experimental
+    # until an eval case exists per coupon. Generated via the dedicated
+    # /api/calibration endpoints, not the free-text prompt classifier
+    # (keywords below are a bonus path, not the primary route).
+    CADFamily(
+        family_id="calibration_master_coupon",
+        display_name="Calibration: master coupon",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("calibration coupon", "master coupon", "print accuracy test"),
+        object_types=("calibration_master_coupon",),
+        required_dimensions=(), optional_dimensions=("width", "depth", "thickness"),
+        default_assumptions=("40x40x5mm reference block with one hole and one boss",),
+        generator="calibration_master_coupon template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print a calibration master coupon",
+        ),
+    ),
+    CADFamily(
+        family_id="calibration_vertical_hole_gauge",
+        display_name="Calibration: vertical hole gauge",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("hole gauge", "vertical hole calibration"),
+        object_types=("calibration_vertical_hole_gauge",),
+        required_dimensions=(), optional_dimensions=("hole_count", "min_hole_diameter"),
+        default_assumptions=("Graduated vertical through-holes for XY hole compensation",),
+        generator="calibration_vertical_hole_gauge template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print a vertical hole gauge for XY hole calibration",
+        ),
+    ),
+    CADFamily(
+        family_id="calibration_horizontal_hole_plate",
+        display_name="Calibration: horizontal hole plate",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("horizontal hole calibration", "bridged hole test"),
+        object_types=("calibration_horizontal_hole_plate",),
+        required_dimensions=(), optional_dimensions=("hole_count", "wall_height"),
+        default_assumptions=("Graduated bed-parallel through-holes on a standing wall",),
+        generator="calibration_horizontal_hole_plate template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print a horizontal hole plate to test bridged holes",
+        ),
+    ),
+    CADFamily(
+        family_id="calibration_fit_ladder",
+        display_name="Calibration: clearance & press-fit ladder",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("clearance ladder", "press fit test", "fit ladder"),
+        object_types=("calibration_fit_ladder",),
+        required_dimensions=(), optional_dimensions=("nominal_diameter", "step"),
+        default_assumptions=("Fixed reference pin + holes stepped around the nominal diameter",),
+        generator="calibration_fit_ladder template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print a clearance and press-fit ladder coupon",
+        ),
+    ),
+    CADFamily(
+        family_id="calibration_wall_pin_gap_coupon",
+        display_name="Calibration: wall / pin / gap coupon",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("min wall test", "min feature test", "gap test coupon"),
+        object_types=("calibration_wall_pin_gap_coupon",),
+        required_dimensions=(), optional_dimensions=("min_size", "max_size"),
+        default_assumptions=("Graduated fins, pins, and slots for minimum feature size",),
+        generator="calibration_wall_pin_gap_coupon template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print a wall, pin, and gap calibration coupon",
+        ),
+    ),
+    CADFamily(
+        family_id="calibration_overhang_bridge_tower",
+        display_name="Calibration: overhang & bridge tower",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("overhang test", "bridge test", "overhang tower"),
+        object_types=("calibration_overhang_bridge_tower",),
+        required_dimensions=(), optional_dimensions=("step_count", "bridge_max_span"),
+        default_assumptions=("Stepped cantilever overhangs + graduated-span bridges",),
+        generator="calibration_overhang_bridge_tower template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print an overhang and bridge calibration tower",
+        ),
+    ),
+    CADFamily(
+        family_id="calibration_fastener_plate",
+        display_name="Calibration: fastener plate",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("fastener test plate", "screw fit test"),
+        object_types=("calibration_fastener_plate",),
+        required_dimensions=(), optional_dimensions=("plate_thickness",),
+        default_assumptions=("Standards-based M3-M6 clearance + pilot holes",),
+        generator="calibration_fastener_plate template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print a fastener test plate for M3-M6 screws",
+        ),
+    ),
+    CADFamily(
+        family_id="calibration_snap_fit_kit",
+        display_name="Calibration: snap-fit kit",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("snap fit test", "snap fit calibration"),
+        object_types=("calibration_snap_fit_kit",),
+        required_dimensions=(), optional_dimensions=("beam_count", "min_thickness"),
+        default_assumptions=("Graduated-thickness cantilever snap-fit beams",),
+        generator="calibration_snap_fit_kit template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print a snap-fit calibration kit",
+        ),
+    ),
+    CADFamily(
+        family_id="calibration_mechanism_coupon",
+        display_name="Calibration: mechanism (rotating fit) coupon",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("rotating fit test", "mechanism coupon", "shaft fit test"),
+        object_types=("calibration_mechanism_coupon",),
+        required_dimensions=(), optional_dimensions=("shaft_diameter",),
+        default_assumptions=(
+            "Shaft peg + bore sized by the active calibration profile's rotating "
+            "clearance (or an explicit override)",),
+        generator="calibration_mechanism_coupon template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print a mechanism rotating-fit calibration coupon",
+        ),
+    ),
+    CADFamily(
+        family_id="calibration_text_plate",
+        display_name="Calibration: text legibility plate",
+        design_mode=DesignMode.single_part, maturity=Maturity.experimental,
+        keywords=("text legibility test", "engraved text calibration"),
+        object_types=("calibration_text_plate",),
+        required_dimensions=(), optional_dimensions=("min_font_size", "max_font_size"),
+        default_assumptions=("Engraved text at graduated font sizes",),
+        generator="calibration_text_plate template",
+        generation_strategy=GenerationStrategy.deterministic_template,
+        validation_profile="single_part_strict", export_policy=EXPORT_PART,
+        known_limitations=("A calibration test print, not a functional part.",),
+        example_prompts=(
+            "Print a text legibility calibration plate",
+        ),
+    ),
 )
+
+
+# --- Benchmark cross-reference (phase-4 evaluation harness) ----------------
+# Computed once, offline, from backend/eval_reports/baseline_phase4/ (the
+# phase-4 baseline run) by grouping each eval case's expected_object_type
+# through family_for_object_type() and aggregating pass/fail. NOT recomputed
+# live at import time -- `app/cad/families.py` must stay dependency-free of
+# the `eval` package (which imports `app.*`, so the reverse import would be
+# circular), so this is a dated, documented snapshot, re-run manually via
+# `python -m eval.cli run` + a fixture/report cross-reference when the
+# benchmark is updated. Families not listed here have not been benchmarked
+# by the eval harness yet; that is recorded honestly via
+# `physical_validation_status`/`benchmark_pass_rate`, not hidden.
+_BENCHMARK_AS_OF = "2026-07-27 (backend/eval_reports/baseline_phase4/eval_mock_20260727T000457.json)"
+_BENCHMARK_PASS_RATE: dict[str, float] = {
+    "mounting_plate": 3 / 3,
+    "spacer": 1 / 1,
+    "hex_standoff": 2 / 2,
+    "l_bracket": 1 / 1,
+    "flange": 1 / 1,
+    "enclosure": 3 / 3,
+    "pipe_fitting": 3 / 3,
+    "drill_jig": 1 / 1,
+    "generic_handle": 1 / 1,
+    "gear_blank": 1 / 1,
+    "u_bracket": 1 / 1,
+    "hinge_bracket": 1 / 1,
+    "clamp_block": 1 / 1,
+    # Includes the intentionally-failing cc_bearing_generic_weak_001 case
+    # (see eval/fixtures/compositional_cadplan.json) -- this 0.83 is real,
+    # not an artifact; it is the reason this family is validated_beta rather
+    # than production_ready despite broad object_type coverage.
+    "generic_feature_graph_part": 5 / 6,
+}
+# NOT yet cross-referenced by the eval harness at all (no eval case's
+# expected_object_type resolves to these families): the fastener/
+# standard-parts families (hex_nut, square_nut, bolt, threaded_rod,
+# shaft_coupler, timing_pulley_gt2), bearing_holder, and tire/rim/
+# wheel_assembly. These currently have NO entry in this registry (see
+# docs/product-contract.md "Two honesty layers") -- they are governed
+# instead by app.cad.part_family's generation_honesty_status contract, which
+# predates and parallels this registry for that specific curated set of
+# standard/catalog parts.
+_MIN_THRESHOLD_BY_MATURITY = {
+    Maturity.production_ready: 0.9,
+    Maturity.validated_beta: 0.7,
+    Maturity.experimental: None,
+    Maturity.unsupported: None,
+}
+_DIMENSION_CHECKED_PROFILES = {"single_part_strict", "single_part_relaxed"}
+
+
+# Baseline edit-op declaration for single-part families mature enough to be
+# routinely edited (production_ready / validated_beta). Declared, not
+# independently verified per family -- see the field's docstring.
+_BASELINE_SINGLE_PART_EDIT_OPS = (
+    "change_hole_diameter", "change_hole_type", "add_fillet", "add_chamfer",
+)
+
+
+def _template_safe_defaults(object_types: tuple[str, ...]) -> dict:
+    """Real DimensionSpec defaults from app.cad.registry's deterministic
+    templates, for whichever of this family's object_types have one. Never
+    fabricated -- an object_type with no registered template (a CadPlan-only
+    or concept-assembly family) simply contributes nothing here."""
+    from app.cad.registry import get_template
+
+    out: dict = {}
+    for ot in object_types:
+        try:
+            template = get_template(ot)
+        except KeyError:
+            continue
+        for dim in template.dimensions:
+            out[dim.name] = dim.default
+    return out
+
+
+def _with_benchmark_data(fam: CADFamily) -> CADFamily:
+    import dataclasses
+
+    pass_rate = _BENCHMARK_PASS_RATE.get(fam.family_id)
+    if pass_rate is not None:
+        status = "benchmarked"
+        source = _BENCHMARK_AS_OF
+    elif fam.validation_profile in _DIMENSION_CHECKED_PROFILES:
+        status = "dimension_checked"
+        source = None
+    else:
+        status = "none"
+        source = None
+    edit_ops = (
+        _BASELINE_SINGLE_PART_EDIT_OPS
+        if fam.design_mode == DesignMode.single_part
+        and fam.maturity in (Maturity.production_ready, Maturity.validated_beta)
+        else ()
+    )
+    return dataclasses.replace(
+        fam,
+        physical_validation_status=status,
+        benchmark_pass_rate=pass_rate,
+        benchmark_source=source,
+        minimum_benchmark_threshold=_MIN_THRESHOLD_BY_MATURITY.get(fam.maturity),
+        safe_defaults=_template_safe_defaults(fam.object_types),
+        supported_editing_operations=edit_ops,
+    )
+
+
+_FAMILIES = tuple(_with_benchmark_data(f) for f in _FAMILIES)
 
 
 # Indexes ------------------------------------------------------------------

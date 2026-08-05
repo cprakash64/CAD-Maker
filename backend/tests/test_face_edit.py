@@ -407,9 +407,8 @@ def test_cad_plan_new_hole_appears_in_selectable_holes(client, auth):
     holes = r.json()["selectable_holes"]
     assert len(holes) == 3
     ids = {hh["hole_id"] for hh in holes}
-    assert ids == {"hole_0", "hole_1", "hole_2"}
-    new_hole = next(hh for hh in holes if hh["hole_id"] == "hole_2")
-    assert new_hole["diameter_mm"] == 10.0
+    assert len(ids) == 3, "hole ids must be unique"
+    new_hole = next(hh for hh in holes if hh["diameter_mm"] == 10.0)
     assert new_hole["allowed_operations"] == ["resize_hole", "delete_hole"]
     # Re-fetch persists them.
     again = client.get(f"/api/designs/{did}", headers=h).json()
@@ -428,39 +427,44 @@ def test_cad_plan_resize_new_hole_by_id(client, auth):
     )
     assert add.status_code == 200, add.text
     before_hash = add.json()["spec_hash"]
+    new_hole_id = next(
+        hh["hole_id"] for hh in add.json()["selectable_holes"] if hh["diameter_mm"] == 10.0
+    )
 
     r = client.post(
         f"/api/designs/{did}/face-edit",
         json={"instruction": "Resize this hole to 8 mm", "quick_action": "resize_hole",
-              "selection": _hole_selection("hole_2")},
+              "selection": _hole_selection(new_hole_id)},
         headers=h,
     )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["spec_hash"] != before_hash
-    resized = next(hh for hh in body["selectable_holes"] if hh["hole_id"] == "hole_2")
-    assert resized["diameter_mm"] == 8.0
+    assert any(hh["diameter_mm"] == 8.0 for hh in body["selectable_holes"])
 
 
 def test_cad_plan_delete_new_hole_by_id(client, auth):
     h = auth["headers"]
     did = _make_cad_plan_plate(client, h)["id"]
-    client.post(
+    add = client.post(
         f"/api/designs/{did}/face-edit",
         json={"instruction": "Add a 10 mm through hole", "quick_action": "hole",
               "selection": _top_face_selection()},
         headers=h,
     )
+    new_hole_id = next(
+        hh["hole_id"] for hh in add.json()["selectable_holes"] if hh["diameter_mm"] == 10.0
+    )
     r = client.post(
         f"/api/designs/{did}/face-edit",
         json={"instruction": "Delete this hole", "quick_action": "delete_hole",
-              "selection": _hole_selection("hole_2")},
+              "selection": _hole_selection(new_hole_id)},
         headers=h,
     )
     assert r.status_code == 200, r.text
     holes = r.json()["selectable_holes"]
     assert len(holes) == 2
-    assert "hole_2" not in {hh["hole_id"] for hh in holes}
+    assert new_hole_id not in {hh["hole_id"] for hh in holes}
 
 
 def test_cad_plan_cylindrical_face_without_hole_id_helpful_error(client, auth):
@@ -667,7 +671,7 @@ def test_cad_plan_selected_hole_freetext_resize(client, auth):
     """The exact live bug: selected hole + typed 'make the hole 5mm' → resize."""
     h = auth["headers"]
     did = _make_cad_plan_plate(client, h)["id"]
-    # Add a center hole (hole_2) first so there's a fresh hole to resize.
+    # Add a center hole first so there's a fresh hole to resize.
     add = client.post(
         f"/api/designs/{did}/face-edit",
         json={"instruction": "Add a 10 mm through hole", "quick_action": "hole",
@@ -676,18 +680,23 @@ def test_cad_plan_selected_hole_freetext_resize(client, auth):
     )
     assert add.status_code == 200, add.text
     before_hash = add.json()["spec_hash"]
+    new_hole_id = next(
+        hh["hole_id"] for hh in add.json()["selectable_holes"] if hh["diameter_mm"] == 10.0
+    )
 
     # No quick_action — free-typed instruction on a selected hole.
     r = client.post(
         f"/api/designs/{did}/face-edit",
-        json={"instruction": "make the hole 5mm", "selection": _hole_selection("hole_2")},
+        json={"instruction": "make the hole 5mm", "selection": _hole_selection(new_hole_id)},
         headers=h,
     )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["spec_hash"] != before_hash
-    resized = next(hh for hh in body["selectable_holes"] if hh["hole_id"] == "hole_2")
-    assert resized["diameter_mm"] == 5.0
+    # Resizing changes the target hole's own diameter, and its id is
+    # content-hashed from diameter/position (see _stable_hole_id), so the id
+    # legitimately changes too — match the resized hole by its new diameter.
+    assert any(hh["diameter_mm"] == 5.0 for hh in body["selectable_holes"])
     # Real CAD regenerated.
     assert {e["fmt"] for e in body["exports"]} >= {"stl", "step"}
 
@@ -695,15 +704,18 @@ def test_cad_plan_selected_hole_freetext_resize(client, auth):
 def test_cad_plan_selected_hole_bare_size(client, auth):
     """Selected hole + 'hole 8mm' (no quick_action) → resize_hole → 200."""
     h = auth["headers"]
-    did = _make_cad_plan_plate(client, h)["id"]
+    d = _make_cad_plan_plate(client, h)
+    did = d["id"]
+    target_id = d["selectable_holes"][0]["hole_id"]
     r = client.post(
         f"/api/designs/{did}/face-edit",
-        json={"instruction": "hole 8mm", "selection": _hole_selection("hole_0")},
+        json={"instruction": "hole 8mm", "selection": _hole_selection(target_id)},
         headers=h,
     )
     assert r.status_code == 200, r.text
-    resized = next(hh for hh in r.json()["selectable_holes"] if hh["hole_id"] == "hole_0")
-    assert resized["diameter_mm"] == 8.0
+    # The resized hole's id is content-hashed from diameter/position, so it
+    # legitimately changes along with the diameter — match by the new value.
+    assert any(hh["diameter_mm"] == 8.0 for hh in r.json()["selectable_holes"])
 
 
 def test_cad_plan_cylindrical_face_pattern_structured_unsupported(client, auth):

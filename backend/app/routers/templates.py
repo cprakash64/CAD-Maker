@@ -4,11 +4,12 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.cad.registry import all_templates
+from app.rate_limit import rate_limit
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 
-@router.get("")
+@router.get("", dependencies=[rate_limit("read")])
 def list_templates() -> list[dict]:
     out = []
     for object_type, tmpl in all_templates().items():

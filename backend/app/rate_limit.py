@@ -34,6 +34,8 @@ _CATEGORY_SETTING = {
     "modify": "rate_limit_modify",
     "drawing": "rate_limit_drawing",
     "package": "rate_limit_package",
+    "poll": "rate_limit_poll",
+    "read": "rate_limit_read",
 }
 
 
@@ -96,10 +98,27 @@ def reset_rate_limit() -> None:
 
 
 def _client_ip(request: Request) -> str:
+    """The client address used to key anonymous limits.
+
+    X-Forwarded-For is only honoured when TRUST_PROXY_HEADERS is on, i.e. when
+    the operator has confirmed the app sits behind a proxy that OVERWRITES the
+    header. Trusting it unconditionally makes anonymous limits useless: a client
+    talking to the app directly can send a fresh X-Forwarded-For on every
+    request and get a brand-new bucket each time, defeating login throttling.
+
+    With trust enabled we take the LAST entry rather than the first: the proxy
+    appends the address it actually saw, so trailing entries are proxy-written
+    while leading ones are attacker-supplied.
+    """
+    direct = request.client.host if request.client else "unknown"
+    if not settings.trust_proxy_headers:
+        return direct
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        if parts:
+            return parts[-1]
+    return direct
 
 
 def _identity(request: Request) -> str:

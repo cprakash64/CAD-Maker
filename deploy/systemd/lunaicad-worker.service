@@ -1,0 +1,48 @@
+[Unit]
+Description=LunaiCAD job worker (docs/adr/0001-job-queue-database-backed.md)
+After=network.target postgresql.service
+# The worker only NEEDS the database + storage/LLM credentials to be up; it
+# does not depend on lunaicad-backend.service being started first (they are
+# two independent processes reading/writing the same jobs table).
+
+[Service]
+Type=simple
+User=lunaicad
+Group=lunaicad
+WorkingDirectory=/opt/lunaicad/backend
+# A MINIMAL env file: "no production secrets unless absolutely necessary"
+# (docs/deployment.md "Worker secret scoping") -- the worker never needs
+# JWT_SECRET, SMTP credentials, or anything auth-related.
+EnvironmentFile=/opt/lunaicad/backend/.env.worker
+ExecStart=/opt/lunaicad/backend/.venv/bin/python -m app.worker
+
+# Graceful stop: SIGTERM triggers a drain (finish in-flight jobs, claim no
+# new ones) inside app/worker/__main__.py; give it real time before escalating.
+KillSignal=SIGTERM
+TimeoutStopSec=180
+
+# The supervisor also exits cleanly on its own after
+# JOB_WORKER_MAX_JOBS_BEFORE_RECYCLE jobs (bounds slow native-library memory
+# growth) -- Restart=always is what brings it back up immediately either way.
+Restart=always
+RestartSec=2
+
+# Defense in depth alongside the in-process RLIMIT_AS/RLIMIT_CPU applied to
+# EACH JOB's child process (app/worker/runner.py) -- this bounds the
+# SUPERVISOR process itself (which does no CAD work, so this ceiling is only
+# ever a backstop against an unexpected leak, not a normal operating limit).
+MemoryMax=2G
+
+# No network sandboxing is configured here (see docs/adr/
+# 0001-job-queue-database-backed.md "no arbitrary network access" note) --
+# the worker's own code only ever calls the specific, code-reviewed LLM/
+# vision API clients it's built to use, never arbitrary user-supplied URLs.
+# For an additional OS-level layer, an egress firewall rule restricting this
+# service's user to the database host + the configured LLM provider's
+# hostname is a reasonable hardening step; it is a deployment/firewall
+# concern (iptables/nftables, or a systemd IPAddressAllow= egress list on a
+# recent enough systemd), not application code, and is left to the operator's
+# actual network topology rather than guessed at here.
+
+[Install]
+WantedBy=multi-user.target

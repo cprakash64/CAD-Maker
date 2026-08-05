@@ -55,13 +55,20 @@ def test_providers_implement_interface(provider):
         assert callable(getattr(provider, method))
 
 
-def test_anthropic_class_conforms_without_instantiation():
-    # Importing must not require an API key; the class must expose the interface.
-    from app.llm.anthropic_provider import AnthropicProvider
+def test_anthropic_provider_is_gone():
+    """F-2: Anthropic runtime support was removed; OpenAI is the only provider."""
+    import pytest as _pytest
 
-    assert issubclass(AnthropicProvider, LLMProvider)
-    for method in ("parse_prompt", "repair", "parse_modification"):
-        assert hasattr(AnthropicProvider, method)
+    with _pytest.raises(ModuleNotFoundError):
+        import app.llm.anthropic_provider  # noqa: F401
+
+
+def test_factory_rejects_unknown_provider():
+    from app.llm.factory import _build
+
+    for name in ("anthropic", "gemini", "llama"):
+        with pytest.raises(ValueError):
+            _build(name)
 
 
 # --- OpenAI structured outputs -------------------------------------------

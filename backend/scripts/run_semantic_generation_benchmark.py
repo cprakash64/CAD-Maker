@@ -22,34 +22,38 @@ DATA = Path(__file__).resolve().parent.parent / "tests" / "data" / "semantic_gen
 
 
 def evaluate(entry: dict) -> dict:
+    from app.cad.plan.planner import build_and_validate, plan_from_prompt
+    from app.config import settings
     from app.export.exporter import generate
-    from app.generation.cad_programs import generate_program
-    from app.generation.compiler import compile_prompt
-    from app.llm.factory import get_provider
+    from app.llm.factory import get_cad_provider
     from app.parsing.complex_plan import looks_complex, plan_prompt
     from app.services.design_service import _plan_long_prompt
 
     prompt = entry["prompt"]
     row = {"prompt": prompt, "ok": True, "problems": []}
-    provider = get_provider()
 
-    # Compiler families.
-    if generate_program(prompt) is not None:
-        out = compile_prompt(prompt, provider)
-        row["route"] = "cadquery_program"
-        if out is None or not out.ok:
-            row["ok"] = False
-            row["problems"].append("compiler failed: " + (out.report.summary() if out and out.report else "none"))
+    # Mirror the real request pipeline: the CadPlan feature-graph route runs
+    # FIRST in production (`_run_generation`), with the legacy planner as the
+    # fallback. The old `cadquery_program` compiler branch was removed (F-1);
+    # evaluating only `plan_prompt()` would misreport prompts that the primary
+    # route handles fine.
+    if settings.cad_engine == "feature_graph":
+        plan = plan_from_prompt(prompt, get_cad_provider())
+        if plan is not None and plan.is_buildable():
+            row["route"] = "cad_plan"
+            try:
+                outcome = build_and_validate(plan)
+            except Exception as exc:  # noqa: BLE001 - benchmark reports, never raises
+                row["ok"] = False
+                row["problems"].append(f"cad_plan build failed: {exc}")
+                return row
+            if not outcome.report.passed:
+                row["ok"] = False
+                row["problems"].append("validation: " + str(outcome.report.summary()))
+            fam = entry.get("expected_object_family")
+            if fam and fam not in (plan.object_type or ""):
+                row["problems"].append(f"family {plan.object_type} != {fam} (non-fatal)")
             return row
-        if not out.report.passed:
-            row["ok"] = False
-            row["problems"].append("semantic: " + out.report.summary())
-        fam = entry.get("expected_object_family")
-        if fam and fam not in out.brief.object_family:
-            row["ok"] = False
-            row["problems"].append(f"family {out.brief.object_family} != {fam}")
-        return row
-
     # Planner (templates / feature-graph / general / clarification).
     result = _plan_long_prompt(prompt) if looks_complex(prompt) else plan_prompt(prompt)
     row["route"] = result.route or ("precision_template" if result.spec else "clarification")
@@ -75,7 +79,7 @@ def evaluate(entry: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", default="mock", choices=["mock", "anthropic", "openai"])
+    ap.add_argument("--provider", default="mock", choices=["mock", "openai"])
     ap.add_argument("--limit", type=int, default=300)
     args = ap.parse_args()
     settings.llm_provider = args.provider

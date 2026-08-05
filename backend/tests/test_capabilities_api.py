@@ -23,7 +23,7 @@ def test_capabilities_endpoint_lists_families(client: TestClient):
         # Honesty: every advertised family explains its limits + maturity.
         assert f["known_limitations"], f["family_id"]
         assert f["maturity"] in {
-            "production_ready", "beta", "concept", "unsupported"
+            "production_ready", "validated_beta", "experimental", "unsupported"
         }
         assert f["maturity_meaning"]
         # Unsupported families must not advertise an export.
@@ -38,10 +38,10 @@ def test_capabilities_counts_match(client: TestClient):
 
 
 def test_capabilities_makes_no_fake_claims(client: TestClient):
-    """Concept assemblies must be labelled concept and flagged not-certified."""
+    """Experimental assemblies must be labelled experimental and flagged not-certified."""
     body = client.get("/api/capabilities").json()
     chassis = next(f for f in body["families"] if f["family_id"] == "tube_chassis")
-    assert chassis["maturity"] == "concept"
+    assert chassis["maturity"] == "experimental"
     assert any("not" in lim.lower() and "certif" in lim.lower()
                for lim in chassis["known_limitations"])
 

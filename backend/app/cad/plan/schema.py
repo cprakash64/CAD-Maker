@@ -86,6 +86,8 @@ class Feature(BaseModel):
     are coerced; unparseable values are dropped (never fatal).
     """
 
+    model_config = {"extra": "forbid"}
+
     id: str = Field(max_length=48)
     kind: FeatureKind
     op: str = Field(default="add")  # "add" | "cut"
@@ -145,6 +147,8 @@ class Operation(BaseModel):
     """Explicit boolean combine of two named solids (optional — most plans use
     per-feature add/cut ordering instead)."""
 
+    model_config = {"extra": "forbid"}
+
     op: str = Field(max_length=12)  # union | subtract | mirror
     id: str = Field(max_length=48)
     target: str = Field(max_length=48)
@@ -166,6 +170,8 @@ class Expected(BaseModel):
     warning, never an export blocker (a coaxial pin through two ears is one
     intent ``pin_hole`` but two physical openings, etc.).
     """
+
+    model_config = {"extra": "forbid"}
 
     bbox_mm: Optional[dict[str, float]] = None  # {x, y, z}
     hole_count: Optional[int] = None
@@ -189,17 +195,37 @@ class Expected(BaseModel):
 class CadPlan(BaseModel):
     """A complete, strict, parametric description of one mechanical part."""
 
+    model_config = {"extra": "forbid"}
+
     units: str = Field(default="mm", max_length=8)
     object_type: str = Field(default="generic_mechanical_part", max_length=64)
     name: str = Field(default="part", max_length=120)
     assumptions: list[str] = Field(default_factory=list)
     clarification_required: bool = False
     clarification_questions: list[str] = Field(default_factory=list)
+    # Product-contract clarification policy (docs/product-contract.md): the
+    # planner reports WHICH category of thing (if any) it's unsure about, from
+    # the closed vocabulary in app.cad.plan.clarification_categories. It does
+    # NOT decide whether that means asking -- app.cad.plan.policy.decide_
+    # clarification() makes that call deterministically from these tags alone,
+    # so the same category is always handled the same way. Unrecognized tags
+    # are dropped, never fatal (a stricter provider version could add new
+    # categories without breaking older ones).
+    ambiguity_flags: list[str] = Field(default_factory=list, max_length=16)
     material: Optional[str] = Field(default=None, max_length=64)
     stock: Optional[str] = Field(default=None, max_length=120)
     features: list[Feature] = Field(default_factory=list, max_length=200)
     operations: list[Operation] = Field(default_factory=list, max_length=200)
     expected: Expected = Field(default_factory=Expected)
+
+    @field_validator("ambiguity_flags", mode="before")
+    @classmethod
+    def _filter_ambiguity_flags(cls, v):
+        if not isinstance(v, list):
+            return []
+        from app.cad.plan.clarification_categories import ALL_CATEGORIES
+
+        return [str(f) for f in v if str(f) in ALL_CATEGORIES]
 
     def is_buildable(self) -> bool:
         return bool(self.features) and not self.clarification_required

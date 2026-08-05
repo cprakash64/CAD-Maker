@@ -210,7 +210,7 @@ def _route_from_classification(cls, prompt: str, dims: dict[str, float]) -> str:
     # A concept-maturity part with no concrete dimensions is a recognizable-but-
     # under-specified object: build a simplified concept rather than promising a
     # production part. With real dimensions it generates normally.
-    if fam and fam.maturity == Maturity.concept and not _has_real_dimensions(dims):
+    if fam and fam.maturity == Maturity.experimental and not _has_real_dimensions(dims):
         return ROUTE_CONCEPT_FALLBACK
     return ROUTE_SINGLE_PART
 

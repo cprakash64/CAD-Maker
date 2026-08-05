@@ -8,11 +8,16 @@ asking the user. Every inferred value is recorded as an assumption.
 """
 from __future__ import annotations
 
-# Screw label -> clearance hole diameter (mm).
-CLEARANCE_HOLES_MM = {
-    "M2": 2.4, "M2.5": 2.9, "M2_5": 2.9, "M3": 3.4, "M4": 4.5, "M5": 5.5,
-    "M6": 6.6, "M8": 9.0, "M10": 11.0, "M12": 13.5,
-}
+from app.cad.standards.defaults import METRIC_CLEARANCE_HOLES
+
+# Screw label -> "normal"-fit clearance hole diameter (mm), delegated entirely
+# to the one canonical standards table (app.cad.standards.defaults) so there
+# is exactly one source for these numbers. A prior version of this file (and
+# of app.cad.hex_standoff) each carried their own, near-duplicate M-size
+# tables -- that drift is exactly why this now delegates instead of repeating
+# the numbers.
+CLEARANCE_HOLES_MM = {k: v["normal"] for k, v in METRIC_CLEARANCE_HOLES.items()}
+CLEARANCE_HOLES_MM["M2_5"] = CLEARANCE_HOLES_MM["M2.5"]
 
 CAD_DEFAULTS = {
     "clearance_holes_mm": CLEARANCE_HOLES_MM,

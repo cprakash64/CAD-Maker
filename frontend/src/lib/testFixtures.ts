@@ -1,0 +1,55 @@
+import type { Design } from "./types";
+
+/** A minimally-valid Design with every required field filled in with a safe
+ * default, so tests only need to override the fields they actually care
+ * about. Keep this in sync with the `Design` interface's required fields. */
+export function makeDesign(overrides: Partial<Design> = {}): Design {
+  return {
+    id: "design-1",
+    project_id: "project-1",
+    prompt: "a bracket",
+    object_type: "rectangular_bracket",
+    title: "Mounting bracket",
+    spec: {
+      object_type: "rectangular_bracket",
+      units: "mm",
+      manufacturing_method: "fdm_3d_print",
+      material: "PLA",
+      dimensions: { width: 80, depth: 40, thickness: 6 },
+      holes: [],
+    },
+    assumptions: [],
+    explanation: null,
+    clarification_question: null,
+    clarification_options: [],
+    needs_clarification: false,
+    preview: null,
+    bounding_box_mm: { x: 80, y: 40, z: 6 },
+    spec_hash: "abc123",
+    exports: [],
+    checks: [],
+    editable_parameters: {},
+    provider: "mock",
+    generation_ms: 100,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    my_feedback: null,
+    features: [],
+    default_assumptions: [],
+    can_generate_with_defaults: false,
+    missing_required: [],
+    clarification_questions: [],
+    feature_graph_ops: [],
+    route: "precision_template",
+    route_reason: null,
+    auto_repaired: false,
+    export_formats: ["stl", "step"],
+    semantic_checks: [],
+    semantic_passed: null,
+    repair_attempts: 0,
+    warnings: [],
+    feature_audit: [],
+    feature_audit_passed: null,
+    ...overrides,
+  };
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Run lunaicad-backup.service nightly (docs/ops/backup-and-restore.md)
+
+[Timer]
+# 03:00 server time -- AFTER the retention sweep at the same hour (see
+# lunaicad-retention.timer), so the backup reflects post-sweep state.
+# Sequencing is on wall-clock offset (retention at :00, backup at :05), not a
+# systemd dependency, since a slow retention sweep should never silently
+# delay/skip the backup.
+OnCalendar=*-*-* 03:05:00
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

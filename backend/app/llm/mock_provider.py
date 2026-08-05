@@ -375,11 +375,6 @@ class MockLLMProvider(LLMProvider):
 
         return from_prompt(prompt)
 
-    def cad_program(self, prompt: str, feedback: str | None = None):
-        from app.generation.cad_programs import generate_program
-
-        return generate_program(prompt)
-
     def plan_general_cad(self, prompt: str) -> dict | None:
         """Deterministic GeneralCADPlan for a few generic mechanical shapes (the
         SCAD-generator route). Offline stand-in for the real LLM planner."""
@@ -388,13 +383,19 @@ class MockLLMProvider(LLMProvider):
         bore = _num_before(t, "hole", "bore") or (
             _num_after(t, "hole", "bore") if "hole" in t or "bore" in t else None
         )
-        if any(w in t for w in ("cube", "block", "box")):
+        # Word-boundary matching, not a bare substring check: "bearing" contains
+        # "ring" (bea-RING) and would otherwise false-positive into the ring/tube
+        # branch below, silently building a thin washer that ignores the
+        # requested width instead of routing (correctly) to the bearing-housing
+        # feature graph or a clarification. Same reasoning for "cube"/"block"/
+        # "box" against words like "outbox"/"unblock".
+        if any(re.search(rf"\b{w}\b", t) for w in ("cube", "block", "box")):
             prims = [{"kind": "box", "id": "b",
                       "params": {"width": dim, "depth": dim, "height": dim}}]
             holes = [{"diameter": bore or 10.0, "x": 0, "y": 0}] if (bore or "hole" in t) else []
             return {"object_name": "block", "units": "mm", "primitives": prims,
                     "holes": holes, "assumptions": ["Generic block built from primitives"]}
-        if any(w in t for w in ("ring", "washer", "bushing")):
+        if any(re.search(rf"\b{w}\b", t) for w in ("ring", "washer", "bushing")):
             outer_r = dim / 2
             inner_r = (bore / 2) if bore else dim / 6
             inner_r = min(inner_r, outer_r - 1.5)  # keep a wall

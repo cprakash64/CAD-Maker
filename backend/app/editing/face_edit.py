@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
+from app.cad.selectable_faces import extract_selectable_holes, extract_selectable_holes_from_plan
 from app.editing.localized import _rebuild, _spec_to_mm
 from app.schemas.design_spec import DesignSpec, Hole
 from app.schemas.editing_spec import FaceLocalizedEditRequest, FaceSelectionSpec
@@ -333,13 +334,28 @@ def _handle_edge_treatment(
     return new_spec, f"Rounded the part edges with a {size:g} mm fillet", {"fillet_mm": size}
 
 
-def _hole_index(sel: FaceSelectionSpec) -> int:
-    """Resolve a hole index from `hole_0`/`hole_2`/… (hole_id or feature_id)."""
+def _hole_index_from_spec(sel: FaceSelectionSpec, spec: DesignSpec) -> int:
+    """Resolve the selected hole's index in ``spec.holes`` by matching its
+    stable ``hole_id`` (see ``app.cad.selectable_faces``) against the ids
+    computed for the current spec, rather than parsing digits out of the id —
+    a hash-based id has no positional meaning to parse."""
     raw = sel.hole_id or sel.feature_id or ""
-    m = re.search(r"(\d+)\s*$", raw)
-    if not m:
-        raise FaceEditReview("Select a specific hole to edit.")
-    return int(m.group(1))
+    if raw:
+        for h in extract_selectable_holes(spec):
+            if h["hole_id"] == raw:
+                return h["hole_index"]
+    raise FaceEditReview("Select a specific hole to edit.")
+
+
+def _hole_index_from_plan(sel: FaceSelectionSpec, plan) -> int:
+    """Plan-graph analog of :func:`_hole_index_from_spec` — resolves the index
+    into ``_plan_hole_features(plan)`` (all hole-kind features, unfiltered)."""
+    raw = sel.hole_id or sel.feature_id or ""
+    if raw:
+        for h in extract_selectable_holes_from_plan(plan):
+            if h["hole_id"] == raw:
+                return h["feature_index"]
+    raise FaceEditReview("Select a specific hole to edit.")
 
 
 def _handle_resize_hole(
@@ -348,7 +364,7 @@ def _handle_resize_hole(
     dims, holes = _spec_to_mm(spec)
     if not holes:
         raise FaceEditReview("This part has no editable holes.")
-    i = _hole_index(sel)
+    i = _hole_index_from_spec(sel, spec)
     if not (0 <= i < len(holes)):
         raise FaceEditReview(f"Hole {i + 1} does not exist on this part.")
     dia = _first_number(instruction)
@@ -371,7 +387,7 @@ def _handle_delete_hole(
     dims, holes = _spec_to_mm(spec)
     if not holes:
         raise FaceEditReview("This part has no holes to delete.")
-    i = _hole_index(sel)
+    i = _hole_index_from_spec(sel, spec)
     if not (0 <= i < len(holes)):
         raise FaceEditReview(f"Hole {i + 1} does not exist on this part.")
     holes.pop(i)
@@ -565,7 +581,7 @@ def _plan_resize_hole(plan, sel: FaceSelectionSpec, instruction: str, bbox: dict
     holes = _plan_hole_features(plan)
     if not holes:
         raise FaceEditReview("This part has no editable holes.")
-    i = _hole_index(sel)
+    i = _hole_index_from_plan(sel, plan)
     if not (0 <= i < len(holes)):
         raise FaceEditReview(f"Hole {i + 1} does not exist on this part.")
     dia = _first_number(instruction)
@@ -586,7 +602,7 @@ def _plan_delete_hole(plan, sel: FaceSelectionSpec):
     holes = _plan_hole_features(plan)
     if not holes:
         raise FaceEditReview("This part has no holes to delete.")
-    i = _hole_index(sel)
+    i = _hole_index_from_plan(sel, plan)
     if not (0 <= i < len(holes)):
         raise FaceEditReview(f"Hole {i + 1} does not exist on this part.")
     target_id = holes[i].id

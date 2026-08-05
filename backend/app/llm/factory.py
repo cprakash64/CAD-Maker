@@ -14,10 +14,6 @@ def _build(provider: str) -> LLMProvider:
                 "Set LLM_PROVIDER=openai (with OPENAI_API_KEY)."
             )
         return MockLLMProvider()
-    if provider == "anthropic":
-        from app.llm.anthropic_provider import AnthropicProvider
-
-        return AnthropicProvider()
     if provider == "openai":
         from app.llm.openai_provider import OpenAIProvider
 

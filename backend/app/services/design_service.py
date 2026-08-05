@@ -9,21 +9,33 @@ from __future__ import annotations
 import re
 import time
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.cad.base import CadGenerationError
 from app.cad.complexity import assess_complexity
 from app.cad.registry import get_template
 from app.config import settings
 from app.llm.budget import generation_budget
+from app.llm.prompt_version import CAD_PROMPT_VERSION
 from app.explain import explain
 from app.export.exporter import generate
 from app.manufacturability.checks import run_checks
-from app.models import Design, ExportFile, Feedback, ManufacturingCheck, Project
+from app.models import (
+    Design,
+    ExportFile,
+    Feedback,
+    ManufacturingCheck,
+    Project,
+    SafetyAcknowledgment,
+)
 from app.observability import elapsed_ms, log_event
 from app.parsing.modification_parser import parse_and_apply
 from app.parsing.prompt_parser import parse_prompt
+from app.safety.policy import SafetyDecision, safety_gate
 from app.schemas.design_spec import DesignSpec
+from app.services import version_service
 from app.storage.storage import StorageError, get_storage
 
 
@@ -57,6 +69,20 @@ def recovery_info(design: Design) -> dict:
 def user_owns_design(db: Session, design: Design, user_id: str) -> bool:
     project = db.get(Project, design.project_id)
     return project is not None and project.user_id == user_id
+
+
+def get_owned_design(db: Session, design_id: str, user_id: str) -> Design | None:
+    """Fetch a design only through a query already filtered to the caller's
+    own rows (a JOIN on Project.user_id), so ownership is enforced at the
+    database query boundary rather than by fetching the row first and
+    checking it afterwards. A null-owner project (``Project.user_id`` is
+    nullable) can never match, so an orphaned project's designs are
+    unreachable by any authenticated user."""
+    return db.scalars(
+        select(Design)
+        .join(Project, Design.project_id == Project.id)
+        .where(Design.id == design_id, Project.user_id == user_id)
+    ).first()
 
 
 def _ensure_project(
@@ -266,6 +292,12 @@ def _is_enclosure_prompt(prompt: str | None) -> bool:
 
 def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
     """Build geometry, refresh preview/exports/checks on the design row."""
+    from app.metrics import (
+        design_export_total,
+        design_requests_total,
+        design_stage_duration_seconds,
+    )
+
     start = time.perf_counter()
     try:
         result = generate(spec)
@@ -276,7 +308,9 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
             object_type=spec.object_type,
             provider=settings.llm_provider,
         )
+        design_requests_total.labels(outcome="failed").inc()
         raise
+    design_stage_duration_seconds.labels(stage="compile").observe(result.compile_ms / 1000)
     storage = get_storage()
 
     design.object_type = spec.object_type
@@ -319,6 +353,7 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
     thread_major_mm = spec.to_mm(thread_major) if thread_major else None
     thread_intent = bool(thread_pitch_mm and thread_major_mm
                          and getattr(settings, "thread_detail", "modeled") != "cosmetic")
+    _validate_start = time.perf_counter()
     design.semantic_json = {
         "dimension_report": build_spec_report(
             requested_dimensions_mm={k: spec.to_mm(v) for k, v in spec.dimensions.items()},
@@ -349,6 +384,8 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
         "selectable_bodies": result.selectable_bodies,
         "selectable_features": result.selectable_features,
     }
+    _validate_ms = round((time.perf_counter() - _validate_start) * 1000, 2)
+    design_stage_duration_seconds.labels(stage="export").observe(result.export_ms / 1000)
 
     # Replace exports. Storage is owner-scoped by the design id prefix.
     for old in list(design.exports):
@@ -360,7 +397,9 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
             storage.save(key, data)
         except StorageError:
             log_event("export_failed", design_id=design.id, fmt=fmt)
+            design_export_total.labels(fmt=fmt, outcome="error").inc()
             raise
+        design_export_total.labels(fmt=fmt, outcome="ok").inc()
         db.add(
             ExportFile(
                 design_id=design.id,
@@ -379,12 +418,16 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
         provider=settings.llm_provider,
         triangle_count=result.preview.triangle_count,
         generation_ms=design.generation_ms,
+        compile_ms=result.compile_ms,
+        validate_ms=_validate_ms,
+        export_ms=result.export_ms,
     )
 
     # Replace checks.
     for old in list(design.checks):
         db.delete(old)
     db.flush()
+    _checks_start = time.perf_counter()
     for c in run_checks(spec):
         db.add(
             ManufacturingCheck(
@@ -395,6 +438,20 @@ def _regenerate_geometry(db: Session, design: Design, spec: DesignSpec) -> None:
                 message=c.message,
             )
         )
+    _validate_ms += round((time.perf_counter() - _checks_start) * 1000, 2)
+    design_stage_duration_seconds.labels(stage="validate").observe(_validate_ms / 1000)
+    design.semantic_json["timing"] = {
+        "compile_ms": result.compile_ms, "validate_ms": _validate_ms, "export_ms": result.export_ms,
+    }
+    # The exports/checks replacement above already flushed this row once (its
+    # semantic_json dirty-flag is now clear), so this in-place mutation of the
+    # SAME dict object afterward is invisible to SQLAlchemy's change-tracking
+    # without an explicit nudge -- a plain (non-Mutable-wrapped) JSON column
+    # only detects a full re-assignment, not a mutation of the dict it already
+    # holds. Without this, "timing" is set in memory but silently dropped by
+    # the next commit.
+    flag_modified(design, "semantic_json")
+    design_requests_total.labels(outcome="success").inc()
 
 
 def _try_gear(db: Session, design: Design, prompt: str, parse_start: float) -> Design:
@@ -1837,6 +1894,23 @@ def create_design_from_plan(
     db.refresh(design)
 
     plan = normalize_cad_plan(plan, prompt)
+
+    # SAFETY POLICY GATE (app.safety): the Drawing -> CAD vector path often
+    # carries a terse or empty `prompt` (the drawing IS the spec) -- also
+    # classify the plan's own text (name, assumptions, per-feature
+    # descriptions) so a weapon/steering/etc. part named only in the plan,
+    # never in `prompt`, still gets caught.
+    plan_texts = [prompt, getattr(plan, "name", None)]
+    plan_texts += list(getattr(plan, "assumptions", None) or [])
+    plan_texts += [getattr(f, "description", None) for f in
+                   (getattr(plan, "features", None) or [])]
+    try:
+        safety_decision = safety_gate_for_design(design, *plan_texts)
+    except CadGenerationError:
+        db.delete(design)
+        db.commit()
+        raise
+
     try:
         outcome = build_and_validate(plan)
     except CadGenerationError:
@@ -1862,6 +1936,7 @@ def create_design_from_plan(
             audit = audit_plan(prompt, plan, outcome.result)
 
     _store_plan(db, design, plan, outcome, repair_attempts, audit, recovery=recovery)
+    _attach_safety(design, safety_decision)
     db.commit()
     db.refresh(design)
     from app.cad.classification import classify_prompt
@@ -1871,87 +1946,6 @@ def create_design_from_plan(
     log_design_telemetry(design, "design_created", export_clicked=False)
     return design
 
-
-def _try_compiler(db: Session, design: Design, prompt: str, parse_start: float) -> Design | None:
-    """Run the CAD compiler if it has a program for this prompt. Returns the
-    finished design on success/clarification, or None to fall back to planning."""
-    from app.generation.cad_programs import generate_program
-    from app.generation.compiler import compile_prompt
-    from app.llm.factory import get_provider
-
-    # Gears / pulleys go through the dedicated module-based template (consistent
-    # tooth geometry, prompt-dimension fidelity, and the semantic tooth audit) —
-    # never the program path, which hard-coded thickness and skipped the audit.
-    if re.search(r"\b(gear|pulley|sprocket|cog)\b", prompt.lower()):
-        return None
-
-    if generate_program(prompt) is None:
-        return None  # no compiler family -> fall back to templates/feature-graph
-    out = compile_prompt(prompt, get_provider())
-    if out is None:
-        return None
-    log_event("prompt_parsed", design_id=design.id, provider=settings.llm_provider,
-              routed="cadquery_program", produced_spec=out.ok,
-              latency_ms=elapsed_ms(parse_start))
-    if out.ok:
-        _store_program(db, design, out)
-        db.commit()
-        db.refresh(design)
-        return design
-    # Compiler ran but the model failed semantic checks after repairs.
-    design.route = "cadquery_program"
-    design.assumptions = out.assumptions
-    design.semantic_json = out.report.model_dump() if out.report else None
-    design.repair_attempts = out.repair_attempts
-    design.clarification_question = out.clarification
-    db.commit()
-    db.refresh(design)
-    return design
-
-
-def _store_program(db: Session, design: Design, out) -> None:
-    """Persist a sandbox-generated program design (geometry from STL/STEP bytes)."""
-    result = out.result
-    storage = get_storage()
-    design.object_type = out.brief.object_type
-    design.spec_json = None
-    design.spec_hash = result.spec_hash
-    design.explanation = out.explanation or (out.brief.mechanical_function or None)
-    design.bounding_box = result.bounding_box_mm
-    design.provider = settings.llm_provider
-    design.route = "cadquery_program"
-    design.route_reason = "Sandboxed CadQuery program, semantically verified."
-    design.assumptions = out.assumptions
-    design.auto_repaired = out.repair_attempts > 0
-    design.repair_attempts = out.repair_attempts
-    design.export_formats = out.export_formats
-    design.program_code = out.code
-    design.semantic_json = out.report.model_dump() if out.report else None
-    design.features_json = result.features
-    design.clarification_question = None
-    design.preview_json = {
-        "positions": result.preview.positions,
-        "indices": result.preview.indices,
-        "vertex_count": result.preview.vertex_count,
-        "triangle_count": result.preview.triangle_count,
-    }
-    for old in list(design.exports):
-        db.delete(old)
-    db.flush()
-    fmts = [("stl", result.stl_bytes)]
-    if "step" in out.export_formats and result.step_bytes:
-        fmts.append(("step", result.step_bytes))
-    for fmt, data in fmts:
-        key = f"{design.id}/{result.spec_hash}.{fmt}"
-        storage.save(key, data)
-        db.add(ExportFile(
-            design_id=design.id, fmt=fmt, storage_key=key,
-            url=f"{settings.public_base_url}/api/designs/{design.id}/files/{fmt}",
-            size_bytes=len(data),
-        ))
-    log_event("geometry_generated", design_id=design.id, object_type=design.object_type,
-              provider=settings.llm_provider, route="cadquery_program",
-              triangle_count=result.preview.triangle_count)
 
 
 def _try_assembly(db: Session, design: Design, prompt: str) -> Design:
@@ -2176,6 +2170,44 @@ def _store_decomposition(db: Session, design: Design, assessment) -> None:
     db.refresh(design)
 
 
+def design_safety_decision(design: Design) -> SafetyDecision:
+    """The design's current, sticky safety classification (never re-runs
+    classification -- just reads what was attached at generation/edit time)."""
+    return SafetyDecision.from_dict((design.semantic_json or {}).get("safety"))
+
+
+def safety_blocks_export(design: Design) -> bool:
+    return design_safety_decision(design).blocks_export
+
+
+def _existing_safety_categories(design: Design) -> list[str]:
+    """The design's sticky safety categories from BEFORE this edit. Read this
+    BEFORE calling _regenerate_geometry/_store_plan -- both replace
+    semantic_json wholesale, so anything not captured first is lost."""
+    return list(((design.semantic_json or {}).get("safety") or {}).get("categories", []))
+
+
+def safety_gate_for_design(design: Design, *texts: str | None) -> SafetyDecision:
+    """Classify `texts`, merge with the design's existing sticky categories,
+    and return the resulting decision. Raises SafetyRefusalError (a
+    CadGenerationError subclass -- see app.safety.policy) if the merged
+    result is a refusal. MUST be called before generation/edit compute runs,
+    and its result attached via `_attach_safety` AFTER, since generation
+    replaces semantic_json wholesale."""
+    return safety_gate(_existing_safety_categories(design), *texts)
+
+
+def _attach_safety(design: Design, decision: SafetyDecision) -> None:
+    """Write the (possibly sticky-merged) safety decision onto semantic_json.
+    Call AFTER _regenerate_geometry/_store_plan, BEFORE the caller's own
+    db.commit() -- mirrors _attach_classification's dict-reassignment pattern
+    so SQLAlchemy's change tracking sees a real new object, not an in-place
+    mutation of the one it already has."""
+    semantic = dict(design.semantic_json or {})
+    semantic["safety"] = decision.to_dict()
+    design.semantic_json = semantic
+
+
 def _attach_classification(db: Session, design: Design, classification) -> None:
     """Merge the structured prompt classification into the design's semantic_json
     (advisory metadata; never blocks or changes geometry). Committed in place."""
@@ -2207,6 +2239,10 @@ def _attach_contract(db: Session, design: Design, prompt: str) -> None:
     if "part_family_contract" not in semantic:
         semantic["part_family_contract"] = _default_part_family_contract(design, prompt)
     semantic["telemetry"] = _build_telemetry(design, semantic, contract)
+    # Frozen at generation time (not read later) so a later prompt/template
+    # version bump never rewrites the history of what actually produced this
+    # design -- correlates quality reports to the version that generated them.
+    semantic.setdefault("prompt_version", CAD_PROMPT_VERSION)
     design.semantic_json = semantic
     db.add(design)
     db.commit()
@@ -2327,6 +2363,12 @@ def create_design(
     # into a `failed_safe` design instead of a 500 with no usable result.
     from app.llm.base import LLMUnavailableError
 
+    # SAFETY POLICY GATE (app.safety): the actual refusal check runs INSIDE
+    # _dispatch_generation, positioned AFTER the complexity/decomposition gate
+    # (see the gate call there for why) -- so it protects every path that
+    # builds a specific part, without misfiring on a whole-vehicle/assembly
+    # prompt that merely MENTIONS a risky subsystem among many while being
+    # decomposed or built as generic concept frame geometry.
     try:
         design = _dispatch_generation(db, design, prompt, classification,
                                       route_lock=route_lock)
@@ -2337,6 +2379,15 @@ def create_design(
                   error=type(exc).__name__, detail=str(exc)[:200])
         design = _store_failed_safe(db, design, prompt, exc)
 
+    # A decomposition listing or generic concept frame/chassis assembly never
+    # produces a specific component's manufacturable geometry (frame builds
+    # are generic tube/rail geometry regardless of what subsystems the prompt
+    # named) -- classifying/storing a safety category against them would
+    # misleadingly flag a design that was never actually built as the risky
+    # thing it merely mentioned. Every OTHER outcome (a real, specific part)
+    # still gets classified and stored, sticky, as usual.
+    if design.route not in ("needs_decomposition", "assembly"):
+        _attach_safety(design, safety_gate_for_design(design, prompt))
     _attach_classification(db, design, classification)
     _attach_contract(db, design, prompt)
     log_design_telemetry(design, "design_created", export_clicked=False)
@@ -2351,6 +2402,18 @@ def _dispatch_generation(db: Session, design: Design, prompt: str,
     # large-assembly decomposition gate, then deterministic single parts.
     # Anything left falls through to the LLM/CadPlan pipeline.
     from app.cad.assembly.frames import detect_fallback_directive, detect_frame_family
+
+    # SAFETY POLICY GATE (app.safety): skipped when this prompt is headed for
+    # generic concept-assembly/frame geometry or a large-assembly
+    # decomposition listing (probed with the SAME two cheap, no-LLM/CAD
+    # signals the routing below uses) -- a whole-vehicle prompt that
+    # mentions "steering rack" or "brakes" as one of ten subsystems produces
+    # neither a specific steering nor braking component (generic tube/frame
+    # geometry, or no geometry at all for a decomposition listing), so
+    # refusing it would misfire on a legitimate, established product path.
+    # Every prompt that instead resolves to a SPECIFIC part is still gated.
+    if not detect_frame_family(prompt) and not assess_complexity(prompt).is_complex:
+        safety_gate_for_design(design, prompt)
 
     # 1) Frame / concept-assembly families (machine frame, CNC router, engine
     #    test stand, drone, motorcycle subframe, skateboard motor mount).
@@ -2741,6 +2804,18 @@ BETA_NOTICE = (
 CONCEPT_NOTICE = (
     "Concept geometry only. Not structurally certified. Review before fabrication."
 )
+# Printer-profile provenance disclosure (docs/calibration.md): every clearance/
+# fit dimension in the system resolves through app.cad.calibration.resolver,
+# which always falls back to GENERIC_ESTIMATE unless a call site passes real,
+# validated CalibrationProfile rows for a specific printer — no design
+# generation path does that yet, so this is accurate for every design today,
+# not a hedge. Update this (and how it's computed) together the day a real
+# per-design profile attribution lands.
+CALIBRATION_PROVENANCE_NOTICE = (
+    "Not calibrated to a specific printer/material profile — clearance and fit "
+    "dimensions use generic engineering estimates, not a physically measured "
+    "profile. See Calibration to record and apply your own printer's measurements."
+)
 # Template object_types whose bore is a PARAMETER (not a spec.holes entry), so the
 # manual hole editor must not claim "No holes yet" for them.
 _PARAMETRIC_BORE_TYPES = {"spacer", "hex_standoff", "simple_gear_or_pulley"}
@@ -2850,29 +2925,165 @@ def presentation_descriptor(design: Design) -> dict:
     }
 
 
+def product_contract_fields(design: Design) -> dict:
+    """The additive product-contract DTO fields (docs/product-contract.md):
+    capability_level, confidence, interpreted_intent, normalized_units,
+    limitations, unanswered_questions, export_eligibility.
+
+    Every value here is DERIVED from data already computed elsewhere for this
+    design (the family registry, classification, object_intelligence,
+    validation status) — this function adds no new decision of its own, it
+    only surfaces existing ones at one consistent top-level location.
+    """
+    from app.cad.families import Maturity, family_for_object_type
+
+    semantic = design.semantic_json or {}
+    classification = semantic.get("classification") or {}
+    obj_intel = semantic.get("object_intelligence") or {}
+    drawing_fidelity = semantic.get("drawing_fidelity")
+
+    fam = family_for_object_type(design.object_type)
+    capability_level = fam.maturity.value if fam else None
+
+    # Drawing → CAD is a beta workflow (docs/drawing-to-cad-beta.md): a
+    # drawing-derived design never reports a capability ABOVE validated_beta,
+    # even when its family's text-prompt path is production_ready -- the
+    # extra uncertainty is in the drawing interpretation, not the family. A
+    # drawing whose fidelity is review/failed is capped further, at
+    # experimental, since its dimensions carry disclosed estimates or
+    # unresolved critical gaps.
+    drawing_beta = drawing_fidelity is not None
+    drawing_review_required = drawing_beta and (
+        drawing_fidelity.get("drawing_fidelity_status") != "ok"
+        or bool(drawing_fidelity.get("critical_unresolved"))
+    )
+    if drawing_beta:
+        ceiling = (Maturity.experimental if drawing_review_required
+                   else Maturity.validated_beta)
+        _RANK = {Maturity.production_ready: 0, Maturity.validated_beta: 1,
+                 Maturity.experimental: 2, Maturity.unsupported: 3}
+        if capability_level is None or _RANK.get(
+                Maturity(capability_level), 1) < _RANK[ceiling]:
+            capability_level = ceiling.value
+
+    confidence = obj_intel.get("confidence_score")
+    if confidence is None:
+        confidence = classification.get("confidence")
+    if confidence is None and drawing_fidelity is not None:
+        confidence = drawing_fidelity.get("source_drawing_confidence")
+
+    interpreted_intent = _display_title(design) or design.object_type
+
+    limitations = list(dict.fromkeys(
+        list(classification.get("limitations") or [])
+        + (list(fam.known_limitations) if fam else [])
+    ))
+
+    unanswered_questions = list(dict.fromkeys(
+        ([design.clarification_question] if design.clarification_question else [])
+        + (list(design.missing_required) if design.route == "cad_plan"
+           and design.missing_required else [])
+    ))
+
+    safety_decision = design_safety_decision(design)
+
+    # Order matters: an "unsupported" route often ALSO sets clarification_question
+    # (a one-click-fallback offer, e.g. a nyloc nut) -- that must report as
+    # unsupported, not "awaiting clarification", so this check runs first.
+    # The safety gate is checked FIRST of all: it is a policy decision, not a
+    # quality signal, so it must never be masked by (or confused with) a
+    # geometry-validation reason -- fixing the geometry would not unblock it.
+    if safety_decision.blocks_export:
+        export_eligibility = {
+            "eligible": False,
+            "reason": safety_decision.message or (
+                "Export requires acknowledging the engineering-review notice "
+                "for this design."
+            ),
+        }
+    elif is_critical_failure(design):
+        export_eligibility = {"eligible": False, "reason": DOWNLOAD_BLOCKED_MESSAGE}
+    elif design.route == "unsupported":
+        export_eligibility = {"eligible": False, "reason": "This part is unsupported."}
+    elif design.clarification_question is not None and design.spec_json is None:
+        export_eligibility = {"eligible": False, "reason": "Awaiting clarification."}
+    else:
+        export_eligibility = {"eligible": bool(list(design.exports)), "reason": None}
+
+    # Per-format breakdown: STL/STEP always require a verified, buildable
+    # solid (they're co-produced from the same CadQuery build — see
+    # _regenerate_geometry — so they always share the blanket eligibility
+    # above). GLB is a preview/web format built straight from the mesh
+    # already on the design (app.export.glb), so it's available whenever
+    # there's ANY mesh, independent of the STL/STEP gate — a concept or
+    # critical-failure design can still be looked at in 3D.
+    export_eligibility["formats"] = {
+        "stl": export_eligibility["eligible"],
+        "step": export_eligibility["eligible"],
+        "glb": bool(design.preview_json),
+    }
+
+    return {
+        "capability_level": capability_level,
+        "drawing_beta": drawing_beta,
+        "drawing_review_required": drawing_review_required,
+        "confidence": confidence,
+        "interpreted_intent": interpreted_intent,
+        "normalized_units": "mm",
+        "limitations": limitations,
+        "unanswered_questions": unanswered_questions,
+        "export_eligibility": export_eligibility,
+        "calibration_provenance": CALIBRATION_PROVENANCE_NOTICE,
+        "safety": safety_decision.to_dict() if safety_decision.categories else None,
+    }
+
+
 def log_design_telemetry(design: Design, event: str, **extra) -> None:
     """Emit one structured telemetry event for a create / edit / export / feedback
     action, with the fields used to prioritise beta fixes. Best-effort: telemetry
-    must never break a request."""
+    must never break a request.
+
+    Never logs the raw prompt (docs/ops/data-retention.md): ordinary telemetry
+    carries only a content fingerprint (see app.observability.content_fingerprint)
+    for correlating repeated/versioned prompts. The prompt text itself lives
+    solely in the access-controlled `designs.prompt` column, readable only by
+    its owner (app.services.design_service.get_owned_design)."""
     try:
+        from app.cad.families import family_for_object_type
+        from app.metrics import design_validation_total
+        from app.observability import content_fingerprint, pseudonymize
+
         sem = design.semantic_json or {}
         cls = sem.get("classification") or {}
         vs = validation_summary(design)
         reasons = list(vs.get("critical_failures") or []) + list(vs.get("warnings") or [])
+        fam = family_for_object_type(design.object_type)
+        validation_status = reconciled_validation_status(design)
         log_event(
             event,
             design_id=design.id,
-            prompt=(design.prompt or "")[:300],
+            user_id=pseudonymize(getattr(design.project, "user_id", None)),
+            prompt_hash=content_fingerprint(design.prompt),
             route=design.route,
             family=cls.get("family_id"),
             title=_display_title(design),
+            capability_level=fam.maturity.value if fam else None,
             generation_outcome=(sem.get("contract") or {}).get("outcome"),
-            validation_status=reconciled_validation_status(design),
+            validation_status=validation_status,
             warning_reason=("; ".join(reasons)[:300] or None),
             export_allowed=(not is_critical_failure(design)) and bool(list(design.exports)),
             is_concept=is_concept_design(design),
             **extra,
         )
+        if validation_status:
+            design_validation_total.labels(status=validation_status).inc()
+        if event == "design_edited":
+            from app.metrics import design_edit_total
+
+            design_edit_total.labels(
+                kind=str(extra.get("edit_kind") or "unknown"),
+                outcome=validation_status or "unknown",
+            ).inc()
     except Exception:  # noqa: BLE001 — telemetry is best-effort
         pass
 
@@ -2891,11 +3102,9 @@ def _run_generation(db: Session, design: Design, prompt: str, parse_start: float
     # can't build the part — kept as a safety net.
     from app.parsing.complex_plan import looks_complex, plan_prompt
 
-    if not looks_complex(prompt):
-        compiled = _try_compiler(db, design, prompt, parse_start)
-        if compiled is not None:
-            return compiled
-
+    # The former `cadquery_program` compiler route (provider-authored Python run
+    # in a sandbox) was removed — see docs/production-readiness.md (F-1). Simple
+    # prompts now fall through to the deterministic template/planner path below.
     routed = "complex_plan" if looks_complex(prompt) else "unified_plan"
     result = _plan_long_prompt(prompt) if routed == "complex_plan" else plan_prompt(prompt)
     design.assumptions = result.assumptions
@@ -2974,10 +3183,21 @@ def regenerate_design(
         base["material"] = material
 
     spec = DesignSpec(**base)  # re-validate every edit
+    old_spec_json = dict(design.spec_json or {})
+    version_service.ensure_baseline(db, design)
+    # SAFETY POLICY GATE (app.safety): no new free text here (pure parameter
+    # edit) -- this only carries the design's STICKY prior classification
+    # forward through _regenerate_geometry's wholesale semantic_json replace.
+    safety_decision = safety_gate_for_design(design)
     _regenerate_geometry(db, design, spec)
+    _attach_safety(design, safety_decision)
     db.commit()
     db.refresh(design)
     log_design_telemetry(design, "design_edited", edit_kind="regenerate")
+    version_service.snapshot(
+        db, design, edit_kind="regenerate", summary="Edited parameters",
+        diff=version_service.diff_spec_json(old_spec_json, design.spec_json),
+    )
     return design
 
 
@@ -2990,6 +3210,12 @@ def modify_design(db: Session, design: Design, prompt: str) -> tuple[Design, str
     if not design.spec_json:
         raise ValueError("Design has no validated spec yet; nothing to modify")
 
+    # SAFETY POLICY GATE (app.safety): checked on the raw edit prompt BEFORE
+    # it is even parsed -- a free-text edit is the clearest bypass vector
+    # ("turn this into a gun barrel"), so refuse before spending any LLM
+    # parse compute on it, not after.
+    safety_decision = safety_gate_for_design(design, prompt)
+
     current = DesignSpec(**design.spec_json)
     result = parse_and_apply(prompt, current)
 
@@ -2997,13 +3223,20 @@ def modify_design(db: Session, design: Design, prompt: str) -> tuple[Design, str
         db.refresh(design)
         return design, result.clarification_question
 
+    old_spec_json = dict(design.spec_json or {})
+    version_service.ensure_baseline(db, design)
     _regenerate_geometry(db, design, result.spec)
+    _attach_safety(design, safety_decision)
     if result.summary:
         existing = list(design.assumptions or [])
         design.assumptions = existing + [f"Edit: {result.summary}"]
     db.commit()
     db.refresh(design)
     log_design_telemetry(design, "design_edited", edit_kind="modify_prompt")
+    version_service.snapshot(
+        db, design, edit_kind="modify_prompt", summary=result.summary or "Edited via prompt",
+        diff=version_service.diff_spec_json(old_spec_json, design.spec_json),
+    )
     return design, None
 
 
@@ -3021,6 +3254,7 @@ def apply_spec_edit(
     new_spec: DesignSpec,
     note: str | None = None,
     guard_critical: bool = False,
+    edit_kind: str = "localized_edit",
 ) -> Design:
     """Rebuild a design from an already-validated DesignSpec (localized edits,
     confirmed drawing interpretations). Deterministic; no LLM.
@@ -3029,7 +3263,16 @@ def apply_spec_edit(
     into a critically-failed one is rolled back — the original geometry, exports
     and validation are preserved and ``CriticalEditRejected`` is raised."""
     was_valid = (not is_critical_failure(design)) if guard_critical else False
+    old_spec_json = dict(design.spec_json or {})
+    version_service.ensure_baseline(db, design)
+    # SAFETY POLICY GATE (app.safety): covers localized/circle/face-edit and
+    # generate-with-defaults (all funnel through here), and a direct API call
+    # that skips the router's own prompt endpoints entirely -- `note` and the
+    # edited spec's object_type are classified regardless of which endpoint
+    # built `new_spec`.
+    safety_decision = safety_gate_for_design(design, note, new_spec.object_type)
     _regenerate_geometry(db, design, new_spec)
+    _attach_safety(design, safety_decision)
     if guard_critical and was_valid and is_critical_failure(design):
         failures = list(validation_summary(design).get("critical_failures") or [])
         # Discard every mutation from this edit; reload the untouched original.
@@ -3045,6 +3288,10 @@ def apply_spec_edit(
         design.assumptions = list(design.assumptions or []) + [f"Edit: {note}"]
     db.commit()
     db.refresh(design)
+    version_service.snapshot(
+        db, design, edit_kind=edit_kind, summary=note or "Edited",
+        diff=version_service.diff_spec_json(old_spec_json, design.spec_json),
+    )
     return design
 
 
@@ -3073,6 +3320,7 @@ def apply_plan_edit(
     new_plan,
     note: str | None = None,
     guard_critical: bool = False,
+    edit_kind: str = "face_edit_plan",
 ) -> Design:
     """Rebuild a CadPlan-built design from an edited feature graph (localized face
     edits). Deterministic; no LLM — the edited plan is compiled by the same safe
@@ -3089,8 +3337,19 @@ def apply_plan_edit(
     from app.cad.plan.planner import build_and_validate
 
     was_valid = (not is_critical_failure(design)) if guard_critical else False
+    old_plan_json = dict((design.semantic_json or {}).get("cad_plan") or {})
+    version_service.ensure_baseline(db, design)
     prompt = design.prompt or ""
     plan = normalize_cad_plan(new_plan, prompt)
+    # SAFETY POLICY GATE (app.safety): a direct API call to this function
+    # (bypassing the face-edit router endpoint) is one of the bypass vectors
+    # this must resist -- classify `note` + the edited plan's own feature
+    # descriptions/assumptions regardless of caller.
+    plan_texts = [note, prompt, getattr(plan, "name", None)]
+    plan_texts += list(getattr(plan, "assumptions", None) or [])
+    plan_texts += [getattr(f, "description", None) for f in
+                   (getattr(plan, "features", None) or [])]
+    safety_decision = safety_gate_for_design(design, *plan_texts)
     try:
         outcome = build_and_validate(plan)
     except CadGenerationError as exc:
@@ -3121,11 +3380,17 @@ def apply_plan_edit(
         repair_attempts=int(design.repair_attempts or 0), audit=audit,
         recovery=recovery_info(design) or None,
     )
+    _attach_safety(design, safety_decision)
     if note:
         design.assumptions = list(design.assumptions or []) + [f"Edit: {note}"]
     db.commit()
     db.refresh(design)
     log_design_telemetry(design, "design_edited", edit_kind="face_edit_plan")
+    new_plan_json = (design.semantic_json or {}).get("cad_plan") or {}
+    version_service.snapshot(
+        db, design, edit_kind=edit_kind, summary=note or "Edited",
+        diff=version_service.diff_plan_json(old_plan_json, new_plan_json),
+    )
     return design
 
 
@@ -3139,9 +3404,47 @@ def create_design_from_spec(
     db.add(design)
     db.flush()
     design.clarification_question = None
+    # SAFETY POLICY GATE (app.safety): also classify spec.object_type -- a
+    # confirmed drawing interpretation may carry an empty/terse `prompt`.
+    safety_decision = safety_gate_for_design(design, prompt, spec.object_type)
     _regenerate_geometry(db, design, spec)
+    _attach_safety(design, safety_decision)
     db.commit()
     db.refresh(design)
+    return design
+
+
+class NoAcknowledgmentRequired(Exception):
+    """Raised when a client tries to acknowledge a design that isn't
+    currently gated behind require_acknowledgment (nothing to acknowledge --
+    either it was never flagged, or it needs a different policy entirely,
+    e.g. conceptual_only/block_export cannot be unblocked by acknowledging)."""
+
+
+def record_safety_acknowledgment(db: Session, design: Design, user_id: str) -> Design:
+    """Record an explicit, timestamped acknowledgment of the engineering-
+    review notice for a design gated at policy=require_acknowledgment, and
+    unblock its export. Writes an immutable SafetyAcknowledgment audit row
+    (app.models) with a SNAPSHOT of the exact notice text shown, so a later
+    change to category wording never retroactively changes what this record
+    proves the user agreed to."""
+    from app.safety.categories import PolicyAction
+
+    decision = design_safety_decision(design)
+    if decision.policy is not PolicyAction.REQUIRE_ACKNOWLEDGMENT:
+        raise NoAcknowledgmentRequired(
+            "This design has no pending safety acknowledgment to record."
+        )
+    db.add(SafetyAcknowledgment(
+        design_id=design.id, user_id=user_id, categories=list(decision.categories),
+        notice_text=decision.message or "",
+    ))
+    decision.acknowledged = True
+    _attach_safety(design, decision)
+    db.commit()
+    db.refresh(design)
+    log_event("safety_acknowledged", design_id=design.id, user_id=user_id,
+              categories=decision.categories)
     return design
 
 
@@ -3190,4 +3493,78 @@ def add_feedback(
         user_feedback=("yes" if rating == "up" else "needs_work" if rating == "down" else rating),
         feedback_categories=categories,
     )
+    from app.metrics import design_feedback_total
+
+    design_feedback_total.labels(rating=rating, report="false").inc()
+    return fb
+
+
+def report_bad_result(
+    db: Session,
+    design: Design,
+    user_id: str,
+    categories: list[str],
+    reason: str | None,
+    consent: bool,
+    print_success: bool | None = None,
+    fit_success: bool | None = None,
+) -> Feedback:
+    """Record a structured "report a bad result" submission — a privacy-conscious
+    superset of plain thumbs-down feedback (see ``add_feedback``) that also
+    snapshots the design/prompt version and validation state a report refers
+    to, and optionally the user's reported physical print/fit outcome.
+
+    Privacy: free text (``reason``) is stored ONLY when ``consent`` is True.
+    Without consent, the report still carries every OTHER field here (all of
+    which are already non-identifying operational data: categories, version
+    numbers, validation status, print/fit booleans) — only the open-ended
+    text a user might type anything into is gated on explicit opt-in.
+    """
+    # A design never edited yet has no DesignVersion row; ensure a version 1
+    # baseline exists so "which version was this bad?" always has an answer,
+    # same as every edit path already does before quoting a version number.
+    version_service.ensure_baseline(db, design)
+    latest_version = version_service.get_latest_version(db, design.id)
+    fb = Feedback(
+        user_id=user_id,
+        design_id=design.id,
+        rating="down",
+        categories=categories,
+        comment=None,
+        spec_hash=design.spec_hash,
+        object_type=design.object_type,
+        is_bad_result_report=True,
+        design_version_number=latest_version.version_number if latest_version else None,
+        prompt_version=(design.semantic_json or {}).get("prompt_version"),
+        validation_snapshot=validation_summary(design),
+        print_success=print_success,
+        fit_success=fit_success,
+        report_consent=consent,
+        report_reason=(reason if consent else None),
+    )
+    db.add(fb)
+    db.commit()
+    db.refresh(fb)
+    log_event(
+        "bad_result_reported",
+        design_id=design.id,
+        categories=categories,
+        has_reason=bool(reason),
+        consent=consent,
+        print_success=print_success,
+        fit_success=fit_success,
+        prompt_version=fb.prompt_version,
+        design_version_number=fb.design_version_number,
+    )
+    from app.metrics import design_feedback_total
+
+    design_feedback_total.labels(rating="down", report="true").inc()
+    if print_success is not None:
+        from app.metrics import print_outcomes_total
+
+        print_outcomes_total.labels(outcome="success" if print_success else "failure").inc()
+    if fit_success is not None:
+        from app.metrics import fit_outcomes_total
+
+        fit_outcomes_total.labels(outcome="success" if fit_success else "failure").inc()
     return fb

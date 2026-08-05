@@ -105,7 +105,9 @@ def test_jet_engine_decomposes_with_specific_components(client, auth):
     d = r.json()
     assert d["needs_decomposition"] is True
     assert d["route"] == "needs_decomposition"
-    assert d["has_program"] is False             # not the SCAD generator
+    # No program surface is exposed at all — the `has_program` flag is removed
+    # from the DTO (the underlying column is quarantined: never written or read).
+    assert "has_program" not in d
     decomp = d["decomposition"]
     assert decomp and decomp["components"]
     blob = " ".join(decomp["components"]).lower()

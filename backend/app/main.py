@@ -7,12 +7,29 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
 from app.database import init_db
 from app.llm.base import LLMUnavailableError
-from app.observability import log_event
-from app.routers import auth, capabilities, designs, drawings, templates
+from app.observability import (
+    log_event,
+    log_exception_redacted,
+    new_request_id,
+    set_request_id,
+)
+from app.rate_limit import rate_limit
+from app.routers import (
+    admin_cost,
+    auth,
+    calibration,
+    capabilities,
+    designs,
+    drawings,
+    jobs,
+    ops,
+    templates,
+)
 
 # Fail fast on unsafe production config (mock provider in prod, default JWT
 # secret, missing DATABASE_URL / CORS / storage, dev_mode on, etc.).
@@ -26,6 +43,39 @@ async def _llm_unavailable(request: Request, exc: LLMUnavailableError) -> JSONRe
     """Surface AI-provider outages as a clean 503 (never a raw stack trace)."""
     log_event("llm_unavailable", path=request.url.path)
     return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(SQLAlchemyError)
+async def _database_error(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+    """Database faults become a structured 503, never a driver message.
+
+    A raw SQLAlchemy error text carries the failing SQL, table and column names,
+    and often the connection URL — schema and infrastructure disclosure. The
+    full exception is still logged server-side with a traceback; only the
+    generic message crosses the API boundary.
+    """
+    log_exception_redacted(f"database error on {request.url.path}", exc)
+    log_event("database_error", path=request.url.path, error_type=type(exc).__name__)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "A database error occurred. Please try again."},
+    )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+    """Last-resort boundary: log the full traceback, return a generic 500.
+
+    This does not swallow anything — the failure is still a 500 and the complete
+    traceback goes to the application log. It only stops the traceback, file
+    paths, and local variables from being rendered into the HTTP response.
+    """
+    log_exception_redacted(f"unhandled error on {request.url.path}", exc)
+    log_event("unhandled_error", path=request.url.path, error_type=type(exc).__name__)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error."},
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,15 +97,46 @@ app.include_router(drawings.router)
 app.include_router(drawings.alias_router)  # POST /api/drawing-to-cad
 app.include_router(templates.router)
 app.include_router(capabilities.router)
+app.include_router(calibration.router)
+app.include_router(jobs.router)
+app.include_router(ops.router)
+app.include_router(admin_cost.router)
+
+
+@app.middleware("http")
+async def _request_context(request: Request, call_next):
+    """Assign a request id (honoring an inbound X-Request-Id from the reverse
+    proxy/client, so a trace started upstream stays one id end to end) BEFORE
+    any handler or log_event call runs, so every log line for this request —
+    across routers, services, and the job it may submit — carries the same
+    id automatically (see app.observability's contextvar)."""
+    rid = request.headers.get("x-request-id") or new_request_id()
+    set_request_id(rid)
+    try:
+        response = await call_next(request)
+    finally:
+        set_request_id(None)
+    response.headers["X-Request-Id"] = rid
+    return response
 
 
 @app.middleware("http")
 async def _timing(request: Request, call_next):
+    from app.metrics import http_request_duration_seconds, http_requests_total, status_class
+
     start = time.perf_counter()
     response = await call_next(request)
-    response.headers["X-Response-Time-ms"] = str(
-        round((time.perf_counter() - start) * 1000, 1)
-    )
+    latency_s = time.perf_counter() - start
+    response.headers["X-Response-Time-ms"] = str(round(latency_s * 1000, 1))
+
+    route = request.scope.get("route")
+    route_template = getattr(route, "path", request.url.path)
+    http_requests_total.labels(
+        method=request.method, route=route_template,
+        status_class=status_class(response.status_code),
+    ).inc()
+    http_request_duration_seconds.labels(route=route_template).observe(latency_s)
+
     # Log non-trivial API calls (skip health/docs noise). No secrets logged.
     if request.url.path.startswith("/api/"):
         log_event(
@@ -63,7 +144,7 @@ async def _timing(request: Request, call_next):
             method=request.method,
             path=request.url.path,
             status=response.status_code,
-            latency_ms=round((time.perf_counter() - start) * 1000, 2),
+            latency_ms=round(latency_s * 1000, 2),
         )
     return response
 
@@ -86,7 +167,7 @@ def health() -> dict:
     return body
 
 
-@app.get("/api/provider-status")
+@app.get("/api/provider-status", dependencies=[rate_limit("read")])
 def provider_status() -> dict:
     """Capability status the frontend uses to enable/block AI flows.
 
@@ -112,31 +193,44 @@ def provider_status() -> dict:
             provider_error = "OPENAI_API_KEY is missing — set it in .env."
             text_available = image_understanding = structured_available = False
         label = "OpenAI vision active" if image_understanding else (provider_error or "OpenAI unavailable")
-    elif provider == "anthropic":
-        model = settings.anthropic_model
-        text_available = bool(settings.anthropic_api_key)
-        if not text_available:
-            provider_error = "ANTHROPIC_API_KEY is missing."
-        label = "Anthropic (text only — image understanding unavailable)"
     else:
         label = "Mock mode — image understanding blocked"
 
-    return {
+    # This route is unauthenticated (the UI calls it before/without a session),
+    # so the payload is split: capability booleans the frontend needs to
+    # enable/block AI flows are always public, while the deployment's internals
+    # — environment, model id, timeouts, retry counts and the operator-facing
+    # remediation text — are only returned in dev_mode. In production those
+    # would tell an anonymous caller which model and configuration to target,
+    # and provider_error names the exact env vars that are unset.
+    body = {
         "provider": provider,
-        "app_env": settings.app_env,
-        "model": model,
         "image_understanding": image_understanding,
         "image_understanding_available": image_understanding,
         "text_generation_available": text_available,
         "structured_outputs_available": structured_available,
         "drawing_to_cad_enabled": settings.drawing_to_cad_enabled(),
-        "mock_allowed": settings.mock_allowed,
-        "provider_error": provider_error,
-        "status_label": label,
-        # Reliability surface. The model id is NOT verified against the provider
-        # at startup; an invalid id degrades through the fallback chain and, if
-        # exhausted, returns a 503 rather than crashing.
-        "request_timeout_seconds": settings.openai_timeout_seconds,
-        "max_retries": settings.openai_max_retries,
         "model_verified": False,
     }
+    if settings.dev_mode:
+        body.update({
+            "app_env": settings.app_env,
+            "model": model,
+            "mock_allowed": settings.mock_allowed,
+            "provider_error": provider_error,
+            "status_label": label,
+            # Reliability surface. The model id is NOT verified against the
+            # provider at startup; an invalid id degrades through the fallback
+            # chain and, if exhausted, returns a 503 rather than crashing.
+            "request_timeout_seconds": settings.openai_timeout_seconds,
+            "max_retries": settings.openai_max_retries,
+        })
+    else:
+        # Enough for the UI to explain itself, with no configuration detail.
+        body["provider_error"] = (
+            None if not provider_error else "AI features are unavailable."
+        )
+        body["status_label"] = (
+            "AI features active" if image_understanding else "AI features unavailable"
+        )
+    return body

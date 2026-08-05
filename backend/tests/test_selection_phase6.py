@@ -39,10 +39,25 @@ def test_selection_dtos_parse():
 # --- extraction ------------------------------------------------------------
 def test_extract_holes_from_spec():
     holes = extract_selectable_holes(_bracket())
-    assert [h["hole_id"] for h in holes] == ["hole_0", "hole_1"]
+    ids = [h["hole_id"] for h in holes]
+    assert len(ids) == 2
+    assert len(set(ids)) == 2, "hole ids must be unique"
+    assert all(hid.startswith("hole_") for hid in ids)
     assert holes[0]["diameter_mm"] == 6.6
     assert "resize_hole" in holes[0]["allowed_operations"]
     assert "delete_hole" in holes[0]["allowed_operations"]
+
+
+def test_hole_ids_are_stable_across_unrelated_edits():
+    """A hole's id must not shift just because an earlier hole in the list is
+    removed — ids are content-hashed, not positional."""
+    spec = _bracket()
+    before = {tuple(h["center"]): h["hole_id"] for h in extract_selectable_holes(spec)}
+    edited = spec.model_copy(deep=True)
+    edited.holes = edited.holes[1:]  # drop the first hole
+    after = {tuple(h["center"]): h["hole_id"] for h in extract_selectable_holes(edited)}
+    surviving_center = tuple(extract_selectable_holes(edited)[0]["center"])
+    assert after[surviving_center] == before[surviving_center]
 
 
 def test_extract_edges_and_bodies():
@@ -93,9 +108,10 @@ def test_classify_edge_and_hole_ops():
 
 def test_resize_hole():
     spec = _bracket()
+    hole_id = extract_selectable_holes(spec)[0]["hole_id"]
     new_spec, out = apply_face_edit(
         spec,
-        _req("Resize this hole to 10 mm", "resize_hole", selection_type="backend_hole", hole_id="hole_0"),
+        _req("Resize this hole to 10 mm", "resize_hole", selection_type="backend_hole", hole_id=hole_id),
         {"x": 80, "y": 40, "z": 6},
     )
     assert out.op == "resize_hole"
@@ -105,8 +121,9 @@ def test_resize_hole():
 
 def test_delete_hole():
     spec = _bracket()
+    hole_id = extract_selectable_holes(spec)[1]["hole_id"]
     new_spec, out = apply_face_edit(
-        spec, _req("Delete this hole", "delete_hole", selection_type="backend_hole", hole_id="hole_1"),
+        spec, _req("Delete this hole", "delete_hole", selection_type="backend_hole", hole_id=hole_id),
         {"x": 80, "y": 40, "z": 6},
     )
     assert out.op == "delete_hole"
@@ -123,10 +140,12 @@ def test_edge_fillet_via_edge_selection():
 
 
 def test_resize_hole_rejects_oversized():
+    spec = _bracket()
+    hole_id = extract_selectable_holes(spec)[0]["hole_id"]
     with pytest.raises(FaceEditError):
         apply_face_edit(
-            _bracket(),
-            _req("Resize to 200 mm", "resize_hole", selection_type="backend_hole", hole_id="hole_0"),
+            spec,
+            _req("Resize to 200 mm", "resize_hole", selection_type="backend_hole", hole_id=hole_id),
             {"x": 80, "y": 40, "z": 6},
         )
 
@@ -157,7 +176,7 @@ def test_dto_includes_new_selection_lists(client, auth, legacy_engine):
     assert d["selectable_holes"], "expected selectable_holes"
     assert d["selectable_edges"], "expected selectable_edges"
     assert d["selectable_bodies"], "expected selectable_bodies"
-    assert any(x["hole_id"] == "hole_0" for x in d["selectable_holes"])
+    assert all(x["hole_id"].startswith("hole_") for x in d["selectable_holes"])
 
 
 def test_api_resize_hole_regenerates(client, auth, legacy_engine):
@@ -168,12 +187,13 @@ def test_api_resize_hole_regenerates(client, auth, legacy_engine):
         headers=h,
     ).json()
     did, before = d["id"], d["spec_hash"]
+    hole_id = d["selectable_holes"][0]["hole_id"]
     r = client.post(
         f"/api/designs/{did}/face-edit",
         json={
             "instruction": "Resize this hole to 9 mm",
             "quick_action": "resize_hole",
-            "selection": {"selection_type": "backend_hole", "hole_id": "hole_0"},
+            "selection": {"selection_type": "backend_hole", "hole_id": hole_id},
         },
         headers=h,
     )

@@ -1,5 +1,6 @@
 """Drawing views (render + export) and Drawing-to-CAD Assist interpretation."""
 import base64
+from tests.conftest import TINY_PNG
 
 from app.drawing import STANDARD_VIEWS
 from app.drawing.interpret import interpret_image, to_design_spec
@@ -109,10 +110,7 @@ def test_mock_interpret_blank_image_asks_clarification():
 
 def test_drawing_interpret_and_confirm_endpoints(client, auth):
     h = auth["headers"]
-    img = base64.b64decode(
-        # tiny but >40-char payload so the mock treats it as a real drawing
-        base64.b64encode(b"a mechanical drawing of a plate" * 5)
-    )
+    img = TINY_PNG  # a real image; the mock classifies from the hint below
     r = client.post(
         "/api/drawings/interpret",
         files={"file": ("drawing.png", img, "image/png")},

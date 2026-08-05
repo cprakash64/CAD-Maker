@@ -3,10 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 
 interface Props {
-  /** Available export formats from the backend, e.g. ["stl", "step"]. */
+  /** Available manufacturable export formats from the backend, e.g. ["stl", "step"]. */
   formats: string[];
-  /** Validation failed — exports are not manufacturable. */
+  /** Validation failed — STL/STEP are not manufacturable. GLB (preview/web,
+   *  never a manufacturable file) is NOT gated by this — it stays available
+   *  from the mesh even when the result isn't a verified solid. */
   blocked: boolean;
+  /** design.preview_export is set — an on-the-fly GLB preview is downloadable. */
+  previewAvailable?: boolean;
   /** Concept-only design — label exports honestly (not fully manufacturable). */
   concept?: boolean;
   hasPackage: boolean;
@@ -28,6 +32,7 @@ function DownloadIcon() {
 export default function ExportMenu({
   formats,
   blocked,
+  previewAvailable,
   concept,
   hasPackage,
   onDownload,
@@ -60,7 +65,11 @@ export default function ExportMenu({
   }, [open]);
 
   const has = (f: string) => formats.map((x) => x.toLowerCase()).includes(f);
-  const usable = !blocked && formats.length > 0;
+  // STL/STEP are manufacturable-file formats, gated on a verified solid.
+  // GLB is a preview/web format only — it's never gated by `blocked`, so a
+  // concept or failed-validation design can still be looked at in 3D.
+  const manufacturableUsable = !blocked && (has("step") || has("stl"));
+  const usable = manufacturableUsable || !!previewAvailable;
   const word = concept ? "concept " : "";
 
   function run(fn: () => void) {
@@ -93,18 +102,27 @@ export default function ExportMenu({
         >
           {usable ? (
             <>
-              {has("step") && (
-                <Item innerRef={firstItemRef} onClick={() => run(() => onDownload("step"))} hint="Parametric B-rep for CAD">
-                  Export {word}STEP
+              {has("stl") && !blocked && (
+                <Item innerRef={firstItemRef} onClick={() => run(() => onDownload("stl"))} hint="3D printing">
+                  STL
                 </Item>
               )}
-              {has("stl") && (
+              {has("step") && !blocked && (
                 <Item
-                  innerRef={has("step") ? undefined : firstItemRef}
-                  onClick={() => run(() => onDownload("stl"))}
-                  hint="Mesh for 3D printing"
+                  innerRef={has("stl") ? undefined : firstItemRef}
+                  onClick={() => run(() => onDownload("step"))}
+                  hint="CAD editing"
                 >
-                  Export {word}STL
+                  STEP
+                </Item>
+              )}
+              {previewAvailable && (
+                <Item
+                  innerRef={manufacturableUsable ? undefined : firstItemRef}
+                  onClick={() => run(() => onDownload("glb"))}
+                  hint="Preview / web"
+                >
+                  GLB
                 </Item>
               )}
               {/* Any other formats the backend reports. */}
@@ -115,7 +133,7 @@ export default function ExportMenu({
                     Export {word}{f.toUpperCase()}
                   </Item>
                 ))}
-              {hasPackage && (
+              {hasPackage && !blocked && (
                 <>
                   <div className="my-1 border-t border-edge/70" />
                   <Item onClick={() => run(onPackage)} hint="STEP + STL + report + drawings">
@@ -123,7 +141,13 @@ export default function ExportMenu({
                   </Item>
                 </>
               )}
-              {concept && (
+              {blocked && previewAvailable && (
+                <p className="px-2.5 pb-1 pt-1.5 text-[11px] leading-snug text-amber-200/90">
+                  STL/STEP are blocked — this design failed validation. GLB is a
+                  preview only, not a manufacturable file.
+                </p>
+              )}
+              {concept && !blocked && (
                 <p className="px-2.5 pb-1 pt-1.5 text-[11px] leading-snug text-slate-500">
                   Concept geometry — verify before manufacturing.
                 </p>

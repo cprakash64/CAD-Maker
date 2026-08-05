@@ -1,4 +1,6 @@
 """v0.3.7: production gating, provider status, blocked mock drawing, long-prompt routing."""
+from tests.conftest import TINY_PNG
+
 import pytest
 
 from app.config import _DEFAULT_JWT_SECRET, Settings, settings
@@ -16,6 +18,7 @@ def _prod_kwargs(**overrides):
         storage_backend="local",
         cors_origins="https://app.example.com",
         public_base_url="https://api.example.com",
+        ops_api_token="a-fake-ops-token-1234567890",
     )
     base.update(overrides)
     return base
@@ -133,7 +136,7 @@ def test_drawing_blocked_when_mock_drawing_disabled(client, auth, monkeypatch):
     monkeypatch.setattr(settings, "dev_allow_mock_drawing", False)
     r = client.post(
         "/api/drawings/interpret",
-        files={"file": ("d.png", b"x" * 200, "image/png")},
+        files={"file": ("d.png", TINY_PNG, "image/png")},
         data={"hint": "flanged pipe branch, 90mm main pipe, 8 bolts"},
         headers=auth["headers"],
     )
@@ -145,7 +148,7 @@ def test_drawing_allowed_when_dev_opt_in(client, auth):
     # conftest sets DEV_ALLOW_MOCK_DRAWING=true, so the hinted flow works.
     r = client.post(
         "/api/drawings/interpret",
-        files={"file": ("d.png", b"x" * 200, "image/png")},
+        files={"file": ("d.png", TINY_PNG, "image/png")},
         data={"hint": "flanged pipe branch, 90mm main pipe, 8 bolts"},
         headers=auth["headers"],
     )

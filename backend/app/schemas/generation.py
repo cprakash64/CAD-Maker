@@ -15,7 +15,10 @@ from pydantic import BaseModel, Field, field_validator
 class GenerationRouteKind(str, Enum):
     precision_template = "precision_template"  # strong template exists
     feature_graph = "feature_graph"            # buildable from safe primitives
-    scad_generator = "scad_generator"          # broader mechanical shape via restricted SCAD
+    # Historical name kept for stored designs / benchmark fixtures. It selects the
+    # general CAD planner, which compiles to the same trusted feature graph — no
+    # SCAD (or any other) source is generated or executed.
+    scad_generator = "scad_generator"          # broader mechanical shape via the general planner
     clarification = "clarification"            # impossible / unsafe / too ambiguous
 
 

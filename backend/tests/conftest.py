@@ -16,9 +16,6 @@ os.environ.setdefault("LLM_PROVIDER", "mock")
 os.environ.setdefault("TESTING", "true")
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("DEV_ALLOW_MOCK_DRAWING", "true")
-# Trusted, deterministic mock programs run in-process (still AST-linted) for CI
-# speed. Untrusted LLM code always uses the subprocess sandbox regardless.
-os.environ.setdefault("CADMAKER_SANDBOX", "inprocess")
 
 # Create tables for the isolated test DB (TestClient at module scope does not
 # fire FastAPI startup events).
@@ -26,10 +23,29 @@ from app.database import init_db  # noqa: E402
 
 init_db()
 
+import io  # noqa: E402
 import itertools  # noqa: E402
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
+
+def _make_tiny_png() -> bytes:
+    """A real (decodable) 16×16 PNG for tests that just need a valid raster to
+    pass the upload guard. The offline mock provider classifies drawings from the
+    notes/hint text, not the pixels, so the image content is irrelevant — but the
+    upload guard (correctly) rejects bytes that are not a real image, so tests
+    must carry a genuine one."""
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (16, 16), (210, 210, 210)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# Real PNG bytes shared by the drawing tests (replaces the old fake-byte carrier
+# `b"\x89PNG fake image bytes"`, which the strict upload guard now rejects).
+TINY_PNG = _make_tiny_png()
 
 _email_counter = itertools.count()
 
@@ -45,6 +61,21 @@ def _signup(client: "TestClient") -> dict:
         "user": body["user"],
         "headers": {"Authorization": f"Bearer {body['access_token']}"},
     }
+
+
+@pytest.fixture(autouse=True)
+def _reset_llm_circuit_breaker():
+    """The LLM circuit breaker (app.llm.circuit_breaker) is per-process global
+    state, same as app.rate_limit's counters -- unlike rate limiting (which is
+    off by default in tests), the breaker is always active, so without this a
+    test that deliberately triggers several provider failures (to exercise
+    fallback/error handling) would trip it and break unrelated tests that
+    happen to run afterward in the same process."""
+    from app.llm import circuit_breaker
+
+    circuit_breaker.reset()
+    yield
+    circuit_breaker.reset()
 
 
 @pytest.fixture

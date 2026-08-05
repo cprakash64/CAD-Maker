@@ -45,6 +45,18 @@ class ObjectType(str, Enum):
     inline_4_crankshaft = "inline_4_crankshaft"
     flanged_pipe_branch = "flanged_pipe_branch"
     simple_gear_or_pulley = "simple_gear_or_pulley"
+    # Physical calibration coupons (docs/calibration.md) — deterministic test
+    # prints for measuring a real printer/material/process combination.
+    calibration_master_coupon = "calibration_master_coupon"
+    calibration_vertical_hole_gauge = "calibration_vertical_hole_gauge"
+    calibration_horizontal_hole_plate = "calibration_horizontal_hole_plate"
+    calibration_fit_ladder = "calibration_fit_ladder"
+    calibration_wall_pin_gap_coupon = "calibration_wall_pin_gap_coupon"
+    calibration_overhang_bridge_tower = "calibration_overhang_bridge_tower"
+    calibration_fastener_plate = "calibration_fastener_plate"
+    calibration_snap_fit_kit = "calibration_snap_fit_kit"
+    calibration_mechanism_coupon = "calibration_mechanism_coupon"
+    calibration_text_plate = "calibration_text_plate"
     # Not a template — geometry comes from a validated trusted feature graph.
     feature_graph = "feature_graph"
 
@@ -80,6 +92,8 @@ class Hole(BaseModel):
     required when that type is chosen (and auto-inferred when only the feature
     dimensions are supplied, for backward compatibility).
     """
+
+    model_config = {"extra": "forbid"}
 
     diameter: float = Field(gt=0, le=500, description="Through-hole (clearance) diameter")
     x: float = Field(description="X position of hole center")
@@ -148,7 +162,7 @@ class DesignSpec(BaseModel):
     generation stays strict.
     """
 
-    model_config = {"use_enum_values": True}
+    model_config = {"use_enum_values": True, "extra": "forbid"}
 
     object_type: ObjectType
     units: Units = Units.mm
@@ -251,6 +265,8 @@ class DesignModification(BaseModel):
     units of the modification (default mm). ``apply_modification`` produces a new
     validated DesignSpec.
     """
+
+    model_config = {"extra": "forbid"}
 
     set_dimensions: dict[str, float] = Field(default_factory=dict)
     scale_dimensions: dict[str, float] = Field(default_factory=dict)

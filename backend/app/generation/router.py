@@ -58,9 +58,9 @@ def route_prompt(prompt: str, provider=None) -> GenerationRoute:
             unsupported_features=["organic/decorative geometry"],
         )
 
-    # 4) Mechanical-but-unmatched → general planner (compiles to a trusted feature
-    #    graph for STL+STEP; falls back to the sandboxed OpenSCAD runner only for
-    #    shapes the feature graph can't express, when the binary is installed).
+    # 4) Mechanical-but-unmatched → general planner. The plan always compiles to
+    #    a trusted feature graph for STL+STEP; shapes the feature graph cannot
+    #    express become a clarification, never an external/code-emitting kernel.
     if _looks_mechanical(text):
         return GenerationRoute(
             route=GenerationRouteKind.scad_generator, confidence=0.55,

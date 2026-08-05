@@ -11,7 +11,7 @@ def _bracket(client, headers) -> dict:
     ).json()
 
 
-def _resize_body(hole_id="hole_0", mm=9):
+def _resize_body(hole_id, mm=9):
     return {
         "instruction": f"Resize this hole to {mm} mm",
         "quick_action": "resize_hole",
@@ -26,6 +26,7 @@ def test_critical_edit_rejected_and_original_preserved(client, auth, legacy_engi
     d = _bracket(client, h)
     did, before_hash = d["id"], d["spec_hash"]
     before_dia = d["spec"]["holes"][0]["diameter"]
+    hole_id = d["selectable_holes"][0]["hole_id"]
 
     # Patch only after the design exists: the design was valid before the edit,
     # and the *edited* design reports critical (2nd+ call within the request).
@@ -37,7 +38,7 @@ def test_critical_edit_rejected_and_original_preserved(client, auth, legacy_engi
 
     monkeypatch.setattr(design_service, "is_critical_failure", fake_is_critical)
 
-    r = client.post(f"/api/designs/{did}/face-edit", json=_resize_body(), headers=h)
+    r = client.post(f"/api/designs/{did}/face-edit", json=_resize_body(hole_id), headers=h)
     assert r.status_code == 422, r.text
     assert "not applied" in r.json()["detail"].lower()
 
@@ -87,6 +88,9 @@ def test_valid_edit_still_applies_with_guard(client, auth, legacy_engine):
     """The guard never blocks a legitimate edit that passes validation."""
     h = auth["headers"]
     d = _bracket(client, h)
-    r = client.post(f"/api/designs/{d['id']}/face-edit", json=_resize_body(mm=9), headers=h)
+    hole_id = d["selectable_holes"][0]["hole_id"]
+    r = client.post(
+        f"/api/designs/{d['id']}/face-edit", json=_resize_body(hole_id, mm=9), headers=h
+    )
     assert r.status_code == 200, r.text
     assert r.json()["spec"]["holes"][0]["diameter"] == 9.0
