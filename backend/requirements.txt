@@ -3,7 +3,7 @@ cadquery==2.7.0
 # is the earliest fastapi release that drops the <1.0.0 starlette ceiling
 # (see docs/security/dependency-risk-assessment.md), which is required to
 # reach a starlette with no open CVEs.
-fastapi==0.134.0
+fastapi==0.141.1
 starlette==1.3.1
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
